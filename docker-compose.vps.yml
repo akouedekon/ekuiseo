@@ -1,0 +1,26 @@
+# ============================================================
+# Ekuiseo — surcouche « serveur partage » (a combiner avec docker-compose.prod.yml)
+# ============================================================
+# Usage :
+#   docker compose -f docker-compose.prod.yml -f docker-compose.vps.yml up -d --build
+#
+# Quand un autre service occupe deja les ports 80/443 de l'hote, Caddy n'ecoute
+# que sur l'interface locale, sur un port libre (EKUISEO_HTTP_PORT, 8090 par
+# defaut), sans TLS : c'est le reverse proxy de l'hote (nginx) qui termine le
+# TLS pour le domaine et relaie vers ce port. Voir Caddyfile.proxied et
+# deploy/nginx/ekuiseo.com.conf.
+#
+# Les noms de conteneurs, reseaux et volumes restent prefixes "ekuiseo" : rien
+# n'entre en collision avec une autre application Docker sur le meme hote.
+# ============================================================
+
+services:
+  caddy:
+    # `!override` remplace la liste de ports du fichier de base (80/443 publics)
+    # au lieu de la completer - Compose v2.24 ou plus recent.
+    ports: !override
+      - "127.0.0.1:${EKUISEO_HTTP_PORT:-8090}:80"
+    volumes: !override
+      - ./Caddyfile.proxied:/etc/caddy/Caddyfile:ro
+      - ekuiseo_caddy_data:/data
+      - ekuiseo_caddy_config:/config

@@ -1,0 +1,58 @@
+# ============================================================
+# Ekuiseo — Caddy DERRIERE un reverse proxy existant (serveur partage)
+# ============================================================
+# Cas d'usage : un nginx (ou autre) occupe deja les ports 80/443 de l'hote pour
+# une autre application. Caddy ne fait alors ni TLS ni ecoute publique : il
+# repond en HTTP simple sur le port 80 DU CONTENEUR, publie uniquement sur
+# 127.0.0.1:${EKUISEO_HTTP_PORT} (voir docker-compose.vps.yml), et c'est le
+# nginx de l'hote qui termine le TLS pour ekuiseo.com et relaie vers ce port
+# (voir deploy/nginx/ekuiseo.com.conf).
+#
+# Le routage et les en-tetes sont identiques au Caddyfile principal ; seuls
+# changent : l'adresse du site (:80, pas de domaine, pas d'ACME) et HSTS, qui
+# reste la responsabilite du proxy amont.
+# ============================================================
+
+{
+	auto_https off
+	admin localhost:2019
+}
+
+:80 {
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "SAMEORIGIN"
+		Permissions-Policy "geolocation=(self), camera=(), microphone=(), payment=(self)"
+		Content-Security-Policy "default-src 'self'; script-src 'self' https://cdn.kkiapay.me; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https:; worker-src 'self' blob:; frame-src https://*.kkiapay.me; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests"
+		-Server
+	}
+
+	handle /api/* {
+		reverse_proxy backend:8080 {
+			# L'IP reelle est transmise par le nginx amont (X-Forwarded-For).
+			header_up X-Real-IP {header.X-Forwarded-For}
+			health_uri /actuator/health
+			health_interval 15s
+			health_timeout 5s
+		}
+	}
+
+	handle /swagger-ui* {
+		reverse_proxy backend:8080
+	}
+	handle /v3/api-docs* {
+		reverse_proxy backend:8080
+	}
+
+	handle {
+		reverse_proxy frontend:80
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

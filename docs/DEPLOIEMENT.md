@@ -212,3 +212,50 @@ concernent le code du backend (hors du périmètre de ce dépôt d'infrastructur
   qu'il est bien renseigné, et que `KKIAPAY_MODE=http`, avant d'activer des paiements réels.
 - Voir `docs/LANCEMENT.md` pour la liste complète de la checklist avant ouverture au
   public.
+
+## 13. Variante : serveur partagé (un nginx occupe déjà les ports 80/443)
+
+Cas du VPS OVH actuel : un nginx de l'hôte sert déjà une autre application sur 80/443.
+Le Caddy du dépôt ne doit alors **ni** prendre ces ports **ni** demander de certificat.
+Ekuiseo tourne derrière le nginx existant, sur un port local :
+
+```
+Internet --443--> nginx (hôte, TLS via certbot) --127.0.0.1:8090--> caddy (conteneur) --> backend / frontend
+```
+
+1. **Pile Docker** — même `.env` qu'en §6 (`DOMAIN=ekuiseo.com`, `VITE_API_URL=` vide :
+   l'API est servie sur le même domaine sous `/api`), plus `EKUISEO_HTTP_PORT=8090` si le
+   port 8090 est déjà pris. Puis :
+
+   ```bash
+   bash scripts/deploy-vps.sh
+   ```
+
+   Ce script clone ou met à jour `/opt/ekuiseo`, vérifie `.env`, et lance
+   `docker compose -f docker-compose.prod.yml -f docker-compose.vps.yml up -d --build`.
+   La surcouche `docker-compose.vps.yml` remplace les ports publics de Caddy par
+   `127.0.0.1:8090:80` et monte `Caddyfile.proxied` (HTTP simple, mêmes routes et
+   en-têtes, HSTS laissé au nginx amont). Rien d'autre ne change : réseaux, volumes et
+   conteneurs restent préfixés `ekuiseo`, sans collision avec l'autre application.
+
+2. **Site nginx de l'hôte** — un fichier dédié, qui ne touche pas aux autres sites :
+
+   ```bash
+   sudo cp /opt/ekuiseo/deploy/nginx/ekuiseo.com.conf /etc/nginx/sites-available/ekuiseo.com
+   sudo ln -s /etc/nginx/sites-available/ekuiseo.com /etc/nginx/sites-enabled/
+   sudo nginx -t && sudo systemctl reload nginx
+   ```
+
+3. **DNS puis TLS** — chez le registrar (Hostinger pour `ekuiseo.com`), créer les
+   enregistrements `A ekuiseo.com -> <IP_DU_VPS>` et `A www.ekuiseo.com -> <IP_DU_VPS>`,
+   attendre la propagation (`dig +short ekuiseo.com`), puis :
+
+   ```bash
+   sudo certbot --nginx -d ekuiseo.com -d www.ekuiseo.com
+   ```
+
+   Certbot ajoute le bloc `listen 443 ssl` et la redirection HTTP → HTTPS au fichier du
+   site, et programme le renouvellement.
+
+4. **Mises à jour** — relancer `bash scripts/deploy-vps.sh` : `git pull` puis reconstruction
+   des images, sans interruption de l'autre application.
