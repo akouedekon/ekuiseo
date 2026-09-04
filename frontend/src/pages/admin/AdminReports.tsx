@@ -1,18 +1,22 @@
 import { motion } from 'motion/react'
 import { CheckCircle2, ShieldQuestion, XCircle } from 'lucide-react'
 import { useState } from 'react'
+import { Link } from 'react-router'
 import { toast } from 'sonner'
+import { ConfirmDialog } from '@/components/feedback/ConfirmDialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Textarea } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/misc'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AdminPageHeader } from '@/components/layout/AdminPageHeader'
 import { EmptyState, ErrorState } from '@/components/ui/states'
-import { useAdminReports, useUpdateReportStatus } from '@/hooks/useAdmin'
+import { useAdminReports, useResolveReport, useUpdateReportStatus } from '@/hooks/useAdmin'
+import { describeError } from '@/lib/errors'
 import { formatFromNow } from '@/lib/format'
 import { listContainer, listItem } from '@/lib/motion'
-import type { ReportReason, ReportStatus } from '@/api/extended'
+import type { AdminReportResponse, ReportReason, ReportStatus } from '@/api/extended'
 
 const REASON_LABEL: Record<ReportReason, string> = {
   NO_SHOW: 'Absence au départ',
@@ -39,17 +43,47 @@ const STATUS_LABEL: Record<ReportStatus, string> = {
   DISMISSED: 'Classé sans suite',
 }
 
+type Closing = { report: AdminReportResponse; status: 'RESOLVED' | 'DISMISSED' }
+
 export function AdminReports() {
   const [filter, setFilter] = useState<ReportStatus | 'ALL'>('OPEN')
+  const [closing, setClosing] = useState<Closing | null>(null)
+  const [note, setNote] = useState('')
+  const [busyId, setBusyId] = useState<string | null>(null)
   const reports = useAdminReports(filter)
   const update = useUpdateReportStatus()
+  const resolve = useResolveReport()
 
-  const list = reports.data?.data ?? []
+  const list = reports.data ?? []
 
-  const act = (id: string, status: ReportStatus, message: string) => {
+  const takeOver = (report: AdminReportResponse) => {
+    setBusyId(report.id)
     update.mutate(
-      { id, status },
-      { onSuccess: () => toast.success(message), onError: () => toast.error("L'action a échoué.") },
+      { id: report.id, status: 'IN_REVIEW' },
+      {
+        onSuccess: () => toast.success('Signalement pris en charge'),
+        onError: (error) => toast.error(describeError(error, "L'action a échoué.")),
+        onSettled: () => setBusyId(null),
+      },
+    )
+  }
+
+  const closeDialog = () => {
+    setClosing(null)
+    setNote('')
+  }
+
+  const confirmClose = () => {
+    if (!closing || !note.trim()) return
+    resolve.mutate(
+      { id: closing.report.id, status: closing.status, resolutionNote: note.trim() },
+      {
+        onSuccess: () => {
+          toast.success(closing.status === 'RESOLVED' ? 'Signalement résolu' : 'Signalement classé sans suite')
+          closeDialog()
+        },
+        onError: (error) => toast.error(describeError(error, "L'action a échoué.")),
+      },
     )
   }
 
@@ -58,7 +92,7 @@ export function AdminReports() {
       <AdminPageHeader
         title="Signalements"
         count={reports.isSuccess ? list.length : undefined}
-        description="Prenez en charge, résolvez ou classez. La personne signalée n'est jamais informée de l'identité de l'auteur."
+        description="Prenez en charge, résolvez ou classez avec une note de résolution. La personne signalée n'est jamais informée de l'identité de l'auteur."
       />
 
       <Tabs value={filter} onValueChange={(value) => setFilter(value as ReportStatus | 'ALL')} className="mb-4">
@@ -66,6 +100,7 @@ export function AdminReports() {
           <TabsTrigger value="OPEN">Ouverts</TabsTrigger>
           <TabsTrigger value="IN_REVIEW">En cours</TabsTrigger>
           <TabsTrigger value="RESOLVED">Résolus</TabsTrigger>
+          <TabsTrigger value="DISMISSED">Classés</TabsTrigger>
           <TabsTrigger value="ALL">Tous</TabsTrigger>
         </TabsList>
       </Tabs>
@@ -77,7 +112,7 @@ export function AdminReports() {
           ))}
         </div>
       ) : reports.isError ? (
-        <ErrorState onRetry={() => reports.refetch()} />
+        <ErrorState description={describeError(reports.error)} onRetry={() => reports.refetch()} />
       ) : list.length === 0 ? (
         <EmptyState
           icon={ShieldQuestion}
@@ -99,26 +134,40 @@ export function AdminReports() {
               >
                 <div className="p-4">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone={REASON_TONE[report.reason]}>{REASON_LABEL[report.reason]}</Badge>
+                    <Badge tone={REASON_TONE[report.reason] ?? 'neutral'}>{REASON_LABEL[report.reason] ?? report.reason}</Badge>
                     <Badge tone="outline">{STATUS_LABEL[report.status]}</Badge>
                     <span className="ml-auto text-[12px] text-muted">{formatFromNow(report.createdAt)}</span>
                   </div>
 
-                  <p className="mt-2.5 text-[14px] leading-relaxed text-ink">{report.detail}</p>
+                  <p className="mt-2.5 text-[14px] leading-relaxed text-ink">{report.detail || 'Aucune précision fournie.'}</p>
 
                   <dl className="mt-3 grid gap-1 text-[13px] sm:grid-cols-2">
                     <div className="flex gap-1.5">
                       <dt className="text-muted">Signalé par</dt>
                       <dd className="font-medium">
-                        {report.reporter.firstName} {report.reporter.lastName}
+                        <Link to={`/drivers/${report.reporter.id}`} className="underline-offset-4 hover:underline">
+                          {report.reporter.firstName} {report.reporter.lastName}
+                        </Link>
                       </dd>
                     </div>
                     <div className="flex gap-1.5">
                       <dt className="text-muted">Mis en cause</dt>
                       <dd className="font-medium">
-                        {report.target.firstName} {report.target.lastName}
+                        <Link to={`/drivers/${report.target.id}`} className="underline-offset-4 hover:underline">
+                          {report.target.firstName} {report.target.lastName}
+                        </Link>
                       </dd>
                     </div>
+                    {report.tripId ? (
+                      <div className="flex gap-1.5">
+                        <dt className="text-muted">Trajet</dt>
+                        <dd className="font-medium">
+                          <Link to={`/trips/${report.tripId}`} className="underline-offset-4 hover:underline">
+                            Voir le trajet
+                          </Link>
+                        </dd>
+                      </div>
+                    ) : null}
                   </dl>
                 </div>
 
@@ -128,7 +177,8 @@ export function AdminReports() {
                       <Button
                         size="sm"
                         variant="secondary"
-                        onClick={() => act(report.id, 'IN_REVIEW', 'Signalement pris en charge')}
+                        loading={busyId === report.id && update.isPending}
+                        onClick={() => takeOver(report)}
                       >
                         Prendre en charge
                       </Button>
@@ -136,7 +186,8 @@ export function AdminReports() {
                     <Button
                       size="sm"
                       variant="success"
-                      onClick={() => act(report.id, 'RESOLVED', 'Signalement résolu')}
+                      disabled={busyId === report.id}
+                      onClick={() => setClosing({ report, status: 'RESOLVED' })}
                     >
                       <CheckCircle2 className="size-4" aria-hidden />
                       Résoudre
@@ -145,7 +196,8 @@ export function AdminReports() {
                       size="sm"
                       variant="ghost"
                       className="ml-auto"
-                      onClick={() => act(report.id, 'DISMISSED', 'Signalement classé')}
+                      disabled={busyId === report.id}
+                      onClick={() => setClosing({ report, status: 'DISMISSED' })}
                     >
                       <XCircle className="size-4" aria-hidden />
                       Classer sans suite
@@ -157,6 +209,33 @@ export function AdminReports() {
           ))}
         </motion.ul>
       )}
+
+      <ConfirmDialog
+        open={closing !== null}
+        onOpenChange={(open) => !open && closeDialog()}
+        title={closing?.status === 'RESOLVED' ? 'Résoudre ce signalement ?' : 'Classer sans suite ?'}
+        description={
+          closing
+            ? closing.status === 'RESOLVED'
+              ? 'Indiquez la mesure prise (avertissement, suspension, remboursement…). La note est conservée dans le dossier.'
+              : "Indiquez pourquoi le signalement n'appelle aucune mesure. La note est conservée dans le dossier."
+            : undefined
+        }
+        tone={closing?.status === 'DISMISSED' ? 'danger' : 'default'}
+        confirmLabel={closing?.status === 'RESOLVED' ? 'Marquer résolu' : 'Classer'}
+        confirmDisabled={!note.trim()}
+        loading={resolve.isPending}
+        onConfirm={confirmClose}
+      >
+        <Textarea
+          label="Note de résolution"
+          hint="Obligatoire."
+          rows={3}
+          maxLength={500}
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+        />
+      </ConfirmDialog>
     </div>
   )
 }

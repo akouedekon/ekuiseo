@@ -1,43 +1,37 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/api/client'
-import { DEMO_NOTIFICATIONS } from '@/api/demo'
-import { resilient, resilientMutation, type Sourced } from '@/api/resilient'
 import type { NotificationResponse } from '@/api/types'
-import { isAuthenticated } from '@/hooks/useAuth'
+import { useIsAuthenticated } from '@/hooks/useAuth'
 
+/** GET /api/v1/notifications, sondage toutes les 60 s (pas de push cote serveur). */
 export function useNotifications() {
-  return useQuery<Sourced<NotificationResponse[]>>({
+  const authenticated = useIsAuthenticated()
+  return useQuery<NotificationResponse[]>({
     queryKey: ['notifications'],
-    queryFn: () =>
-      resilient(() => apiClient.get<NotificationResponse[]>('/api/v1/notifications'), () => DEMO_NOTIFICATIONS),
-    enabled: isAuthenticated(),
+    queryFn: () => apiClient.get<NotificationResponse[]>('/api/v1/notifications'),
+    enabled: authenticated,
     refetchInterval: 60_000,
   })
 }
 
 export function useUnreadNotificationCount(): number {
   const { data } = useNotifications()
-  return data?.data.filter((n) => !n.readAt).length ?? 0
+  return data?.filter((n) => !n.readAt).length ?? 0
 }
 
-/**
- * Marquage comme lu.
- * ATTENDU : POST /api/v1/notifications/{id}/read
- *           POST /api/v1/notifications/read-all
- */
+/** POST /api/v1/notifications/{id}/read, bascule optimiste. */
 export function useMarkNotificationRead() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) =>
-      resilientMutation(() => apiClient.post<void>(`/api/v1/notifications/${id}/read`), () => undefined),
+    mutationFn: (id: string) => apiClient.post<void>(`/api/v1/notifications/${id}/read`),
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: ['notifications'] })
-      const previous = queryClient.getQueryData<Sourced<NotificationResponse[]>>(['notifications'])
+      const previous = queryClient.getQueryData<NotificationResponse[]>(['notifications'])
       if (previous) {
-        queryClient.setQueryData<Sourced<NotificationResponse[]>>(['notifications'], {
-          ...previous,
-          data: previous.data.map((n) => (n.id === id ? { ...n, readAt: new Date().toISOString() } : n)),
-        })
+        queryClient.setQueryData<NotificationResponse[]>(
+          ['notifications'],
+          previous.map((n) => (n.id === id ? { ...n, readAt: new Date().toISOString() } : n)),
+        )
       }
       return { previous }
     },
@@ -47,25 +41,26 @@ export function useMarkNotificationRead() {
   })
 }
 
+/** POST /api/v1/notifications/read-all, bascule optimiste. */
 export function useMarkAllNotificationsRead() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: () =>
-      resilientMutation(() => apiClient.post<void>('/api/v1/notifications/read-all'), () => undefined),
+    mutationFn: () => apiClient.post<void>('/api/v1/notifications/read-all'),
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: ['notifications'] })
-      const previous = queryClient.getQueryData<Sourced<NotificationResponse[]>>(['notifications'])
+      const previous = queryClient.getQueryData<NotificationResponse[]>(['notifications'])
       if (previous) {
         const now = new Date().toISOString()
-        queryClient.setQueryData<Sourced<NotificationResponse[]>>(['notifications'], {
-          ...previous,
-          data: previous.data.map((n) => (n.readAt ? n : { ...n, readAt: now })),
-        })
+        queryClient.setQueryData<NotificationResponse[]>(
+          ['notifications'],
+          previous.map((n) => (n.readAt ? n : { ...n, readAt: now })),
+        )
       }
       return { previous }
     },
     onError: (_e, _v, context) => {
       if (context?.previous) queryClient.setQueryData(['notifications'], context.previous)
     },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
   })
 }

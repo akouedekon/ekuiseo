@@ -12,7 +12,7 @@ import {
   Ticket,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -38,6 +38,7 @@ import { openKkiapay } from '@/lib/kkiapay'
 import { useMe } from '@/hooks/useAuth'
 import { useTrip, useTripStops } from '@/hooks/useTrips'
 import { estimateDurationMinutes, haversineKm } from '@/lib/cities'
+import { describeError } from '@/lib/errors'
 import { formatFcfa, formatPhone, formatRelativeDay, formatTime } from '@/lib/format'
 import { phoneSchema } from '@/lib/validation'
 import type { PaymentMode, PaymentProvider } from '@/api/extended'
@@ -48,11 +49,14 @@ const DEPOSIT_WINDOW_MS = 20 * 60 * 1000
 
 type Step = 'recap' | 'payment' | 'waiting' | 'confirmed' | 'expired'
 
-const STEP_INDEX: Record<Step, number> = { recap: 0, payment: 1, waiting: 2, confirmed: 3, expired: 2 }
+const STEP_INDEX: Record<Step, number> = { recap: 0, payment: 1, waiting: 2, confirmed: 3, expired: 1 }
 
 export function BookingPage() {
   const { tripId } = useParams<{ tripId: string }>()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  // ?booking= : reprise d'une reservation existante en attente d'acompte (depuis « Mes trajets »).
+  const resumeId = searchParams.get('booking') ?? undefined
   const trip = useTrip(tripId)
   const stops = useTripStops(tripId)
   const me = useMe()
@@ -73,8 +77,8 @@ export function BookingPage() {
   const [widgetPayment, setWidgetPayment] = useState<InitiatePaymentResponse | null>(null)
   const [widgetOpen, setWidgetOpen] = useState(false)
 
-  const data = trip.data?.data
-  const stopList = stops.data?.data ?? []
+  const data = trip.data
+  const stopList = stops.data ?? []
   const selectedStop = stopList.find((s) => s.id === dropoffStopId)
   const unitPrice = selectedStop ? selectedStop.priceFromOrigin : (data?.pricePerSeat ?? 0)
 
@@ -86,21 +90,17 @@ export function BookingPage() {
    * Aucun montant n'est ecrit en dur nulle part.
    */
   const quote = useBookingQuote(tripId, { seats, dropoffStopId: dropoffStopId || undefined, paymentMode, unitPrice })
-  const booking = useBooking(bookingId)
-  const serverPlan = booking.data?.data.paymentPlan
+  const booking = useBooking(bookingId ?? resumeId)
+  const serverPlan = booking.data?.paymentPlan
   const plan = serverPlan ?? quote.data?.plan ?? estimatePaymentPlan(unitPrice * seats, paymentMode)
   const planIsEstimate = !serverPlan && (quote.data?.estimated ?? true)
 
   const createBooking = useCreateBooking(tripId ?? '')
-  const initiateDeposit = useInitiateDeposit(bookingId, plan.depositAmount)
-  const paymentStatus = usePaymentStatus(
-    step === 'waiting' ? paymentId : undefined,
-    bookingId,
-    plan.depositAmount,
-  )
+  const initiateDeposit = useInitiateDeposit(bookingId)
+  const paymentStatus = usePaymentStatus(step === 'waiting' ? paymentId : undefined)
   const confirmPayment = useConfirmPayment(paymentId)
 
-  const phone = phoneInput ?? me.data?.data.phone ?? ''
+  const phone = phoneInput ?? me.data?.phone ?? ''
 
   /*
    * Suivi du webhook : la confirmation vient du serveur, jamais du client.
@@ -108,12 +108,38 @@ export function BookingPage() {
    * l'effet est donc le bon outil ici.
    */
   useEffect(() => {
-    const status = paymentStatus.data?.data.status
+    const status = paymentStatus.data?.status
     if (status === 'SUCCEEDED') setStep('confirmed')
     else if (status === 'FAILED' || status === 'EXPIRED') setStep('expired')
   }, [paymentStatus.data])
 
-  if (trip.isPending) {
+  /*
+   * Reprise : la reservation existe deja (acompte non regle). On saute le
+   * recapitulatif et on reprend au paiement avec ses vraies valeurs (places,
+   * mode, echeance serveur). Confirmee ou annulee entre-temps, l'ecran le dit
+   * au lieu de proposer un paiement impossible.
+   */
+  const resumed = resumeId && !bookingId ? booking.data : undefined
+  useEffect(() => {
+    if (!resumed) return
+    setBookingId(resumed.id)
+    setSeats(resumed.seats)
+    setPaymentMode(resumed.paymentPlan.paymentMethod)
+    if (resumed.status === 'PENDING_PAYMENT') {
+      setDeadline(
+        resumed.paymentPlan.depositDueAt
+          ? new Date(resumed.paymentPlan.depositDueAt).getTime()
+          : Date.now() + DEPOSIT_WINDOW_MS,
+      )
+      setStep('payment')
+    } else if (resumed.status === 'CONFIRMED' || resumed.status === 'COMPLETED') {
+      setStep('confirmed')
+    } else {
+      setStep('expired')
+    }
+  }, [resumed])
+
+  if (trip.isPending || (resumeId && !bookingId && booking.isPending)) {
     return (
       <PageContainer width="md">
         <Skeleton className="mb-4 h-9 w-2/3" />
@@ -129,7 +155,18 @@ export function BookingPage() {
   if (trip.isError || !data) {
     return (
       <PageContainer width="md">
-        <ErrorState title="Trajet introuvable" onRetry={() => trip.refetch()} />
+        <ErrorState title="Trajet introuvable" description={describeError(trip.error)} onRetry={() => trip.refetch()} />
+      </PageContainer>
+    )
+  }
+  if (resumeId && !bookingId && booking.isError) {
+    return (
+      <PageContainer width="md">
+        <ErrorState
+          title="Réservation introuvable"
+          description={describeError(booking.error)}
+          onRetry={() => booking.refetch()}
+        />
       </PageContainer>
     )
   }
@@ -145,9 +182,6 @@ export function BookingPage() {
         seats,
         dropoffStopId: dropoffStopId || undefined,
         paymentMode,
-        // Champ historique de l'API (ignore par le serveur, qui ne lit que
-        // `paymentMode`) : conserve avec la meme valeur pour rester coherent.
-        paymentMethod: paymentMode,
       },
       {
         onSuccess: (booking) => {
@@ -161,7 +195,7 @@ export function BookingPage() {
           setDeadline(Date.now() + DEPOSIT_WINDOW_MS)
           setStep('payment')
         },
-        onError: () => toast.error("La demande n'a pas pu être envoyée. Réessayez."),
+        onError: (error) => toast.error(describeError(error, "La demande n'a pas pu être envoyée. Réessayez.")),
       },
     )
   }
@@ -179,13 +213,10 @@ export function BookingPage() {
         onSuccess: (payment) => {
           setPaymentId(payment.paymentId)
           setStep('waiting')
-          // 'demo' = repli hors ligne : le sondage simule seul la confirmation.
-          if (payment.kkiapayPublicKey !== 'demo') {
-            setWidgetPayment(payment)
-            void launchWidget(payment)
-          }
+          setWidgetPayment(payment)
+          void launchWidget(payment)
         },
-        onError: () => toast.error("Le paiement n'a pas pu être lancé."),
+        onError: (error) => toast.error(describeError(error, "Le paiement n'a pas pu être lancé.")),
       },
     )
   }
@@ -205,9 +236,9 @@ export function BookingPage() {
         publicKey: payment.kkiapayPublicKey,
         sandbox: payment.sandbox,
         phone,
-        name: me.data ? `${me.data.data.firstName} ${me.data.data.lastName}`.trim() : undefined,
+        name: me.data ? `${me.data.firstName} ${me.data.lastName}`.trim() : undefined,
         // Le widget exige un e-mail (recu Kkiapay) : pre-rempli quand le profil en a un.
-        email: me.data?.data.email ?? undefined,
+        email: me.data?.email ?? undefined,
         data: payment.widgetData ?? (bookingId ? { bookingId } : undefined),
         onClose: () => setWidgetOpen(false),
       })
@@ -281,6 +312,18 @@ export function BookingPage() {
                 {data.seatsAvailable} place{data.seatsAvailable > 1 ? 's' : ''} encore disponible
                 {data.seatsAvailable > 1 ? 's' : ''}.
               </p>
+              {stops.isError ? (
+                <p className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-control)] bg-[var(--ocre-soft)] px-3 py-2 text-[12px] text-[var(--ocre-ink)]">
+                  Arrêts intermédiaires indisponibles : réservation jusqu'au terminus uniquement.
+                  <button
+                    type="button"
+                    className="font-semibold underline-offset-4 hover:underline"
+                    onClick={() => stops.refetch()}
+                  >
+                    Réessayer
+                  </button>
+                </p>
+              ) : null}
 
               {stopList.length > 0 ? (
                 <>
@@ -342,9 +385,15 @@ export function BookingPage() {
               </RadioGroup>
             </Card>
 
+            {quote.isError ? (
+              <Card className="border-[var(--vermillon)] bg-[var(--vermillon-soft)] p-4 text-[14px] text-[var(--vermillon)]">
+                {describeError(quote.error, "Le devis n'a pas pu être calculé.")}
+              </Card>
+            ) : null}
+
             <PaymentSplit plan={plan} estimated={planIsEstimate} />
 
-            <Button size="lg" block loading={createBooking.isPending} onClick={goToPayment}>
+            <Button size="lg" block loading={createBooking.isPending} disabled={quote.isError} onClick={goToPayment}>
               {paymentMode === 'CASH'
                 ? 'Demander la place'
                 : `${paymentMode === 'MOMO_FULL' ? 'Payer' : 'Bloquer ma place pour'} ${formatFcfa(plan.depositAmount)}`}
@@ -402,7 +451,11 @@ export function BookingPage() {
                   value={phone}
                   onChange={(event) => setPhoneInput(event.target.value)}
                   error={phoneError}
-                  hint="Vous recevrez une demande de confirmation sur ce numéro."
+                  hint={
+                    me.isError
+                      ? "Votre profil n'a pas pu être chargé : saisissez le numéro à débiter."
+                      : 'Vous recevrez une demande de confirmation sur ce numéro.'
+                  }
                   leading={<Phone />}
                   placeholder="+229 97 00 00 00"
                 />
@@ -449,7 +502,7 @@ export function BookingPage() {
                 <p className="mx-auto mt-1.5 max-w-sm text-[14px] leading-relaxed text-ink-2">
                   {widgetPayment
                     ? `Choisissez votre opérateur, confirmez ${formatFcfa(plan.depositAmount)} pour le ${formatPhone(phone)}, puis validez avec votre code secret sur votre téléphone.`
-                    : (paymentStatus.data?.data.instruction ??
+                    : (paymentStatus.data?.instruction ??
                       `Une demande de ${formatFcfa(plan.depositAmount)} a été envoyée au ${formatPhone(phone)}. Saisissez votre code secret pour la confirmer.`)}
                 </p>
               </div>
@@ -470,9 +523,9 @@ export function BookingPage() {
                 </Button>
               ) : null}
 
-              {paymentStatus.data?.data.transactionRef ? (
+              {paymentStatus.data?.transactionRef ? (
                 <p className="tnum text-[12px] text-muted">
-                  Référence : {paymentStatus.data.data.transactionRef}
+                  Référence : {paymentStatus.data.transactionRef}
                 </p>
               ) : null}
             </Card>

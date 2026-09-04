@@ -43,10 +43,12 @@ jobs:
       - name: Installer les dependances
         run: npm ci
 
-      - name: Construire (mode showcase, sous-chemin /ekuiseo/)
+      - name: Construire (client de la production, sous-chemin /ekuiseo/)
         env:
           VITE_BASE_PATH: /ekuiseo/
-        run: npm run build:showcase
+          # La vitrine est un vrai client de l'API de production : aucune donnee factice.
+          VITE_API_URL: https://ekuiseo.com
+        run: npm run build
 
       - name: Preparer l'artefact Pages
         uses: actions/configure-pages@v5

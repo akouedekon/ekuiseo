@@ -96,8 +96,6 @@ Au minimum, renseignez et **changez les valeurs par défaut** de :
 - `SMS_MODE=http` et `SMS_HTTP_URL`/`SMS_PROVIDER_KEY` — sans cela (mode `log` par
   défaut), les codes OTP sont uniquement journalisés dans les logs du backend, ce qui
   est **inacceptable en production** (voir `docs/CONFORMITE.md` et `docs/LANCEMENT.md`)
-- `VITE_DEMO_FALLBACK=false` — sinon une panne réelle du backend peut être masquée par
-  des données factices affichées aux utilisateurs (voir `.env.example`)
 
 `docker-compose.prod.yml` refuse de démarrer si `DB_PASSWORD`, `JWT_SECRET`, `DOMAIN` ou
 `ACME_EMAIL` sont absents (erreur explicite au lieu d'une valeur par défaut faible).

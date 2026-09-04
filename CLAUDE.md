@@ -83,9 +83,10 @@ GitHub Actions, cible de déploiement : VPS Hostinger.
 - Le front ne recalcule jamais un montant pour une réservation existante : il lit le
   `paymentPlan` renvoyé par l'API. Les estimations locales sont autorisées **avant**
   création, et doivent être affichées comme telles.
-- Réseau dégradé assumé : cache TanStack Query persisté, bandeau hors ligne, réessais.
-  `VITE_DEMO_FALLBACK` fait retomber l'interface sur un jeu factice — **opt-in strict**
-  (`=== 'true'`), avec bandeau d'avertissement, et doit valoir `false` en production.
+- Réseau dégradé assumé : cache TanStack Query persisté, bandeau hors ligne, réessais
+  uniquement sur erreur transitoire (réseau, 5xx), délai de 20 s par requête.
+  **Aucune donnée factice** : le mode démonstration a été retiré, chaque écran lit
+  l'API ou affiche un état d'erreur avec réessai.
 
 ## Où en est le projet
 

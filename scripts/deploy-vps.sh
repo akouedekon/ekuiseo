@@ -45,7 +45,6 @@ PORT="${EKUISEO_HTTP_PORT:-8090}"
 for var in DB_PASSWORD JWT_SECRET DOMAIN ACME_EMAIL; do
   [ -n "${!var:-}" ] || die "la variable $var est vide dans .env."
 done
-[ "${VITE_DEMO_FALLBACK:-false}" = "false" ] || die "VITE_DEMO_FALLBACK doit valoir false en production."
 
 log "Construction et demarrage (Caddy sur 127.0.0.1:$PORT, derriere le nginx de l'hote)"
 docker compose -f docker-compose.prod.yml -f docker-compose.vps.yml up -d --build --remove-orphans

@@ -1,15 +1,17 @@
 import { Ban, RotateCcw, Search, ShieldCheck, Star, UserX } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/feedback/ConfirmDialog'
 import { AdminPageHeader } from '@/components/layout/AdminPageHeader'
 import { DataTable, type DataTableColumn } from '@/components/tables/DataTable'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Input, Textarea } from '@/components/ui/input'
 import { Avatar } from '@/components/ui/misc'
 import { EmptyState, ErrorState } from '@/components/ui/states'
 import { useAdminUsers, useToggleUserSuspension } from '@/hooks/useAdmin'
+import { describeError } from '@/lib/errors'
 import { formatDayShort, formatPhone } from '@/lib/format'
 import type { AdminUserResponse } from '@/api/extended'
 
@@ -26,9 +28,9 @@ const COLUMNS: DataTableColumn<AdminUserResponse>[] = [
       <span className="flex items-center gap-3">
         <Avatar firstName={user.firstName} lastName={user.lastName} size={36} className="hidden lg:inline-flex" />
         <span className="min-w-0">
-          <span className="block truncate font-semibold text-ink">
+          <Link to={`/drivers/${user.id}`} className="block truncate font-semibold text-ink underline-offset-4 hover:underline">
             {user.firstName} {user.lastName}
-          </span>
+          </Link>
           <span className="tnum block truncate text-label text-muted">
             {formatPhone(user.phone)}
             {user.email ? <span className="hidden 2xl:inline"> · {user.email}</span> : null}
@@ -105,6 +107,7 @@ export function AdminUsers() {
   const [input, setInput] = useState('')
   const [query, setQuery] = useState('')
   const [target, setTarget] = useState<AdminUserResponse | null>(null)
+  const [reason, setReason] = useState('')
   const users = useAdminUsers(query)
   const toggle = useToggleUserSuspension()
 
@@ -114,19 +117,30 @@ export function AdminUsers() {
     return () => window.clearTimeout(id)
   }, [input])
 
-  const list = users.data?.data ?? []
+  const list = users.data ?? []
+
+  const close = () => {
+    setTarget(null)
+    setReason('')
+  }
 
   const confirmToggle = () => {
     if (!target) return
     const user = target
     const suspend = !user.suspended
+    if (suspend && !reason.trim()) return
     toggle.mutate(
-      { id: user.id, suspend },
+      { id: user.id, suspend, reason: suspend ? reason.trim() : undefined },
       {
-        onSuccess: () =>
-          toast.success(suspend ? `${user.firstName} ${user.lastName} a été suspendu` : `${user.firstName} ${user.lastName} a été réactivé`),
-        onError: () => toast.error("L'action n'a pas abouti. Réessayez."),
-        onSettled: () => setTarget(null),
+        onSuccess: () => {
+          toast.success(
+            suspend
+              ? `${user.firstName} ${user.lastName} a été suspendu`
+              : `${user.firstName} ${user.lastName} a été réactivé`,
+          )
+          close()
+        },
+        onError: (error) => toast.error(describeError(error, "L'action n'a pas abouti. Réessayez.")),
       },
     )
   }
@@ -136,7 +150,7 @@ export function AdminUsers() {
       <AdminPageHeader
         title="Utilisateurs"
         count={users.isSuccess ? list.length : undefined}
-        description="Recherche par nom, numéro ou e-mail. Une suspension bloque la connexion et les réservations."
+        description="Recherche par nom, numéro ou e-mail. Une suspension bloque la connexion et les réservations ; elle est motivée et journalisée."
       />
 
       <Input
@@ -150,7 +164,7 @@ export function AdminUsers() {
       />
 
       {users.isError ? (
-        <ErrorState onRetry={() => users.refetch()} />
+        <ErrorState description={describeError(users.error)} onRetry={() => users.refetch()} />
       ) : (
         <DataTable
           caption="Liste des utilisateurs"
@@ -192,7 +206,7 @@ export function AdminUsers() {
 
       <ConfirmDialog
         open={target !== null}
-        onOpenChange={(open) => !open && setTarget(null)}
+        onOpenChange={(open) => !open && close()}
         title={target?.suspended ? 'Réactiver ce compte ?' : 'Suspendre ce compte ?'}
         description={
           target
@@ -203,9 +217,22 @@ export function AdminUsers() {
         }
         tone={target?.suspended ? 'default' : 'danger'}
         confirmLabel={target?.suspended ? 'Réactiver' : 'Suspendre'}
+        confirmDisabled={target ? !target.suspended && !reason.trim() : true}
         loading={toggle.isPending}
         onConfirm={confirmToggle}
-      />
+      >
+        {target && !target.suspended ? (
+          <Textarea
+            label="Motif de la suspension"
+            hint="Obligatoire. Conservé dans le journal d'audit."
+            placeholder="Signalements répétés, fraude à l'acompte…"
+            rows={3}
+            maxLength={500}
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+          />
+        ) : null}
+      </ConfirmDialog>
     </div>
   )
 }

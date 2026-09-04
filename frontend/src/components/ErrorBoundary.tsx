@@ -8,7 +8,8 @@ interface State {
 /**
  * Frontiere d'erreur globale : un plantage de rendu ne doit jamais laisser
  * un ecran blanc. React n'expose pas encore d'equivalent en composant
- * fonctionnel, d'ou la classe.
+ * fonctionnel, d'ou la classe. Doit etre montee A L'INTERIEUR du routeur :
+ * l'ecran de secours contient des liens.
  */
 export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
   state: State = { error: null }
@@ -18,13 +19,13 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    // TODO(observabilite) : brancher un collecteur (Sentry ou equivalent).
+    // Le detail technique reste ici (console du navigateur) ; l'utilisateur voit un message generique.
     console.error('Erreur non rattrapée :', error, info.componentStack)
   }
 
   render() {
     if (this.state.error) {
-      return <ErrorPage error={this.state.error} onReset={() => this.setState({ error: null })} />
+      return <ErrorPage onReset={() => this.setState({ error: null })} />
     }
     return this.props.children
   }

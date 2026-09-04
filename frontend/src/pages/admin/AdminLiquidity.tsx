@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { EmptyState, ErrorState, StatSkeleton } from '@/components/ui/states'
 import { SectionTitle } from '@/components/layout/PageContainer'
 import { downloadLiquidityCsv, useAdminLiquidity } from '@/hooks/useAdmin'
+import { describeError } from '@/lib/errors'
 import { formatFromNow } from '@/lib/format'
 import { listContainer } from '@/lib/motion'
 import type { TripType } from '@/api/types'
@@ -31,9 +32,9 @@ export function AdminLiquidity() {
   const [exporting, setExporting] = useState(false)
   const liquidity = useAdminLiquidity(days)
 
-  if (liquidity.isError) return <ErrorState onRetry={() => liquidity.refetch()} />
+  if (liquidity.isError) return <ErrorState description={describeError(liquidity.error)} onRetry={() => liquidity.refetch()} />
 
-  const data = liquidity.data?.data
+  const data = liquidity.data
   const cur = data?.current
   const prev = data?.previous
 
@@ -41,8 +42,8 @@ export function AdminLiquidity() {
     setExporting(true)
     try {
       await downloadLiquidityCsv(days)
-    } catch {
-      toast.error("Export impossible pour l'instant. Vérifiez votre connexion, puis réessayez.")
+    } catch (error) {
+      toast.error(describeError(error, "Export impossible pour l'instant."))
     } finally {
       setExporting(false)
     }
@@ -196,9 +197,9 @@ export function AdminLiquidity() {
           />
           <StatTile
             label="Délai avant 1re réservation"
-            value={cur.medianHoursToFirstBooking === null ? '—' : formatHours(cur.medianHoursToFirstBooking)}
+            value={cur.medianHoursToFirstBooking == null ? '—' : formatHours(cur.medianHoursToFirstBooking)}
             delta={
-              cur.medianHoursToFirstBooking === null || prev.medianHoursToFirstBooking === null
+              cur.medianHoursToFirstBooking == null || prev.medianHoursToFirstBooking == null
                 ? null
                 : Math.round((cur.medianHoursToFirstBooking - prev.medianHoursToFirstBooking) * 10) / 10
             }

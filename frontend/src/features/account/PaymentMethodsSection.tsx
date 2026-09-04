@@ -24,7 +24,7 @@ export function PaymentMethodsSection({ defaultPhone }: { defaultPhone: string }
   const [addOpen, setAddOpen] = useState(false)
   const [toDelete, setToDelete] = useState<PaymentMethodResponse | null>(null)
 
-  const list = methods.data?.data ?? []
+  const list = methods.data ?? []
 
   const confirmDelete = () => {
     if (!toDelete) return

@@ -1,4 +1,4 @@
-import { Banknote, Wallet } from 'lucide-react'
+import { Banknote, PlayCircle, Wallet } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/feedback/ConfirmDialog'
@@ -9,7 +9,8 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { EmptyState, ErrorState } from '@/components/ui/states'
 import { providerLabel } from '@/lib/payments'
-import { useAdminPayouts, useMarkPayoutPaid } from '@/hooks/useAdmin'
+import { useAdminPayouts, useMarkPayoutPaid, useRunPayoutBatch } from '@/hooks/useAdmin'
+import { describeError } from '@/lib/errors'
 import { formatDayShort, formatFcfa, formatPhone } from '@/lib/format'
 import type { AdminPayoutResponse, PayoutStatus } from '@/api/extended'
 
@@ -18,11 +19,19 @@ const STATUS: Record<PayoutStatus, { label: string; tone: 'warning' | 'indigo' |
   FAILED: { label: 'Échec', tone: 'danger', order: 1 },
   PROCESSING: { label: 'En cours', tone: 'indigo', order: 2 },
   PAID: { label: 'Versé', tone: 'success', order: 3 },
+  SETTLED: { label: 'Versé', tone: 'success', order: 3 },
 }
 
 const ACCENT: Partial<Record<PayoutStatus, string>> = {
   PENDING: 'var(--ocre)',
   FAILED: 'var(--vermillon)',
+}
+
+function accountLabel(payout: AdminPayoutResponse): string {
+  const provider = payout.provider ? providerLabel(payout.provider) : null
+  const phone = payout.phone ? formatPhone(payout.phone) : null
+  if (!provider && !phone) return 'Aucun compte mobile money enregistré'
+  return [provider, phone].filter(Boolean).join(' ')
 }
 
 const COLUMNS: DataTableColumn<AdminPayoutResponse>[] = [
@@ -40,8 +49,10 @@ const COLUMNS: DataTableColumn<AdminPayoutResponse>[] = [
     className: 'hidden xl:table-cell',
     cell: (payout) => (
       <span className="tnum block text-label text-ink-2">
-        <span className="block">{providerLabel(payout.provider)}</span>
-        <span className="block whitespace-nowrap text-muted">{formatPhone(payout.phone)}</span>
+        {payout.provider ? <span className="block">{providerLabel(payout.provider)}</span> : null}
+        <span className={payout.phone ? 'block whitespace-nowrap text-muted' : 'block text-[var(--vermillon)]'}>
+          {payout.phone ? formatPhone(payout.phone) : 'Aucun compte enregistré'}
+        </span>
       </span>
     ),
   },
@@ -76,17 +87,19 @@ const COLUMNS: DataTableColumn<AdminPayoutResponse>[] = [
     id: 'status',
     header: 'Statut',
     mobile: 'badge',
-    sortValue: (payout) => STATUS[payout.status].order,
-    cell: (payout) => <Badge tone={STATUS[payout.status].tone}>{STATUS[payout.status].label}</Badge>,
+    sortValue: (payout) => STATUS[payout.status]?.order ?? 9,
+    cell: (payout) => <Badge tone={STATUS[payout.status]?.tone ?? 'neutral'}>{STATUS[payout.status]?.label ?? payout.status}</Badge>,
   },
 ]
 
 export function AdminPayouts() {
   const payouts = useAdminPayouts()
   const markPaid = useMarkPayoutPaid()
+  const runBatch = useRunPayoutBatch()
   const [target, setTarget] = useState<AdminPayoutResponse | null>(null)
+  const [runOpen, setRunOpen] = useState(false)
 
-  const list = payouts.data?.data ?? []
+  const list = payouts.data ?? []
   const due = list.filter((p) => p.status === 'PENDING' || p.status === 'FAILED')
   const pendingTotal = due.reduce((sum, p) => sum + p.amount, 0)
 
@@ -94,12 +107,33 @@ export function AdminPayouts() {
     if (!target) return
     const payout = target
     markPaid.mutate(payout.id, {
-      onSuccess: () =>
+      onSuccess: () => {
         toast.success('Reversement enregistré', {
-          description: `${formatFcfa(payout.amount)} vers ${formatPhone(payout.phone)}`,
-        }),
-      onError: () => toast.error("Le reversement n'a pas pu être enregistré. Réessayez."),
-      onSettled: () => setTarget(null),
+          description: `${formatFcfa(payout.amount)} pour ${payout.driverName}`,
+        })
+        setTarget(null)
+      },
+      onError: (error) => toast.error(describeError(error, "Le reversement n'a pas pu être enregistré. Réessayez.")),
+    })
+  }
+
+  const confirmRun = () => {
+    runBatch.mutate(undefined, {
+      onSuccess: (result) => {
+        setRunOpen(false)
+        toast.success(
+          result.payoutsCreated > 0
+            ? `${result.payoutsCreated} lot${result.payoutsCreated > 1 ? 's' : ''} créé${result.payoutsCreated > 1 ? 's' : ''}`
+            : 'Aucun lot à créer',
+          {
+            description:
+              result.payoutsCreated > 0
+                ? `${formatFcfa(result.totalAmountFcfa)} à verser aux conducteurs.`
+                : 'Aucun conducteur ne dépasse le seuil de reversement cette semaine.',
+          },
+        )
+      },
+      onError: (error) => toast.error(describeError(error, "Le lot n'a pas pu être constitué.")),
     })
   }
 
@@ -109,6 +143,12 @@ export function AdminPayouts() {
         title="Reversements"
         count={payouts.isSuccess ? due.length : undefined}
         description="Lots hebdomadaires dus aux conducteurs. Le décaissement mobile money se fait hors plateforme, puis se marque ici comme versé."
+        actions={
+          <Button variant="secondary" size="sm" onClick={() => setRunOpen(true)} loading={runBatch.isPending}>
+            <PlayCircle className="size-4" aria-hidden />
+            Constituer les lots
+          </Button>
+        }
       />
 
       <Card className="mb-4 flex items-center gap-3 p-4">
@@ -118,13 +158,13 @@ export function AdminPayouts() {
         <div>
           <p className="text-label text-muted">Reste à verser aux conducteurs</p>
           <p className="tnum font-display text-display font-extrabold leading-none tracking-[-0.03em]">
-            {payouts.isPending ? '…' : formatFcfa(pendingTotal)}
+            {payouts.isPending ? '…' : payouts.isError ? '—' : formatFcfa(pendingTotal)}
           </p>
         </div>
       </Card>
 
       {payouts.isError ? (
-        <ErrorState onRetry={() => payouts.refetch()} />
+        <ErrorState description={describeError(payouts.error)} onRetry={() => payouts.refetch()} />
       ) : (
         <DataTable
           caption="Lots de reversement"
@@ -135,7 +175,11 @@ export function AdminPayouts() {
           initialSort={{ id: 'status', direction: 'asc' }}
           rowAccent={(payout) => ACCENT[payout.status]}
           empty={
-            <EmptyState icon={Banknote} title="Aucun reversement" description="Aucune période à régler pour l'instant." />
+            <EmptyState
+              icon={Banknote}
+              title="Aucun reversement"
+              description="Aucun lot pour l'instant. Constituez les lots de la semaine pour les conducteurs au-dessus du seuil."
+            />
           }
           rowActions={(payout) =>
             payout.status === 'PENDING' || payout.status === 'FAILED' ? (
@@ -153,12 +197,22 @@ export function AdminPayouts() {
         title="Confirmer le versement ?"
         description={
           target
-            ? `${formatFcfa(target.amount)} pour ${target.driverName}, vers ${providerLabel(target.provider)} ${formatPhone(target.phone)}. Ne confirmez qu'une fois le transfert mobile money réellement effectué : cette action est définitive.`
+            ? `${formatFcfa(target.amount)} pour ${target.driverName}, vers ${accountLabel(target)}. Ne confirmez qu'une fois le transfert mobile money réellement effectué : cette action est définitive.`
             : undefined
         }
         confirmLabel="Oui, versé"
         loading={markPaid.isPending}
         onConfirm={confirmPaid}
+      />
+
+      <ConfirmDialog
+        open={runOpen}
+        onOpenChange={setRunOpen}
+        title="Constituer les lots de la semaine ?"
+        description="Chaque conducteur dont le solde net dépasse le seuil reçoit un lot « à verser », calculé sur les réservations payées en mobile money et non encore reversées. Aucun argent ne part : le virement reste manuel."
+        confirmLabel="Constituer"
+        loading={runBatch.isPending}
+        onConfirm={confirmRun}
       />
     </div>
   )

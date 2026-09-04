@@ -23,6 +23,7 @@ import { Progress } from '@/components/ui/misc'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ErrorState, StatSkeleton } from '@/components/ui/states'
 import { useAdminLiquidity, useAdminStats } from '@/hooks/useAdmin'
+import { describeError } from '@/lib/errors'
 import { formatFcfa, formatFcfaCompact } from '@/lib/format'
 import { listContainer } from '@/lib/motion'
 import type { BookingStatus } from '@/api/types'
@@ -59,10 +60,10 @@ export function AdminDashboard() {
   const stats = useAdminStats(days)
   const liquidity = useAdminLiquidity(days)
 
-  if (stats.isError) return <ErrorState onRetry={() => stats.refetch()} />
+  if (stats.isError) return <ErrorState description={describeError(stats.error)} onRetry={() => stats.refetch()} />
 
-  const data = stats.data?.data
-  const liq = liquidity.data?.data
+  const data = stats.data
+  const liq = liquidity.data
 
   const series =
     data?.series.map((row) => ({
@@ -103,10 +104,14 @@ export function AdminDashboard() {
       {/* --- Metrique nord : places confirmees vs seuil de viabilite --- */}
       <Card className="relative overflow-hidden p-5 sm:p-6">
         <span aria-hidden className="ek-glow pointer-events-none absolute inset-x-0 top-0 h-full" />
-        {liquidity.isPending || !liq ? (
+        {liquidity.isError ? (
+          <ErrorState
+            title="Métrique nord indisponible"
+            description={describeError(liquidity.error)}
+            onRetry={() => liquidity.refetch()}
+          />
+        ) : liquidity.isPending || !liq ? (
           <div className="shimmer h-[168px] rounded-[var(--radius-control)]" />
-        ) : liquidity.isError ? (
-          <p className="text-[14px] text-muted">Métrique nord indisponible pour l'instant.</p>
         ) : (
           <div className="relative grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
             <div>
@@ -183,7 +188,9 @@ export function AdminDashboard() {
           <ArrowRight className="size-3.5" aria-hidden />
         </Link>
       </div>
-      {liquidity.isPending || !liq ? (
+      {liquidity.isError ? (
+        <ErrorState title="Liquidité indisponible" description={describeError(liquidity.error)} onRetry={() => liquidity.refetch()} />
+      ) : liquidity.isPending || !liq ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {[0, 1, 2, 3].map((i) => (
             <StatSkeleton key={i} />
@@ -221,10 +228,10 @@ export function AdminDashboard() {
           <StatTile
             label="Délai avant 1re réservation"
             value={
-              liq.current.medianHoursToFirstBooking === null ? '—' : formatHours(liq.current.medianHoursToFirstBooking)
+              liq.current.medianHoursToFirstBooking == null ? '—' : formatHours(liq.current.medianHoursToFirstBooking)
             }
             delta={
-              liq.current.medianHoursToFirstBooking === null || liq.previous.medianHoursToFirstBooking === null
+              liq.current.medianHoursToFirstBooking == null || liq.previous.medianHoursToFirstBooking == null
                 ? null
                 : Math.round((liq.current.medianHoursToFirstBooking - liq.previous.medianHoursToFirstBooking) * 10) / 10
             }
@@ -419,6 +426,13 @@ export function AdminDashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-rule">
+              {data && data.topRoutes.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="px-4 py-6 text-center text-[13px] text-muted">
+                    Aucun trajet publié sur la période.
+                  </td>
+                </tr>
+              ) : null}
               {(data?.topRoutes ?? []).map((route) => (
                 <tr key={`${route.origin}-${route.destination}`}>
                   <th scope="row" className="px-4 py-3 text-left font-medium">

@@ -2,6 +2,7 @@ package bj.ekuiseo.api.web.controller;
 
 import bj.ekuiseo.api.dto.auth.AuthResponse;
 import bj.ekuiseo.api.dto.auth.LoginRequest;
+import bj.ekuiseo.api.dto.auth.OtpRegisterRequest;
 import bj.ekuiseo.api.dto.auth.OtpRequestRequest;
 import bj.ekuiseo.api.dto.auth.OtpVerifyRequest;
 import bj.ekuiseo.api.dto.auth.RefreshRequest;
@@ -34,6 +35,13 @@ public class AuthController {
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest req) {
         return ResponseEntity.status(HttpStatus.CREATED).body(authService.register(req));
+    }
+
+    @Operation(summary = "Inscription par OTP", description = "Cree le compte (prenom, nom, e-mail facultatif) sans mot de passe et envoie le code SMS. La session s'ouvre ensuite via /otp/verify. 409 si le numero est deja inscrit.")
+    @PostMapping("/otp/register")
+    public ResponseEntity<Void> registerWithOtp(@Valid @RequestBody OtpRegisterRequest req) {
+        authService.registerWithOtp(req);
+        return ResponseEntity.accepted().build();
     }
 
     @Operation(summary = "Demander un code OTP", description = "Envoie un code a 6 chiffres par SMS, valable 5 minutes. Limite a 3 demandes/10 min par numero (429 au-dela).")

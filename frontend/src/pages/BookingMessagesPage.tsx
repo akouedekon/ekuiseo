@@ -2,6 +2,7 @@ import { motion } from 'motion/react'
 import { Clock, Send } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router'
+import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -10,24 +11,29 @@ import { ErrorState } from '@/components/ui/states'
 import { PageContainer, PageHeader } from '@/components/layout/PageContainer'
 import { useBooking } from '@/hooks/useBookings'
 import { useMe } from '@/hooks/useAuth'
-import { useMessages, useSendMessage } from '@/hooks/useMessages'
+import { useConversations, useMessages, useSendMessage } from '@/hooks/useMessages'
 import { useOnlineStatus } from '@/hooks/useNetwork'
 import { cn } from '@/lib/cn'
+import { describeError } from '@/lib/errors'
 import { formatRelativeDay, formatTime } from '@/lib/format'
 
 /** Messagerie liee a une reservation. */
 export function BookingMessagesPage() {
   const { id } = useParams<{ id: string }>()
-  const booking = useBooking(id)
   const messages = useMessages(id)
   const me = useMe()
-  const send = useSendMessage(id ?? '')
+  // L'interlocuteur vient de la liste des conversations (valable pour le
+  // conducteur comme pour le passager) ; la reservation ne sert qu'au sous-titre.
+  const conversations = useConversations()
+  const conversation = conversations.data?.find((c) => c.bookingId === id)
+  const booking = useBooking(id)
+  const send = useSendMessage(id, me.data?.id)
   const online = useOnlineStatus()
   const [draft, setDraft] = useState('')
   const endRef = useRef<HTMLDivElement>(null)
 
-  const list = messages.data?.data ?? []
-  const myId = me.data?.data.id
+  const list = messages.data ?? []
+  const myId = me.data?.id
 
   // On colle au dernier message a chaque arrivee, sans animer si l'ecran est deja en bas.
   useEffect(() => {
@@ -38,24 +44,30 @@ export function BookingMessagesPage() {
     event.preventDefault()
     const body = draft.trim()
     if (!body) return
-    send.mutate(body)
+    send.mutate(body, {
+      onError: (error) => {
+        setDraft(body)
+        toast.error(describeError(error, "Le message n'a pas pu être envoyé."))
+      },
+    })
     setDraft('')
   }
 
-  const counterpart = booking.data?.data.trip.driver
+  const counterpart = conversation?.counterpart ?? booking.data?.trip.driver
+  const tripInfo = conversation
+    ? { tripId: conversation.tripId, originLabel: conversation.originLabel, destLabel: conversation.destLabel, departureAt: conversation.departureAt }
+    : booking.data
+      ? { tripId: booking.data.tripId, originLabel: booking.data.trip.originLabel, destLabel: booking.data.trip.destLabel, departureAt: booking.data.trip.departureAt }
+      : null
 
   return (
     <PageContainer width="sm" className="flex min-h-[calc(100dvh-6rem)] flex-col pb-4">
       <PageHeader
         title={counterpart ? `${counterpart.firstName} ${counterpart.lastName}` : 'Conversation'}
         subtitle={
-          booking.data ? (
-            <Link
-              to={`/trips/${booking.data.data.tripId}`}
-              className="underline-offset-4 hover:underline"
-            >
-              {booking.data.data.trip.originLabel} → {booking.data.data.trip.destLabel} ·{' '}
-              {formatRelativeDay(booking.data.data.trip.departureAt)}
+          tripInfo ? (
+            <Link to={`/trips/${tripInfo.tripId}`} className="underline-offset-4 hover:underline">
+              {tripInfo.originLabel} → {tripInfo.destLabel} · {formatRelativeDay(tripInfo.departureAt)}
             </Link>
           ) : undefined
         }
@@ -159,7 +171,7 @@ export function BookingMessagesPage() {
           placeholder="Écrire un message…"
           className="ek-field max-h-32 min-h-11 flex-1 resize-none rounded-[var(--radius-control)] px-3 py-2.5 text-base placeholder:text-muted"
         />
-        <Button type="submit" size="icon" disabled={!draft.trim()} aria-label="Envoyer le message">
+        <Button type="submit" size="icon" disabled={!draft.trim() || !id} aria-label="Envoyer le message">
           <Send className="size-[18px]" aria-hidden />
         </Button>
       </form>

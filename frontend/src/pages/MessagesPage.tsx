@@ -12,7 +12,7 @@ import { listContainer, listItem } from '@/lib/motion'
 /** Liste des conversations, une par reservation. */
 export function MessagesPage() {
   const conversations = useConversations()
-  const list = conversations.data?.data ?? []
+  const list = conversations.data ?? []
 
   return (
     <PageContainer width="md">

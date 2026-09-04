@@ -136,22 +136,36 @@ public class PaymentService {
     public PaymentStatusResponse getStatus(UUID paymentId, UUID requesterId) {
         Payment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new NotFoundException("Paiement introuvable"));
-        Booking booking = payment.getBooking();
-        if (booking == null || !booking.getPassenger().getId().equals(requesterId)) {
-            throw new ForbiddenException("Ce paiement ne vous appartient pas");
-        }
-        return toStatusResponse(payment, booking);
+        assertOwner(payment, requesterId);
+        return toStatusResponse(payment);
     }
 
-    private PaymentStatusResponse toStatusResponse(Payment payment, Booking booking) {
+    /**
+     * Un paiement appartient au passager de sa reservation, ou au conducteur de
+     * son abonnement (regle metier n.11) : personne d'autre ne peut le consulter
+     * ni le confirmer.
+     */
+    private void assertOwner(Payment payment, UUID requesterId) {
+        Booking booking = payment.getBooking();
+        DriverSubscription subscription = payment.getSubscription();
+        boolean owner = booking != null
+                ? booking.getPassenger().getId().equals(requesterId)
+                : subscription != null && subscription.getDriver().getId().equals(requesterId);
+        if (!owner) {
+            throw new ForbiddenException("Ce paiement ne vous appartient pas");
+        }
+    }
+
+    private PaymentStatusResponse toStatusResponse(Payment payment) {
+        Booking booking = payment.getBooking();
         String status = mapStatusForClient(payment, booking);
         boolean awaitingWebhook = status.equals("PENDING") || status.equals("PROCESSING");
         String instruction = awaitingWebhook
                 ? "Composez le code USSD de votre operateur mobile money et validez avec votre code secret."
                 : null;
-        return new PaymentStatusResponse(payment.getId(), booking.getId(), payment.getProviderTxId(),
-                mapProviderForClient(payment.getChannel()), status, payment.getAmount(), instruction,
-                payment.getCreatedAt());
+        return new PaymentStatusResponse(payment.getId(), booking != null ? booking.getId() : null,
+                payment.getProviderTxId(), mapProviderForClient(payment.getChannel()), status, payment.getAmount(),
+                instruction, payment.getCreatedAt());
     }
 
     /**
@@ -172,27 +186,30 @@ public class PaymentService {
     public PaymentStatusResponse confirmFromWidget(UUID paymentId, UUID requesterId, String transactionId) {
         Payment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new NotFoundException("Paiement introuvable"));
+        assertOwner(payment, requesterId);
         Booking booking = payment.getBooking();
-        if (booking == null || !booking.getPassenger().getId().equals(requesterId)) {
-            throw new ForbiddenException("Ce paiement ne vous appartient pas");
-        }
+        DriverSubscription subscription = payment.getSubscription();
         if (transactionId == null || transactionId.isBlank()) {
             throw new BadRequestException("transactionId manquant");
         }
         String txId = transactionId.trim();
         if (payment.getStatus() == PaymentStatus.SUCCEEDED) {
-            return toStatusResponse(payment, booking); // deja confirme (webhook passe avant nous)
+            return toStatusResponse(payment); // deja confirme (webhook passe avant nous)
         }
 
         // Course avec le webhook : il a pu creer/renseigner un paiement portant deja ce
-        // transactionId pour la meme reservation. On renvoie alors son etat, sans rien refaire.
+        // transactionId pour le meme objet. On renvoie alors son etat, sans rien refaire.
         Optional<Payment> byTx = paymentRepository.findByProviderAndProviderTxId(PaymentProvider.KKIAPAY, txId);
         if (byTx.isPresent() && !byTx.get().getId().equals(payment.getId())) {
             Payment other = byTx.get();
-            if (other.getBooking() == null || !other.getBooking().getId().equals(booking.getId())) {
-                throw new BadRequestException("Cette transaction ne correspond pas a cette reservation");
+            boolean sameTarget = booking != null
+                    ? other.getBooking() != null && other.getBooking().getId().equals(booking.getId())
+                    : other.getSubscription() != null && subscription != null
+                            && other.getSubscription().getId().equals(subscription.getId());
+            if (!sameTarget) {
+                throw new BadRequestException("Cette transaction ne correspond pas a ce paiement");
             }
-            return toStatusResponse(other, booking);
+            return toStatusResponse(other);
         }
 
         KkiapayGateway.VerificationResult verified = kkiapayGateway.verifyTransaction(txId);
@@ -216,14 +233,18 @@ public class PaymentService {
         paymentRepository.save(payment);
 
         if (verified.success() && !amountOk) {
-            log.error("Paiement Kkiapay {} d'un montant insuffisant ({} F verifies pour {} F attendus) sur la "
-                            + "reservation {} : non confirme, remboursement manuel a traiter.",
-                    txId, verified.amountFcfa(), payment.getAmount(), booking.getId());
+            log.error("Paiement Kkiapay {} d'un montant insuffisant ({} F verifies pour {} F attendus) sur le "
+                            + "paiement {} : non confirme, remboursement manuel a traiter.",
+                    txId, verified.amountFcfa(), payment.getAmount(), payment.getId());
         }
         if (!stillPending) {
-            handleBookingPaymentResult(booking, succeeded);
+            if (booking != null) {
+                handleBookingPaymentResult(booking, succeeded);
+            } else if (subscription != null) {
+                handleSubscriptionPaymentResult(subscription, succeeded);
+            }
         }
-        return toStatusResponse(payment, booking);
+        return toStatusResponse(payment);
     }
 
     /**
@@ -260,7 +281,7 @@ public class PaymentService {
      */
     private String mapStatusForClient(Payment payment, Booking booking) {
         return switch (payment.getStatus()) {
-            case INITIATED -> (booking.getStatus() == BookingStatus.CANCELLED_BY_PASSENGER
+            case INITIATED -> booking != null && (booking.getStatus() == BookingStatus.CANCELLED_BY_PASSENGER
                     || booking.getStatus() == BookingStatus.CANCELLED_BY_DRIVER) ? "EXPIRED" : "PROCESSING";
             case SUCCEEDED, REFUNDED -> "SUCCEEDED";
             case FAILED -> "FAILED";

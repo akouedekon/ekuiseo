@@ -21,14 +21,16 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { SegmentedToggle } from '@/components/ui/tabs'
 import { Skeleton, Stepper } from '@/components/ui/misc'
+import { ErrorState } from '@/components/ui/states'
 import { CityAutocomplete } from '@/components/trip/CityAutocomplete'
 import { PageContainer, SectionTitle } from '@/components/layout/PageContainer'
-import { isAuthenticated } from '@/hooks/useAuth'
+import { useIsAuthenticated } from '@/hooks/useAuth'
 import { usePopularRoutes, useRecurringTrips } from '@/hooks/useTrips'
-import { BENIN_CITIES, findCityByLabel, type CityOption } from '@/lib/cities'
+import type { CityOption } from '@/lib/cities'
 import { formatFcfa } from '@/lib/format'
+import { DEPOSIT_FLOOR } from '@/lib/payments'
 import { listContainer, listItem } from '@/lib/motion'
-import type { PopularRouteResponse } from '@/api/extended'
+import type { PopularRouteResponse, RecurringTripResponse } from '@/api/extended'
 import type { TripType } from '@/api/types'
 
 const WEEKDAY_LETTERS = ['L', 'M', 'M', 'J', 'V', 'S', 'D']
@@ -41,7 +43,7 @@ const PROMISES = [
     icon: Wallet,
     tone: 'bg-success-soft text-success-ink',
     title: 'Paiement en deux temps',
-    text: "Un acompte en mobile money, à partir de 1 000 FCFA, bloque la place. Le solde se règle en espèces au conducteur, à bord.",
+    text: `Un acompte en mobile money, à partir de ${formatFcfa(DEPOSIT_FLOOR)}, bloque la place. Le solde se règle en espèces au conducteur, à bord.`,
   },
   {
     icon: ShieldCheck,
@@ -64,7 +66,7 @@ function todayIso(): string {
 
 export function HomeSearchPage() {
   const navigate = useNavigate()
-  const authed = isAuthenticated()
+  const authed = useIsAuthenticated()
 
   const [tripType, setTripType] = useState<TripType>('INTERURBAIN')
   const [origin, setOrigin] = useState<CityOption | null>(null)
@@ -76,7 +78,7 @@ export function HomeSearchPage() {
   const recurring = useRecurringTrips(authed && tripType === 'QUOTIDIEN')
   // Axes reellement proposes en ce moment : la liste vient du serveur, jamais d'une constante.
   const popular = usePopularRoutes(4)
-  const popularRoutes = popular.data?.data ?? []
+  const popularRoutes = popular.data ?? []
 
   const errors = useMemo(
     () => ({
@@ -113,9 +115,10 @@ export function HomeSearchPage() {
     goTo(origin, destination)
   }
 
-  const goToRoute = (fromLabel: string, toLabel: string) => {
-    const from = findCityByLabel(fromLabel) ?? BENIN_CITIES[0]
-    const to = findCityByLabel(toLabel) ?? BENIN_CITIES[1]
+  /** Une navette memorisee porte ses coordonnees serveur : on ne devine jamais la ville. */
+  const goToRoute = (item: RecurringTripResponse) => {
+    const from: CityOption = { label: item.originLabel, lat: item.originLat, lng: item.originLng, region: '' }
+    const to: CityOption = { label: item.destLabel, lat: item.destLat, lng: item.destLng, region: '' }
     setOrigin(from)
     setDestination(to)
     goTo(from, to)
@@ -258,9 +261,15 @@ export function HomeSearchPage() {
                 <Skeleton className="h-4 w-40" />
                 <Skeleton className="mt-3 h-8 w-full" />
               </Card>
-            ) : recurring.data && recurring.data.data.length > 0 ? (
+            ) : recurring.isError ? (
+              <ErrorState
+                title="Navettes indisponibles"
+                description="Impossible de charger vos navettes enregistrées pour l'instant."
+                onRetry={() => recurring.refetch()}
+              />
+            ) : recurring.data && recurring.data.length > 0 ? (
               <motion.div variants={listContainer} initial="hidden" animate="show" className="space-y-3">
-                {recurring.data.data.map((item) => (
+                {recurring.data.map((item) => (
                   <motion.div key={item.id} variants={listItem}>
                     <Card className="p-5">
                       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -303,7 +312,7 @@ export function HomeSearchPage() {
                         size="sm"
                         block
                         className="mt-4"
-                        onClick={() => goToRoute(item.originLabel, item.destLabel)}
+                        onClick={() => goToRoute(item)}
                       >
                         Voir les départs
                       </Button>
@@ -320,12 +329,18 @@ export function HomeSearchPage() {
         ) : null}
 
         {/* --- Axes proposes en ce moment (donnees serveur) --- */}
-        {popular.isPending || popularRoutes.length > 0 ? (
+        {popular.isPending || popular.isError || popularRoutes.length > 0 ? (
           <section aria-labelledby="popular-title" className="mt-12">
             <SectionTitle>
               <span id="popular-title">Départs proposés en ce moment</span>
             </SectionTitle>
-            {popular.isPending ? (
+            {popular.isError ? (
+              <ErrorState
+                title="Départs indisponibles"
+                description="Impossible de charger les axes proposés pour l'instant."
+                onRetry={() => popular.refetch()}
+              />
+            ) : popular.isPending ? (
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {[0, 1, 2, 3].map((i) => (
                   <Skeleton key={i} className="h-[72px] rounded-[var(--radius-card)]" />

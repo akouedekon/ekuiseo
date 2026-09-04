@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { ArrowLeft, MessageSquareLock, Phone, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, Mail, MessageSquareLock, Phone, ShieldCheck, UserRound } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
@@ -9,32 +9,46 @@ import { Input } from '@/components/ui/input'
 import { OtpInput } from '@/components/ui/otp-input'
 import { PageContainer } from '@/components/layout/PageContainer'
 import { Logo } from '@/components/layout/Logo'
-import { useRequestOtp, useVerifyOtp } from '@/hooks/useAuth'
+import { ApiError } from '@/api/client'
+import { useRegisterOtp, useRequestOtp, useVerifyOtp } from '@/hooks/useAuth'
 import { useCountdown } from '@/hooks/useNetwork'
+import { describeError } from '@/lib/errors'
 import { formatCountdown, formatPhone } from '@/lib/format'
-import { phoneSchema } from '@/lib/validation'
+import { optionalEmailSchema, phoneSchema } from '@/lib/validation'
 
 const RESEND_DELAY_MS = 45_000
 
+/** Seuls les chemins internes sont acceptes comme destination de retour. */
+function safeNext(value: string | null): string {
+  if (!value || !value.startsWith('/') || value.startsWith('//')) return '/'
+  return value
+}
+
 /**
- * Connexion / inscription par telephone + code OTP.
- * Un seul parcours : pas de mot de passe, le numero est l'identite.
+ * Connexion et inscription par telephone + code OTP. Pas de mot de passe :
+ * le numero est l'identite. L'inscription demande en plus prenom et nom
+ * (obligatoires cote serveur) et un e-mail facultatif (recus de paiement).
  */
 export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const redirectTo = searchParams.get('next') ?? '/'
+  const redirectTo = safeNext(searchParams.get('next'))
 
   const [step, setStep] = useState<'phone' | 'code'>('phone')
   const [phone, setPhone] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
-  const [phoneError, setPhoneError] = useState<string>()
+  const [errors, setErrors] = useState<{ phone?: string; firstName?: string; lastName?: string; email?: string }>({})
   const [codeError, setCodeError] = useState<string>()
   const [resendAt, setResendAt] = useState<number | null>(null)
 
   const requestOtp = useRequestOtp()
+  const registerOtp = useRegisterOtp()
   const verifyOtp = useVerifyOtp()
   const resendIn = useCountdown(resendAt)
+  const sending = requestOtp.isPending || registerOtp.isPending
 
   // Le champ de code prend le focus des l'arrivee a l'etape 2.
   useEffect(() => {
@@ -44,21 +58,48 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
     }
   }, [step])
 
+  const validate = (): boolean => {
+    const next: typeof errors = {}
+    const parsedPhone = phoneSchema.safeParse(phone)
+    if (!parsedPhone.success) next.phone = parsedPhone.error.issues[0]?.message ?? 'Numéro de téléphone incomplet'
+    if (mode === 'register') {
+      if (!firstName.trim()) next.firstName = 'Indiquez votre prénom'
+      if (!lastName.trim()) next.lastName = 'Indiquez votre nom'
+      const parsedEmail = optionalEmailSchema.safeParse(email.trim())
+      if (!parsedEmail.success) next.email = parsedEmail.error.issues[0]?.message ?? 'Adresse e-mail invalide'
+    }
+    setErrors(next)
+    return Object.keys(next).length === 0
+  }
+
+  const onCodeSent = () => {
+    setResendAt(Date.now() + RESEND_DELAY_MS)
+    setStep('code')
+    toast.success('Code envoyé', { description: `Un SMS vient de partir vers le ${formatPhone(phone)}.` })
+  }
+
   const sendCode = (event?: React.FormEvent) => {
     event?.preventDefault()
-    const parsed = phoneSchema.safeParse(phone)
-    if (!parsed.success) {
-      setPhoneError(parsed.error.issues[0]?.message ?? 'Numéro de téléphone incomplet')
+    if (!validate()) return
+    if (mode === 'register' && step === 'phone') {
+      registerOtp.mutate(
+        { phone, firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim() || undefined },
+        {
+          onSuccess: onCodeSent,
+          onError: (error) => {
+            if (error instanceof ApiError && error.status === 409) {
+              setErrors({ phone: 'Ce numéro a déjà un compte : connectez-vous.' })
+              return
+            }
+            toast.error(describeError(error, "L'inscription n'a pas abouti. Réessayez."))
+          },
+        },
+      )
       return
     }
-    setPhoneError(undefined)
     requestOtp.mutate(phone, {
-      onSuccess: () => {
-        setResendAt(Date.now() + RESEND_DELAY_MS)
-        setStep('code')
-        toast.success('Code envoyé', { description: `Un SMS vient de partir vers le ${formatPhone(phone)}.` })
-      },
-      onError: () => toast.error("Le code n'a pas pu être envoyé. Réessayez."),
+      onSuccess: onCodeSent,
+      onError: (error) => toast.error(describeError(error, "Le code n'a pas pu être envoyé. Réessayez.")),
     })
   }
 
@@ -72,11 +113,17 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
       { phone, code: value },
       {
         onSuccess: () => {
-          toast.success('Connexion réussie')
+          toast.success(mode === 'register' ? 'Bienvenue sur Ekuiseo' : 'Connexion réussie')
           navigate(redirectTo, { replace: true })
         },
-        onError: () => {
-          setCodeError('Code incorrect ou expiré')
+        onError: (error) => {
+          if (error instanceof ApiError && error.status === 404) {
+            setCodeError('Aucun compte pour ce numéro : créez-en un.')
+          } else if (error instanceof ApiError && error.status === 401) {
+            setCodeError('Ce compte est suspendu. Contactez le support Ekuiseo.')
+          } else {
+            setCodeError(describeError(error, 'Code incorrect ou expiré'))
+          }
           setCode('')
         },
       },
@@ -92,7 +139,9 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
         </h1>
         <p className="mt-1.5 text-[14px] text-muted">
           {step === 'phone'
-            ? 'Votre numéro suffit : nous vous envoyons un code par SMS.'
+            ? mode === 'register'
+              ? 'Quelques informations, puis un code par SMS pour confirmer votre numéro.'
+              : 'Votre numéro suffit : nous vous envoyons un code par SMS.'
             : `Code envoyé au ${formatPhone(phone)}`}
         </p>
       </div>
@@ -107,23 +156,59 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
             transition={{ duration: 0.22 }}
           >
             <Card className="p-5">
-              <form onSubmit={sendCode} noValidate>
+              <form onSubmit={sendCode} noValidate className="space-y-4">
+                {mode === 'register' ? (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Input
+                      label="Prénom"
+                      autoComplete="given-name"
+                      autoFocus
+                      value={firstName}
+                      onChange={(event) => setFirstName(event.target.value)}
+                      error={errors.firstName}
+                      leading={<UserRound />}
+                      placeholder="Koffi"
+                    />
+                    <Input
+                      label="Nom"
+                      autoComplete="family-name"
+                      value={lastName}
+                      onChange={(event) => setLastName(event.target.value)}
+                      error={errors.lastName}
+                      placeholder="Aholou"
+                    />
+                  </div>
+                ) : null}
                 <Input
                   label="Numéro de téléphone"
                   type="tel"
                   inputMode="tel"
                   autoComplete="tel"
-                  autoFocus
+                  autoFocus={mode === 'login'}
                   value={phone}
                   onChange={(event) => setPhone(event.target.value)}
-                  error={phoneError}
+                  error={errors.phone}
                   hint="Bénin (+229), Togo, Nigéria acceptés."
                   leading={<Phone />}
                   placeholder="+229 97 00 00 00"
                   className="tnum text-[17px] font-semibold"
                 />
-                <Button type="submit" size="lg" block className="mt-4" loading={requestOtp.isPending}>
-                  Recevoir le code
+                {mode === 'register' ? (
+                  <Input
+                    label="E-mail (facultatif)"
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    error={errors.email}
+                    hint="Pour recevoir vos reçus de paiement."
+                    leading={<Mail />}
+                    placeholder="vous@exemple.com"
+                  />
+                ) : null}
+                <Button type="submit" size="lg" block loading={sending}>
+                  {mode === 'register' ? 'Créer mon compte' : 'Recevoir le code'}
                 </Button>
               </form>
 
@@ -138,7 +223,10 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
               {mode === 'register' ? (
                 <>
                   Vous avez déjà un compte ?{' '}
-                  <Link to="/login" className="font-semibold text-[var(--indigo)] underline-offset-4 hover:underline">
+                  <Link
+                    to={`/login${searchParams.get('next') ? `?next=${encodeURIComponent(redirectTo)}` : ''}`}
+                    className="font-semibold text-[var(--indigo)] underline-offset-4 hover:underline"
+                  >
                     Se connecter
                   </Link>
                 </>
@@ -146,7 +234,7 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
                 <>
                   Première visite ?{' '}
                   <Link
-                    to="/register"
+                    to={`/register${searchParams.get('next') ? `?next=${encodeURIComponent(redirectTo)}` : ''}`}
                     className="font-semibold text-[var(--indigo)] underline-offset-4 hover:underline"
                   >
                     Créer un compte
@@ -204,8 +292,14 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
                 ) : (
                   <button
                     type="button"
-                    onClick={() => sendCode()}
-                    className="font-semibold text-[var(--indigo)] underline-offset-4 hover:underline"
+                    disabled={sending}
+                    onClick={() =>
+                      requestOtp.mutate(phone, {
+                        onSuccess: onCodeSent,
+                        onError: (error) => toast.error(describeError(error, "Le code n'a pas pu être renvoyé.")),
+                      })
+                    }
+                    className="font-semibold text-[var(--indigo)] underline-offset-4 hover:underline disabled:opacity-60"
                   >
                     Renvoyer le code
                   </button>
@@ -233,7 +327,7 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
   )
 }
 
-/** Meme parcours, accroche differente : /register. */
+/** Inscription : memes etapes, avec prenom, nom et e-mail facultatif. */
 export function RegisterPage() {
   return <LoginPage mode="register" />
 }

@@ -5,19 +5,17 @@ import {
   LayoutDashboard,
   PanelLeftClose,
   PanelLeftOpen,
-  ShieldOff,
+  ScrollText,
   Users,
   Wallet,
   type LucideIcon,
 } from 'lucide-react'
 import { useState, type CSSProperties } from 'react'
-import { Link, NavLink, Outlet } from 'react-router'
-import { ApiError } from '@/api/client'
+import { NavLink, Outlet } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { Tooltip } from '@/components/ui/misc'
 import { Logo } from '@/components/layout/Logo'
 import { PageContainer } from '@/components/layout/PageContainer'
-import { useAdminStats } from '@/hooks/useAdmin'
 import { cn } from '@/lib/cn'
 
 interface AdminNavItem {
@@ -47,6 +45,7 @@ const ADMIN_NAV: AdminNavGroup[] = [
       { to: '/admin/verifications', label: 'Vérifications', icon: BadgeCheck, end: false },
       { to: '/admin/payouts', label: 'Reversements', icon: Wallet, end: false },
       { to: '/admin/users', label: 'Utilisateurs', icon: Users, end: false },
+      { to: '/admin/audit', label: 'Journal', icon: ScrollText, end: false },
     ],
   },
 ]
@@ -77,13 +76,11 @@ function storeCollapsed(collapsed: boolean): void {
  *   groupee, reductible en rail d'icones (choix memorise), collant au defilement.
  * - En dessous : barre d'onglets horizontale defilante, sans tiroir : les six
  *   entrees restent accessibles d'un geste.
- * L'acces reel est controle par l'API (role ADMIN) : un 403 est traite comme
- * un ecran a part entiere, jamais comme une erreur de chargement.
+ * L'acces est filtre en amont par RequireAdmin (role du profil) ; le serveur
+ * reste seul juge (403 sur /api/v1/admin/**).
  */
 export function AdminLayout() {
   const [collapsed, setCollapsed] = useState(readCollapsed)
-  const access = useAdminStats(7)
-  const forbidden = access.isError && access.error instanceof ApiError && access.error.status === 403
 
   const toggle = () => {
     setCollapsed((current) => {
@@ -91,8 +88,6 @@ export function AdminLayout() {
       return !current
     })
   }
-
-  if (forbidden) return <AccessDenied />
 
   return (
     <PageContainer width="lg">
@@ -209,25 +204,3 @@ function AdminNavLink({ item, collapsed }: { item: AdminNavItem; collapsed: bool
   )
 }
 
-/** 403 sur la premiere requete admin : le compte n'a pas le role. */
-function AccessDenied() {
-  return (
-    <PageContainer width="sm" className="flex min-h-[calc(100dvh-10rem)] flex-col items-center justify-center text-center">
-      <span className="flex size-14 items-center justify-center rounded-[var(--radius-card)] bg-danger-soft text-danger-ink shadow-e1">
-        <ShieldOff className="size-6" aria-hidden />
-      </span>
-      <h1 className="headline mt-4 text-[26px]">Accès réservé</h1>
-      <p className="mt-2 max-w-sm text-base leading-relaxed text-muted">
-        Le back-office est réservé à l'équipe Ekuiseo. Votre compte n'a pas les droits nécessaires.
-      </p>
-      <div className="mt-6 flex w-full max-w-xs flex-col gap-2">
-        <Button asChild size="lg" block>
-          <Link to="/">Retour à l'accueil</Link>
-        </Button>
-        <Button asChild variant="ghost" block>
-          <Link to="/me">Mon compte</Link>
-        </Button>
-      </div>
-    </PageContainer>
-  )
-}

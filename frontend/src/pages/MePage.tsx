@@ -5,14 +5,16 @@ import { ErrorState } from '@/components/ui/states'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PageContainer, PageHeader } from '@/components/layout/PageContainer'
 import { AccountHeaderCard } from '@/features/account/AccountHeaderCard'
+import { EarningsSection } from '@/features/account/EarningsSection'
 import { IdentitySection } from '@/features/account/IdentitySection'
 import { PaymentMethodsSection } from '@/features/account/PaymentMethodsSection'
 import { PreferencesSection } from '@/features/account/PreferencesSection'
+import { SubscriptionSection } from '@/features/account/SubscriptionSection'
 import { VehiclesSection } from '@/features/account/VehiclesSection'
 import { useIdentityVerification } from '@/hooks/useAccount'
 import { useLogout, useMe } from '@/hooks/useAuth'
 
-const TABS = ['vehicles', 'identity', 'payment', 'preferences'] as const
+const TABS = ['vehicles', 'identity', 'payment', 'earnings', 'preferences'] as const
 type TabKey = (typeof TABS)[number]
 
 function isTabKey(value: string | null): value is TabKey {
@@ -20,7 +22,7 @@ function isTabKey(value: string | null): value is TabKey {
 }
 
 /**
- * Mon compte : identite, puis quatre onglets. L'onglet actif vit dans l'URL
+ * Mon compte : identite, puis cinq onglets. L'onglet actif vit dans l'URL
  * (?tab=), ce qui permet d'y renvoyer directement (ex. « ajoutez un vehicule »
  * depuis la publication) et de le retrouver apres un retour arriere.
  */
@@ -33,7 +35,7 @@ export function MePage() {
   const tabParam = searchParams.get('tab')
   const tab: TabKey = isTabKey(tabParam) ? tabParam : 'vehicles'
 
-  const user = me.data?.data
+  const user = me.data
 
   if (me.isError) {
     return (
@@ -64,7 +66,8 @@ export function MePage() {
     <PageContainer width="md" className="pb-10">
       <PageHeader title="Mon compte" back={false} />
 
-      <AccountHeaderCard user={user} identityStatus={identity.data?.data.status ?? 'NOT_SUBMITTED'} />
+      {/* Statut d'identite : inconnu tant que la requete n'a pas repondu, jamais devine. */}
+      <AccountHeaderCard user={user} identityStatus={identity.data?.status} />
 
       <Tabs
         value={tab}
@@ -75,6 +78,7 @@ export function MePage() {
           <TabsTrigger value="vehicles">Véhicules</TabsTrigger>
           <TabsTrigger value="identity">Identité</TabsTrigger>
           <TabsTrigger value="payment">Paiement</TabsTrigger>
+          <TabsTrigger value="earnings">Revenus</TabsTrigger>
           <TabsTrigger value="preferences">Réglages</TabsTrigger>
         </TabsList>
 
@@ -86,6 +90,12 @@ export function MePage() {
         </TabsContent>
         <TabsContent value="payment">
           <PaymentMethodsSection defaultPhone={user.phone} />
+        </TabsContent>
+        <TabsContent value="earnings">
+          <div className="space-y-6">
+            <EarningsSection />
+            <SubscriptionSection user={user} />
+          </div>
         </TabsContent>
         <TabsContent value="preferences">
           <PreferencesSection

@@ -1,71 +1,54 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/api/client'
-import { DEMO_CONVERSATIONS, DEMO_ME, demoMessages } from '@/api/demo'
-import { resilient, resilientMutation, type Sourced } from '@/api/resilient'
 import type { ConversationSummary } from '@/api/extended'
 import type { MessageResponse } from '@/api/types'
 
+/** GET /api/v1/bookings/{id}/messages, rafraichi toutes les 15 s (pas de temps reel cote serveur). */
 export function useMessages(bookingId: string | undefined) {
-  return useQuery<Sourced<MessageResponse[]>>({
+  return useQuery<MessageResponse[]>({
     queryKey: ['bookings', bookingId, 'messages'],
-    queryFn: () =>
-      resilient(() => apiClient.get<MessageResponse[]>(`/api/v1/bookings/${bookingId}/messages`), () =>
-        demoMessages(bookingId!),
-      ),
+    queryFn: () => apiClient.get<MessageResponse[]>(`/api/v1/bookings/${bookingId}/messages`),
     enabled: !!bookingId,
     refetchInterval: 15_000,
   })
 }
 
-/**
- * Liste des conversations (une par reservation).
- * ATTENDU : GET /api/v1/me/conversations
- */
+/** GET /api/v1/me/conversations : une conversation par reservation. */
 export function useConversations() {
-  return useQuery<Sourced<ConversationSummary[]>>({
+  return useQuery<ConversationSummary[]>({
     queryKey: ['me', 'conversations'],
-    queryFn: () =>
-      resilient(() => apiClient.get<ConversationSummary[]>('/api/v1/me/conversations'), () => DEMO_CONVERSATIONS),
+    queryFn: () => apiClient.get<ConversationSummary[]>('/api/v1/me/conversations'),
+    refetchInterval: 30_000,
   })
 }
 
-export function useSendMessage(bookingId: string) {
+/**
+ * POST /api/v1/bookings/{id}/messages. Envoi optimiste : le message apparait
+ * immediatement, marque « en cours » par un identifiant temporaire, attribue
+ * a l'utilisateur courant (`senderId`). Sur reseau coupe, TanStack Query
+ * conserve la mutation en file (networkMode offlineFirst) et la rejoue au retour.
+ */
+export function useSendMessage(bookingId: string | undefined, senderId: string | undefined) {
   const queryClient = useQueryClient()
   const key = ['bookings', bookingId, 'messages']
 
   return useMutation({
-    mutationFn: (body: string) =>
-      resilientMutation(
-        () => apiClient.post<MessageResponse>(`/api/v1/bookings/${bookingId}/messages`, { body }),
-        () => ({
-          id: `m-local-${Date.now()}`,
-          conversationId: bookingId,
-          senderId: DEMO_ME.id,
-          body,
-          readAt: null,
-          createdAt: new Date().toISOString(),
-        }),
-      ),
-    /*
-     * Envoi optimiste : le message apparait immediatement, marque « en cours »
-     * par un identifiant temporaire. Sur reseau coupe, TanStack Query conserve
-     * la mutation en file (networkMode offlineFirst) et la rejoue au retour.
-     */
+    mutationFn: (body: string) => {
+      if (!bookingId) return Promise.reject(new Error('Réservation inconnue'))
+      return apiClient.post<MessageResponse>(`/api/v1/bookings/${bookingId}/messages`, { body })
+    },
     onMutate: async (body) => {
       await queryClient.cancelQueries({ queryKey: key })
-      const previous = queryClient.getQueryData<Sourced<MessageResponse[]>>(key)
+      const previous = queryClient.getQueryData<MessageResponse[]>(key)
       const optimistic: MessageResponse = {
         id: `pending-${Date.now()}`,
-        conversationId: bookingId,
-        senderId: DEMO_ME.id,
+        conversationId: bookingId ?? '',
+        senderId: senderId ?? '',
         body,
         readAt: null,
         createdAt: new Date().toISOString(),
       }
-      queryClient.setQueryData<Sourced<MessageResponse[]>>(key, {
-        demo: previous?.demo ?? false,
-        data: [...(previous?.data ?? []), optimistic],
-      })
+      queryClient.setQueryData<MessageResponse[]>(key, [...(previous ?? []), optimistic])
       return { previous }
     },
     onError: (_error, _body, context) => {
@@ -73,6 +56,7 @@ export function useSendMessage(bookingId: string) {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: key })
+      queryClient.invalidateQueries({ queryKey: ['me', 'conversations'] })
     },
   })
 }

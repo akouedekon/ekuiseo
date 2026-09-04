@@ -1,5 +1,5 @@
 import { motion } from 'motion/react'
-import { CloudOff, Compass, Home, RefreshCw, RotateCcw } from 'lucide-react'
+import { Compass, Home, RotateCcw, ShieldOff } from 'lucide-react'
 import { Link } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { PageContainer } from '@/components/layout/PageContainer'
@@ -73,39 +73,50 @@ export function NotFoundPage() {
   )
 }
 
-/** Ecran hors ligne — affiche quand aucune donnee n'est disponible en cache. */
-export function OfflinePage() {
+/** Acces refuse (role insuffisant) ou profil impossible a charger avant la verification du role. */
+export function AccessDeniedPage({ reason, onRetry }: { reason: 'forbidden' | 'error'; onRetry?: () => void }) {
   return (
-    <SystemScreen
-      title="Vous êtes hors ligne"
-      description="Aucune donnée enregistrée pour cet écran. Reconnectez-vous au réseau pour continuer ; vos actions en attente partiront automatiquement."
-    >
-      <span className="mx-auto mb-2 flex size-14 items-center justify-center rounded-full bg-[var(--ocre-soft)] text-[var(--ocre-ink)]">
-        <CloudOff className="size-6" aria-hidden />
+    <PageContainer width="sm" className="flex min-h-[calc(100dvh-10rem)] flex-col items-center justify-center text-center">
+      <span className="flex size-14 items-center justify-center rounded-[var(--radius-card)] bg-danger-soft text-danger-ink shadow-e1">
+        <ShieldOff className="size-6" aria-hidden />
       </span>
-      <Button size="lg" block onClick={() => window.location.reload()}>
-        <RefreshCw className="size-4" aria-hidden />
-        Réessayer
-      </Button>
-    </SystemScreen>
+      <h1 className="headline mt-4 text-[26px]">
+        {reason === 'forbidden' ? 'Accès réservé' : 'Vérification impossible'}
+      </h1>
+      <p className="mt-2 max-w-sm text-base leading-relaxed text-muted">
+        {reason === 'forbidden'
+          ? "Le back-office est réservé à l'équipe Ekuiseo. Votre compte n'a pas les droits nécessaires."
+          : "Impossible de vérifier vos droits pour l'instant. Vérifiez votre connexion, puis réessayez."}
+      </p>
+      <div className="mt-6 flex w-full max-w-xs flex-col gap-2">
+        {reason === 'error' && onRetry ? (
+          <Button size="lg" block onClick={onRetry}>
+            <RotateCcw className="size-4" aria-hidden />
+            Réessayer
+          </Button>
+        ) : null}
+        <Button asChild size="lg" block variant={reason === 'error' ? 'ghost' : 'primary'}>
+          <Link to="/">Retour à l'accueil</Link>
+        </Button>
+        <Button asChild variant="ghost" block>
+          <Link to="/me">Mon compte</Link>
+        </Button>
+      </div>
+    </PageContainer>
   )
 }
 
-/** Ecran d'erreur applicative, rendu par la frontiere d'erreur du routeur. */
-export function ErrorPage({ error, onReset }: { error?: unknown; onReset?: () => void }) {
-  const detail =
-    error instanceof Error ? error.message : typeof error === 'string' ? error : undefined
-
+/**
+ * Ecran d'erreur applicative, rendu par la frontiere d'erreur. Le detail
+ * technique reste dans la console (voir ErrorBoundary) : l'utilisateur n'a
+ * rien a en faire, et il pourrait contenir des informations internes.
+ */
+export function ErrorPage({ onReset }: { onReset?: () => void }) {
   return (
     <SystemScreen
       title="Un problème est survenu"
       description="L'application a rencontré une erreur inattendue. Rien n'a été perdu : vos données sont conservées."
     >
-      {detail ? (
-        <p className="mb-2 break-words rounded-[var(--radius-control)] bg-[var(--surface-calm)] px-3 py-2 text-left text-[12px] text-muted">
-          {detail}
-        </p>
-      ) : null}
       <Button size="lg" block onClick={() => (onReset ? onReset() : window.location.reload())}>
         <RotateCcw className="size-4" aria-hidden />
         Recharger l'application

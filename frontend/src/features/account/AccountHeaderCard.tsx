@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card'
 import { Avatar, RatingStars } from '@/components/ui/misc'
 import { Sheet } from '@/components/ui/sheet'
 import { useUpdateProfile } from '@/hooks/useAccount'
+import { describeError } from '@/lib/errors'
 import { formatPhone } from '@/lib/format'
 import type { IdentityVerificationStatus } from '@/api/extended'
 import type { UserResponse } from '@/api/types'
@@ -19,12 +20,13 @@ export function AccountHeaderCard({
   identityStatus,
 }: {
   user: UserResponse
-  identityStatus: IdentityVerificationStatus
+  /** Absent tant que l'etat n'est pas connu (chargement ou erreur) : aucun badge n'est alors affiche. */
+  identityStatus?: IdentityVerificationStatus
 }) {
   const [open, setOpen] = useState(false)
   const updateProfile = useUpdateProfile()
-  const identity = IDENTITY_PRESENTATION[identityStatus]
-  const IdentityIcon = identity.icon
+  const identity = identityStatus ? IDENTITY_PRESENTATION[identityStatus] : null
+  const IdentityIcon = identity?.icon
 
   return (
     <Card className="p-5">
@@ -54,10 +56,12 @@ export function AccountHeaderCard({
         ) : (
           <Badge tone="warning">Téléphone non confirmé</Badge>
         )}
-        <Badge tone={identity.tone}>
-          <IdentityIcon aria-hidden />
-          {identity.label}
-        </Badge>
+        {identity && IdentityIcon ? (
+          <Badge tone={identity.tone}>
+            <IdentityIcon aria-hidden />
+            {identity.label}
+          </Badge>
+        ) : null}
       </div>
       {user.bio ? <p className="mt-3 text-body leading-relaxed text-ink-2">{user.bio}</p> : null}
 
@@ -92,7 +96,7 @@ export function AccountHeaderCard({
                   setOpen(false)
                   toast.success('Profil mis à jour')
                 },
-                onError: () => toast.error("La mise à jour n'a pas abouti. Réessayez."),
+                onError: (error) => toast.error(describeError(error, "La mise à jour n'a pas abouti. Réessayez.")),
               },
             )
           }

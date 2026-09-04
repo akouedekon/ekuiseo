@@ -1,7 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { Route, Routes } from 'react-router'
 import { AppShell } from '@/components/layout/AppShell'
-import { RequireAuth } from '@/components/RequireAuth'
+import { RequireAdmin, RequireAuth } from '@/components/RequireAuth'
 import { HomeSearchPage } from '@/pages/HomeSearchPage'
 import { SearchResultsPage } from '@/pages/SearchResultsPage'
 import { TripDetailPage } from '@/pages/TripDetailPage'
@@ -14,7 +14,7 @@ import { DriverProfilePage } from '@/pages/DriverProfilePage'
 import { LoginPage, RegisterPage } from '@/pages/LoginPage'
 import { MePage } from '@/pages/MePage'
 import { NotificationsPage } from '@/pages/NotificationsPage'
-import { AppLoadingScreen, NotFoundPage, OfflinePage } from '@/pages/SystemPages'
+import { AppLoadingScreen, NotFoundPage } from '@/pages/SystemPages'
 
 /*
  * Le back-office est charge a la demande : il embarque Recharts et ne
@@ -30,8 +30,11 @@ const AdminVerifications = lazy(() =>
 )
 const AdminPayouts = lazy(() => import('@/pages/admin/AdminPayouts').then((m) => ({ default: m.AdminPayouts })))
 const AdminUsers = lazy(() => import('@/pages/admin/AdminUsers').then((m) => ({ default: m.AdminUsers })))
-/* Charte graphique vivante : reference de l'equipe, jamais liee a l'accueil. */
-const StyleGuidePage = lazy(() => import('@/pages/StyleGuidePage').then((m) => ({ default: m.StyleGuidePage })))
+const AdminAudit = lazy(() => import('@/pages/admin/AdminAudit').then((m) => ({ default: m.AdminAudit })))
+/* Charte graphique vivante : reference de l'equipe, servie uniquement en developpement. */
+const StyleGuidePage = import.meta.env.DEV
+  ? lazy(() => import('@/pages/StyleGuidePage').then((m) => ({ default: m.StyleGuidePage })))
+  : null
 
 export default function App() {
   return (
@@ -45,8 +48,9 @@ export default function App() {
         <Route path="/drivers/:id" element={<DriverProfilePage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
-        <Route path="/offline" element={<OfflinePage />} />
-        <Route path="/charte" element={<Suspense fallback={<AppLoadingScreen />}><StyleGuidePage /></Suspense>} />
+        {StyleGuidePage ? (
+          <Route path="/charte" element={<Suspense fallback={<AppLoadingScreen />}><StyleGuidePage /></Suspense>} />
+        ) : null}
 
         {/* --- Parcours authentifie --- */}
         <Route path="/book/:tripId" element={<RequireAuth><BookingPage /></RequireAuth>} />
@@ -57,14 +61,16 @@ export default function App() {
         <Route path="/me" element={<RequireAuth><MePage /></RequireAuth>} />
         <Route path="/notifications" element={<RequireAuth><NotificationsPage /></RequireAuth>} />
 
-        {/* --- Back-office --- */}
+        {/* --- Back-office (role ADMIN, verifie par le profil puis par l'API) --- */}
         <Route
           path="/admin"
           element={
             <RequireAuth>
-              <Suspense fallback={<AppLoadingScreen />}>
-                <AdminLayout />
-              </Suspense>
+              <RequireAdmin>
+                <Suspense fallback={<AppLoadingScreen />}>
+                  <AdminLayout />
+                </Suspense>
+              </RequireAdmin>
             </RequireAuth>
           }
         >
@@ -74,6 +80,7 @@ export default function App() {
           <Route path="verifications" element={<Suspense fallback={null}><AdminVerifications /></Suspense>} />
           <Route path="payouts" element={<Suspense fallback={null}><AdminPayouts /></Suspense>} />
           <Route path="users" element={<Suspense fallback={null}><AdminUsers /></Suspense>} />
+          <Route path="audit" element={<Suspense fallback={null}><AdminAudit /></Suspense>} />
         </Route>
 
         <Route path="*" element={<NotFoundPage />} />

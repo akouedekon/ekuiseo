@@ -165,7 +165,6 @@ voir [`.env.example`](./.env.example). Résumé :
 | `SERVER_PORT` | Port d'écoute du backend |
 | `SPRING_PROFILES_ACTIVE` | Informationnel : aucun profil Spring n'existe encore côté backend (un seul `application.yml`) |
 | `VITE_API_URL` | URL de l'API utilisée par le frontend au build (vide en production : chemins relatifs derrière Caddy) |
-| `VITE_DEMO_FALLBACK` | **Doit valoir `false` en production** — sinon une panne réelle de l'API est masquée par des données factices (voir `.env.example`) |
 | `DOMAIN`, `ACME_EMAIL` | Production uniquement : domaine public et courriel pour le certificat TLS Let's Encrypt (Caddy) |
 
 ## Développement local (sans Docker)

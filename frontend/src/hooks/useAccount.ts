@@ -1,67 +1,51 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/api/client'
-import {
-  DEMO_IDENTITY,
-  DEMO_PAYMENT_METHODS,
-  DEMO_PREFERENCES,
-  DEMO_VEHICLES,
-} from '@/api/demo'
-import { resilient, resilientMutation, type Sourced } from '@/api/resilient'
 import type {
+  DriverBalanceResponse,
   IdentityVerificationResponse,
   PaymentMethodResponse,
   PaymentProvider,
+  PayoutResponse,
+  SubscriptionResponse,
   UserPreferencesResponse,
 } from '@/api/extended'
-import type { UserResponse, VehicleRequest, VehicleResponse } from '@/api/types'
+import type { InitiatePaymentResponse, UserResponse, VehicleRequest, VehicleResponse } from '@/api/types'
 
 /* ------------------------------------------------------------- Vehicules */
 
-export function useMyVehicles() {
-  return useQuery<Sourced<VehicleResponse[]>>({
+/** GET /api/v1/me/vehicles */
+export function useMyVehicles(enabled = true) {
+  return useQuery<VehicleResponse[]>({
     queryKey: ['me', 'vehicles'],
-    queryFn: () => resilient(() => apiClient.get<VehicleResponse[]>('/api/v1/me/vehicles'), () => DEMO_VEHICLES),
+    queryFn: () => apiClient.get<VehicleResponse[]>('/api/v1/me/vehicles'),
+    enabled,
   })
 }
 
+/** POST /api/v1/me/vehicles */
 export function useAddVehicle() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (input: VehicleRequest) =>
-      resilientMutation(
-        () => apiClient.post<VehicleResponse>('/api/v1/me/vehicles', input),
-        () => ({
-          id: `v-local-${Date.now()}`,
-          brand: input.brand,
-          model: input.model,
-          color: input.color ?? null,
-          plate: input.plate,
-          seats: input.seats,
-          comfortLevel: input.comfortLevel,
-          photoUrl: input.photoUrl ?? null,
-          verified: false,
-        }),
-      ),
+    mutationFn: (input: VehicleRequest) => apiClient.post<VehicleResponse>('/api/v1/me/vehicles', input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['me', 'vehicles'] })
     },
   })
 }
 
-/** ATTENDU : DELETE /api/v1/me/vehicles/{id} */
+/** DELETE /api/v1/me/vehicles/{id}, retrait optimiste. */
 export function useDeleteVehicle() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (vehicleId: string) =>
-      resilientMutation(() => apiClient.delete<void>(`/api/v1/me/vehicles/${vehicleId}`), () => undefined),
+    mutationFn: (vehicleId: string) => apiClient.delete<void>(`/api/v1/me/vehicles/${vehicleId}`),
     onMutate: async (vehicleId) => {
       await queryClient.cancelQueries({ queryKey: ['me', 'vehicles'] })
-      const previous = queryClient.getQueryData<Sourced<VehicleResponse[]>>(['me', 'vehicles'])
+      const previous = queryClient.getQueryData<VehicleResponse[]>(['me', 'vehicles'])
       if (previous) {
-        queryClient.setQueryData<Sourced<VehicleResponse[]>>(['me', 'vehicles'], {
-          ...previous,
-          data: previous.data.filter((v) => v.id !== vehicleId),
-        })
+        queryClient.setQueryData<VehicleResponse[]>(
+          ['me', 'vehicles'],
+          previous.filter((v) => v.id !== vehicleId),
+        )
       }
       return { previous }
     },
@@ -82,122 +66,142 @@ export interface UpdateProfileInput {
   photoUrl?: string | null
 }
 
-/** ATTENDU : PATCH /api/v1/me */
+/** PATCH /api/v1/me */
 export function useUpdateProfile() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (input: UpdateProfileInput) =>
-      resilientMutation(
-        () => apiClient.patch<UserResponse>('/api/v1/me', input),
-        () => ({ ...(queryClient.getQueryData<UserResponse>(['me']) as UserResponse), ...input }),
-      ),
+    mutationFn: (input: UpdateProfileInput) => apiClient.patch<UserResponse>('/api/v1/me', input),
     onSuccess: (user) => {
-      queryClient.setQueryData(['me'], user)
+      queryClient.setQueryData<UserResponse>(['me'], user)
     },
   })
 }
 
 /* -------------------------------------------------------- Preferences */
 
-/** ATTENDU : GET/PATCH /api/v1/me/preferences */
-export function useMyPreferences() {
-  return useQuery<Sourced<UserPreferencesResponse>>({
+/** GET /api/v1/me/preferences */
+export function useMyPreferences(enabled = true) {
+  return useQuery<UserPreferencesResponse>({
     queryKey: ['me', 'preferences'],
-    queryFn: () =>
-      resilient(() => apiClient.get<UserPreferencesResponse>('/api/v1/me/preferences'), () => DEMO_PREFERENCES),
+    queryFn: () => apiClient.get<UserPreferencesResponse>('/api/v1/me/preferences'),
+    enabled,
   })
 }
 
+/** PATCH /api/v1/me/preferences, bascule optimiste (les interrupteurs repondent instantanement). */
 export function useUpdatePreferences() {
   const queryClient = useQueryClient()
   const key = ['me', 'preferences']
   return useMutation({
     mutationFn: (input: Partial<UserPreferencesResponse>) =>
-      resilientMutation(
-        () => apiClient.patch<UserPreferencesResponse>('/api/v1/me/preferences', input),
-        () => ({ ...DEMO_PREFERENCES, ...queryClient.getQueryData<Sourced<UserPreferencesResponse>>(key)?.data, ...input }),
-      ),
-    // Les interrupteurs doivent repondre instantanement.
+      apiClient.patch<UserPreferencesResponse>('/api/v1/me/preferences', input),
     onMutate: async (input) => {
       await queryClient.cancelQueries({ queryKey: key })
-      const previous = queryClient.getQueryData<Sourced<UserPreferencesResponse>>(key)
+      const previous = queryClient.getQueryData<UserPreferencesResponse>(key)
       if (previous) {
-        queryClient.setQueryData<Sourced<UserPreferencesResponse>>(key, {
-          ...previous,
-          data: { ...previous.data, ...input },
-        })
+        queryClient.setQueryData<UserPreferencesResponse>(key, { ...previous, ...input })
       }
       return { previous }
     },
     onError: (_e, _v, context) => {
       if (context?.previous) queryClient.setQueryData(key, context.previous)
     },
+    onSuccess: (prefs) => {
+      queryClient.setQueryData<UserPreferencesResponse>(key, prefs)
+    },
   })
 }
 
 /* ------------------------------------------------ Moyens de paiement */
 
-/** ATTENDU : GET/POST/DELETE /api/v1/me/payment-methods */
-export function useMyPaymentMethods() {
-  return useQuery<Sourced<PaymentMethodResponse[]>>({
+/** GET /api/v1/me/payment-methods */
+export function useMyPaymentMethods(enabled = true) {
+  return useQuery<PaymentMethodResponse[]>({
     queryKey: ['me', 'payment-methods'],
-    queryFn: () =>
-      resilient(() => apiClient.get<PaymentMethodResponse[]>('/api/v1/me/payment-methods'), () => DEMO_PAYMENT_METHODS),
+    queryFn: () => apiClient.get<PaymentMethodResponse[]>('/api/v1/me/payment-methods'),
+    enabled,
   })
 }
 
+/** POST /api/v1/me/payment-methods */
 export function useAddPaymentMethod() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (input: { provider: PaymentProvider; phone: string; label?: string }) =>
-      resilientMutation(
-        () => apiClient.post<PaymentMethodResponse>('/api/v1/me/payment-methods', input),
-        () => ({
-          id: `pm-local-${Date.now()}`,
-          provider: input.provider,
-          phone: input.phone,
-          label: input.label ?? null,
-          isDefault: false,
-        }),
-      ),
+      apiClient.post<PaymentMethodResponse>('/api/v1/me/payment-methods', input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['me', 'payment-methods'] }),
   })
 }
 
+/** DELETE /api/v1/me/payment-methods/{id} */
 export function useDeletePaymentMethod() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) =>
-      resilientMutation(() => apiClient.delete<void>(`/api/v1/me/payment-methods/${id}`), () => undefined),
+    mutationFn: (id: string) => apiClient.delete<void>(`/api/v1/me/payment-methods/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['me', 'payment-methods'] }),
   })
 }
 
 /* ------------------------------------------------ Verification d'identite */
 
-/** ATTENDU : GET /api/v1/me/identity — POST /api/v1/me/identity */
-export function useIdentityVerification() {
-  return useQuery<Sourced<IdentityVerificationResponse>>({
+/** GET /api/v1/me/identity */
+export function useIdentityVerification(enabled = true) {
+  return useQuery<IdentityVerificationResponse>({
     queryKey: ['me', 'identity'],
-    queryFn: () =>
-      resilient(() => apiClient.get<IdentityVerificationResponse>('/api/v1/me/identity'), () => DEMO_IDENTITY),
+    queryFn: () => apiClient.get<IdentityVerificationResponse>('/api/v1/me/identity'),
+    enabled,
   })
 }
 
+/** POST /api/v1/me/identity (type et numero de piece ; le televersement du document n'existe pas encore cote serveur). */
 export function useSubmitIdentity() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (input: { documentType: 'CNI' | 'PASSPORT' | 'DRIVER_LICENSE'; documentNumber: string }) =>
-      resilientMutation(
-        () => apiClient.post<IdentityVerificationResponse>('/api/v1/me/identity', input),
-        () => ({
-          status: 'PENDING' as const,
-          documentType: input.documentType,
-          submittedAt: new Date().toISOString(),
-          reviewedAt: null,
-          rejectionReason: null,
-        }),
-      ),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['me', 'identity'] }),
+      apiClient.post<IdentityVerificationResponse>('/api/v1/me/identity', input),
+    onSuccess: (identity) => {
+      queryClient.setQueryData<IdentityVerificationResponse>(['me', 'identity'], identity)
+      queryClient.invalidateQueries({ queryKey: ['me'] })
+    },
+  })
+}
+
+/* ------------------------------------------------ Revenus du conducteur */
+
+/** GET /api/v1/me/payouts/balance : solde net en attente et seuil de reversement. */
+export function useDriverBalance(enabled = true) {
+  return useQuery<DriverBalanceResponse>({
+    queryKey: ['me', 'payouts', 'balance'],
+    queryFn: () => apiClient.get<DriverBalanceResponse>('/api/v1/me/payouts/balance'),
+    enabled,
+  })
+}
+
+/** GET /api/v1/me/payouts : historique des reversements. */
+export function useMyPayouts(enabled = true) {
+  return useQuery<PayoutResponse[]>({
+    queryKey: ['me', 'payouts'],
+    queryFn: () => apiClient.get<PayoutResponse[]>('/api/v1/me/payouts'),
+    enabled,
+  })
+}
+
+/* ------------------------------------------------ Abonnement conducteur */
+
+/** GET /api/v1/me/subscription */
+export function useMySubscription(enabled = true) {
+  return useQuery<SubscriptionResponse>({
+    queryKey: ['me', 'subscription'],
+    queryFn: () => apiClient.get<SubscriptionResponse>('/api/v1/me/subscription'),
+    enabled,
+  })
+}
+
+/** POST /api/v1/me/subscription : ouvre un abonnement en attente de paiement et renvoie les donnees du widget. */
+export function useSubscribe() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => apiClient.post<InitiatePaymentResponse>('/api/v1/me/subscription'),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['me', 'subscription'] }),
   })
 }

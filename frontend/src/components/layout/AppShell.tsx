@@ -14,7 +14,9 @@ import {
   User,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Link, NavLink, Outlet, useLocation } from 'react-router'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router'
+import { toast } from 'sonner'
+import { authStore } from '@/api/client'
 import { Avatar } from '@/components/ui/misc'
 import { Button } from '@/components/ui/button'
 import {
@@ -27,7 +29,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { StatusBanners } from '@/components/layout/OfflineBanner'
 import { Logo } from '@/components/layout/Logo'
-import { isAuthenticated, useLogout, useMe } from '@/hooks/useAuth'
+import { useIsAuthenticated, useLogout, useMe } from '@/hooks/useAuth'
 import { useUnreadNotificationCount } from '@/hooks/useNotifications'
 import { useTheme } from '@/hooks/useTheme'
 import { cn } from '@/lib/cn'
@@ -58,9 +60,31 @@ const TOP_NAV = [
 
 export function AppShell() {
   const location = useLocation()
-  const authed = isAuthenticated()
+  const navigate = useNavigate()
+  const authed = useIsAuthenticated()
   const { data: me } = useMe()
-  const logout = useLogout()
+  const logoutLocal = useLogout()
+  const logout = () => {
+    logoutLocal()
+    navigate('/', { replace: true })
+  }
+
+  /*
+   * Expiration de session detectee par le client HTTP (jeton refuse au
+   * rafraichissement) : on previent et on renvoie vers la connexion en
+   * memorisant l'ecran courant, au lieu de laisser des ecrans en erreur.
+   */
+  useEffect(
+    () =>
+      authStore.subscribe((authenticated, reason) => {
+        if (!authenticated && reason === 'expired') {
+          toast.warning('Votre session a expiré', { description: 'Reconnectez-vous pour continuer.' })
+          const next = encodeURIComponent(window.location.pathname + window.location.search)
+          navigate(`/login?next=${next}`, { replace: true })
+        }
+      }),
+    [navigate],
+  )
   const unread = useUnreadNotificationCount()
   const { mode, setTheme } = useTheme()
   const reduce = useReducedMotion()
@@ -82,7 +106,8 @@ export function AppShell() {
     window.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' })
   }, [location.pathname, reduce])
 
-  const user = me?.data
+  const user = me
+  const isAdmin = user?.role === 'ADMIN'
 
   return (
     <div className="flex min-h-dvh flex-col bg-bg">
@@ -195,12 +220,14 @@ export function AppShell() {
                         Mon compte
                       </Link>
                     </DropdownMenuItem>
-                    <DropdownMenuItem asChild>
-                      <Link to="/admin">
-                        <LayoutDashboard aria-hidden />
-                        Back-office
-                      </Link>
-                    </DropdownMenuItem>
+                    {isAdmin ? (
+                      <DropdownMenuItem asChild>
+                        <Link to="/admin">
+                          <LayoutDashboard aria-hidden />
+                          Back-office
+                        </Link>
+                      </DropdownMenuItem>
+                    ) : null}
                     <DropdownMenuSeparator />
                   </>
                 ) : null}
@@ -273,7 +300,6 @@ export function AppShell() {
  * d'etre la plus visible de l'ecran.
  */
 function BottomNav() {
-  const unread = useUnreadNotificationCount()
   const items = [
     { to: '/', label: 'Rechercher', icon: Search, end: true },
     { to: '/trips/mine', label: 'Mes trajets', icon: Car, end: false },
@@ -330,9 +356,6 @@ function BottomNav() {
                       )}
                     >
                       <item.icon className="size-[22px]" strokeWidth={isActive ? 2.3 : 1.9} aria-hidden />
-                      {item.to === '/me' && unread > 0 ? (
-                        <span className="absolute right-2 top-0.5 size-2 rounded-full bg-danger ring-2 ring-bg" />
-                      ) : null}
                     </span>
                     {/* 11 px tolere uniquement ici, conformement a la charte. */}
                     <span className="text-[11px] font-medium leading-none">{item.label}</span>

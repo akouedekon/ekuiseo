@@ -4,7 +4,9 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/misc'
 import { Sheet } from '@/components/ui/sheet'
+import { ErrorState } from '@/components/ui/states'
 import { useIdentityVerification, useSubmitIdentity } from '@/hooks/useAccount'
+import { describeError } from '@/lib/errors'
 import { formatFromNow } from '@/lib/format'
 import { IDENTITY_FORM_ID, IdentityForm } from './forms/IdentityForm'
 import { IDENTITY_PRESENTATION, documentLabel } from './identity'
@@ -17,9 +19,18 @@ export function IdentitySection() {
   if (identity.isPending) {
     return <Skeleton className="h-28 rounded-[var(--radius-card)]" />
   }
+  if (identity.isError) {
+    return (
+      <ErrorState
+        title="Statut d'identité indisponible"
+        description="Impossible de vérifier l'état de votre dossier pour l'instant."
+        onRetry={() => identity.refetch()}
+      />
+    )
+  }
 
-  const data = identity.data?.data
-  const status = data?.status ?? 'NOT_SUBMITTED'
+  const data = identity.data
+  const status = data.status
   const presentation = IDENTITY_PRESENTATION[status]
   const Icon = presentation.icon
   const canSubmit = status === 'NOT_SUBMITTED' || status === 'REJECTED'
@@ -60,7 +71,7 @@ export function IdentitySection() {
             ) : null}
             {status === 'PENDING' ? (
               <p className="mt-2 text-label text-ink-2">
-                Un agent Ekuiseo contrôle votre document. Vous serez prévenu sous 24 à 48 h.
+                Un agent Ekuiseo contrôle votre dossier. Vous serez prévenu par notification.
               </p>
             ) : null}
           </div>
@@ -89,9 +100,9 @@ export function IdentitySection() {
             submit.mutate(values, {
               onSuccess: () => {
                 setOpen(false)
-                toast.success('Document envoyé', { description: 'Vérification sous 24 à 48 h.' })
+                toast.success('Dossier envoyé', { description: 'Vous serez prévenu dès la vérification.' })
               },
-              onError: () => toast.error("L'envoi n'a pas abouti. Réessayez."),
+              onError: (error) => toast.error(describeError(error, "L'envoi n'a pas abouti. Réessayez.")),
             })
           }
         />

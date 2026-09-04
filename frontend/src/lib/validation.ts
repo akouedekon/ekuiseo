@@ -68,5 +68,3 @@ export const identitySchema = z.object({
 })
 export type IdentityValues = z.infer<typeof identitySchema>
 
-export const loginPhoneSchema = z.object({ phone: phoneSchema })
-export type LoginPhoneValues = z.infer<typeof loginPhoneSchema>

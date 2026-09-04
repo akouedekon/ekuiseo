@@ -5,6 +5,7 @@ import {
   Car,
   Cigarette,
   Dog,
+  Flag,
   MessageCircle,
   Music,
   Phone,
@@ -12,12 +13,16 @@ import {
   ShieldCheck,
   Timer,
 } from 'lucide-react'
+import { useState } from 'react'
 import { useParams } from 'react-router'
+import { ReportDialog } from '@/components/feedback/ReportDialog'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Avatar, RatingStars, Separator, Skeleton } from '@/components/ui/misc'
 import { ErrorState } from '@/components/ui/states'
 import { PageContainer, SectionTitle } from '@/components/layout/PageContainer'
+import { useIsAuthenticated, useMe } from '@/hooks/useAuth'
 import { usePublicUser, useUserReviews } from '@/hooks/useReviews'
 import { formatDuration, formatFromNow, formatRating } from '@/lib/format'
 import { listContainer, listItem } from '@/lib/motion'
@@ -26,6 +31,9 @@ export function DriverProfilePage() {
   const { id } = useParams<{ id: string }>()
   const profile = usePublicUser(id)
   const reviews = useUserReviews(id)
+  const authed = useIsAuthenticated()
+  const me = useMe()
+  const [reportOpen, setReportOpen] = useState(false)
 
   if (profile.isPending) {
     return (
@@ -54,8 +62,8 @@ export function DriverProfilePage() {
     )
   }
 
-  const user = profile.data.data
-  const reviewList = reviews.data?.data ?? []
+  const user = profile.data
+  const reviewList = reviews.data ?? []
   const distribution = [5, 4, 3, 2, 1].map((star) => ({
     star,
     count: reviewList.filter((r) => Math.round(r.rating) === star).length,
@@ -117,7 +125,7 @@ export function DriverProfilePage() {
         className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4"
       >
         <Stat icon={Route} label="Trajets effectués" value={String(user.tripsCompleted)} />
-        <Stat icon={CalendarCheck} label="Trajets honorés" value={user.reliabilityRate === null ? "—" : `${user.reliabilityRate} %`} />
+        <Stat icon={CalendarCheck} label="Trajets honorés" value={user.reliabilityRate == null ? '—' : `${user.reliabilityRate} %`} />
         <Stat
           icon={Timer}
           label="Répond en"
@@ -222,6 +230,13 @@ export function DriverProfilePage() {
             <Skeleton className="h-4 w-24" />
             <Skeleton className="h-4 w-full" />
           </Card>
+        ) : reviews.isError ? (
+          <Card className="flex flex-wrap items-center justify-between gap-2 p-4 text-[14px] text-muted">
+            Avis indisponibles pour l'instant.
+            <Button variant="secondary" size="sm" onClick={() => reviews.refetch()}>
+              Réessayer
+            </Button>
+          </Card>
         ) : reviewList.length === 0 ? (
           <Card className="p-4 text-[14px] text-muted">Aucun avis pour l'instant.</Card>
         ) : (
@@ -244,6 +259,21 @@ export function DriverProfilePage() {
           </motion.div>
         )}
       </section>
+
+      {authed && me.data?.id !== user.id ? (
+        <div className="mt-6 flex justify-end">
+          <Button variant="ghost" size="sm" className="text-muted" onClick={() => setReportOpen(true)}>
+            <Flag className="size-4" aria-hidden />
+            Signaler ce membre
+          </Button>
+        </div>
+      ) : null}
+
+      <ReportDialog
+        open={reportOpen}
+        onOpenChange={setReportOpen}
+        target={{ userId: user.id, label: `${user.firstName} ${user.lastName}` }}
+      />
     </PageContainer>
   )
 }

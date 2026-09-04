@@ -18,9 +18,6 @@ toute communication publique (réseaux sociaux, presse, affichage physique...).
       fournisseur, adapté au contrat exact de ce fournisseur (voir la javadoc de
       `HttpSmsGateway`) — les OTP ne doivent plus être uniquement journalisés en clair
       dans les logs applicatifs en production.
-- [ ] `VITE_DEMO_FALLBACK=false` côté frontend (voir `.env.example`) — sinon une panne
-      réelle de l'API peut être masquée par des données factices affichées aux vrais
-      utilisateurs au lieu d'un message d'erreur honnête.
 - [ ] Sauvegardes automatiques en place et testées (`docs/EXPLOITATION.md`) —
       **testez une restauration réelle au moins une fois avant le lancement**, pas
       seulement la sauvegarde.

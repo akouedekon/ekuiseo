@@ -1,8 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/api/client'
-import { demoTrip, demoTripSearch, demoTripStops, DEMO_MY_TRIPS, DEMO_POPULAR_ROUTES, DEMO_RECURRING } from '@/api/demo'
-import { resilient, resilientMutation, type Sourced } from '@/api/resilient'
-import type { PopularRouteResponse, RecurringTripResponse, TripStopResponse } from '@/api/extended'
+import type { PopularRouteResponse, RecurringTripResponse, TripStopResponse, UpdateTripRequest } from '@/api/extended'
 import type { CreateTripRequest, Page, TripResponse, TripType } from '@/api/types'
 
 export interface TripSearchParams {
@@ -21,125 +19,134 @@ export interface TripSearchParams {
   size?: number
 }
 
-function toQueryString(params: Record<string, string | number | undefined>): string {
+function toQueryString(params: object): string {
   const usp = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== '') usp.set(key, String(value))
+    if (value !== undefined && value !== null && value !== '') usp.set(key, String(value))
   }
   return usp.toString()
 }
 
+/** GET /api/v1/trips/search (public, pagine cote serveur). */
 export function useTripSearch(params: TripSearchParams | null) {
-  return useQuery<Sourced<Page<TripResponse>>>({
+  return useQuery<Page<TripResponse>>({
     queryKey: ['trips', 'search', params],
     queryFn: () =>
-      resilient(
-        () =>
-          apiClient.get<Page<TripResponse>>(
-            `/api/v1/trips/search?${toQueryString(params as unknown as Record<string, string | number | undefined>)}`,
-            { auth: false },
-          ),
-        demoTripSearch,
-      ),
+      apiClient.get<Page<TripResponse>>(`/api/v1/trips/search?${toQueryString(params ?? {})}`, { auth: false }),
     enabled: !!params,
   })
 }
 
 /**
- * Axes les plus proposes en ce moment (raccourcis de l'accueil).
- * GET /api/v1/trips/popular — public, sans donnee personnelle.
+ * Meme recherche, paginee cote serveur et cumulee page apres page (« Voir plus »).
+ * La cle ignore `page` : c'est le parametre de page qui varie.
  */
-export function usePopularRoutes(limit = 4) {
-  return useQuery<Sourced<PopularRouteResponse[]>>({
-    queryKey: ['trips', 'popular', limit],
-    queryFn: () =>
-      resilient(
-        () => apiClient.get<PopularRouteResponse[]>(`/api/v1/trips/popular?limit=${limit}`, { auth: false }),
-        () => DEMO_POPULAR_ROUTES.slice(0, limit),
+export function useTripSearchPages(params: TripSearchParams | null) {
+  return useInfiniteQuery<Page<TripResponse>>({
+    queryKey: ['trips', 'search', 'pages', params],
+    queryFn: ({ pageParam }) =>
+      apiClient.get<Page<TripResponse>>(
+        `/api/v1/trips/search?${toQueryString({ ...(params ?? {}), page: pageParam as number })}`,
+        { auth: false },
       ),
+    initialPageParam: 0,
+    getNextPageParam: (last) => (last.number + 1 < last.totalPages ? last.number + 1 : undefined),
+    enabled: !!params,
+  })
+}
+
+/** GET /api/v1/trips/popular : axes les plus proposes en ce moment (public). */
+export function usePopularRoutes(limit = 4) {
+  return useQuery<PopularRouteResponse[]>({
+    queryKey: ['trips', 'popular', limit],
+    queryFn: () => apiClient.get<PopularRouteResponse[]>(`/api/v1/trips/popular?limit=${limit}`, { auth: false }),
     staleTime: 10 * 60_000,
   })
 }
 
+/** GET /api/v1/trips/{id} (public si publie). */
 export function useTrip(id: string | undefined) {
-  return useQuery<Sourced<TripResponse>>({
+  return useQuery<TripResponse>({
     queryKey: ['trips', id],
-    queryFn: () => resilient(() => apiClient.get<TripResponse>(`/api/v1/trips/${id}`, { auth: false }), () => demoTrip(id!)),
+    queryFn: () => apiClient.get<TripResponse>(`/api/v1/trips/${id}`, { auth: false }),
     enabled: !!id,
   })
 }
 
-/**
- * Arrets intermediaires et prix par troncon.
- * ATTENDU : GET /api/v1/trips/{id}/stops
- */
+/** GET /api/v1/trips/{id}/stops : arrets intermediaires et prix par troncon. */
 export function useTripStops(id: string | undefined) {
-  return useQuery<Sourced<TripStopResponse[]>>({
+  return useQuery<TripStopResponse[]>({
     queryKey: ['trips', id, 'stops'],
-    queryFn: () =>
-      resilient(() => apiClient.get<TripStopResponse[]>(`/api/v1/trips/${id}/stops`, { auth: false }), () =>
-        demoTripStops(id!),
-      ),
+    queryFn: () => apiClient.get<TripStopResponse[]>(`/api/v1/trips/${id}/stops`, { auth: false }),
     enabled: !!id,
   })
 }
 
-export function useMyTrips() {
-  return useQuery<Sourced<TripResponse[]>>({
+/** GET /api/v1/me/trips : trajets publies par l'utilisateur (conducteur). */
+export function useMyTrips(enabled = true) {
+  return useQuery<TripResponse[]>({
     queryKey: ['me', 'trips'],
-    queryFn: () => resilient(() => apiClient.get<TripResponse[]>('/api/v1/me/trips'), () => DEMO_MY_TRIPS),
+    queryFn: () => apiClient.get<TripResponse[]>('/api/v1/me/trips'),
+    enabled,
   })
 }
 
+/** POST /api/v1/trips */
 export function useCreateTrip() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (input: CreateTripRequest) =>
-      resilientMutation(
-        () => apiClient.post<TripResponse>('/api/v1/trips', input),
-        () => ({ ...demoTrip('t-01'), id: `t-local-${Date.now()}` }),
-      ),
+    mutationFn: (input: CreateTripRequest) => apiClient.post<TripResponse>('/api/v1/trips', input),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['me', 'trips'] })
+      queryClient.invalidateQueries({ queryKey: ['trips', 'popular'] })
+    },
+  })
+}
+
+/** PATCH /api/v1/trips/{id} : modification par le conducteur (horaire, places, prix, texte). */
+export function useUpdateTrip() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: UpdateTripRequest }) =>
+      apiClient.patch<TripResponse>(`/api/v1/trips/${id}`, input),
+    onSuccess: (trip) => {
+      queryClient.setQueryData<TripResponse>(['trips', trip.id], trip)
       queryClient.invalidateQueries({ queryKey: ['me', 'trips'] })
     },
   })
 }
 
+/** DELETE /api/v1/trips/{id} : annulation par le conducteur, bascule optimiste. */
 export function useCancelTrip() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (tripId: string) =>
-      resilientMutation(() => apiClient.delete<void>(`/api/v1/trips/${tripId}`), () => undefined),
-    // Mise a jour optimiste : le trajet bascule immediatement en « annule ».
+    mutationFn: (tripId: string) => apiClient.delete<void>(`/api/v1/trips/${tripId}`),
     onMutate: async (tripId) => {
       await queryClient.cancelQueries({ queryKey: ['me', 'trips'] })
-      const previous = queryClient.getQueryData<Sourced<TripResponse[]>>(['me', 'trips'])
+      const previous = queryClient.getQueryData<TripResponse[]>(['me', 'trips'])
       if (previous) {
-        queryClient.setQueryData<Sourced<TripResponse[]>>(['me', 'trips'], {
-          ...previous,
-          data: previous.data.map((trip) => (trip.id === tripId ? { ...trip, status: 'CANCELLED' } : trip)),
-        })
+        queryClient.setQueryData<TripResponse[]>(
+          ['me', 'trips'],
+          previous.map((trip) => (trip.id === tripId ? { ...trip, status: 'CANCELLED' } : trip)),
+        )
       }
       return { previous }
     },
     onError: (_error, _tripId, context) => {
       if (context?.previous) queryClient.setQueryData(['me', 'trips'], context.previous)
     },
-    onSettled: () => {
+    onSettled: (_data, _error, tripId) => {
       queryClient.invalidateQueries({ queryKey: ['me', 'trips'] })
+      queryClient.invalidateQueries({ queryKey: ['trips', tripId] })
     },
   })
 }
 
-/**
- * Trajets recurrents memorises du passager (bloc « votre trajet de la semaine »).
- * ATTENDU : GET /api/v1/me/recurring-trips
- */
+/** GET /api/v1/me/recurring-trips : navettes memorisees du passager (bloc « votre trajet de la semaine »). */
 export function useRecurringTrips(enabled: boolean) {
-  return useQuery<Sourced<RecurringTripResponse[]>>({
+  return useQuery<RecurringTripResponse[]>({
     queryKey: ['me', 'recurring-trips'],
-    queryFn: () =>
-      resilient(() => apiClient.get<RecurringTripResponse[]>('/api/v1/me/recurring-trips'), () => DEMO_RECURRING),
+    queryFn: () => apiClient.get<RecurringTripResponse[]>('/api/v1/me/recurring-trips'),
     enabled,
   })
 }

@@ -1,9 +1,9 @@
 /*
- * Types des endpoints ATTENDUS du backend mais pas encore presents dans
- * `types.ts` (qui reflete l'API deja livree). Ils sont listes dans la section
- * « endpoints attendus du backend » de la livraison front.
- * Le contrat est ici, cote client : quand l'API arrivera, il suffira de
- * deplacer ces interfaces dans types.ts.
+ * Types miroirs des DTO de l'API (suite de types.ts) : reservations enrichies,
+ * paiement, compte, back-office. Tous ces endpoints existent cote backend
+ * (bj.ekuiseo.api.web.controller). Rappel : le serveur omet les champs nuls
+ * (`non_null`), un champ type `X | null` arrive donc comme `undefined` quand il
+ * est vide - tester avec `== null` ou `??`, jamais avec `=== null`.
  */
 import type { BookingStatus, ComfortLevel, PaymentMethod, TripType, VehicleSummary } from './types'
 
@@ -96,7 +96,7 @@ export interface PaymentPlanResponse {
   freeCancellationHours: number
 }
 
-/** Devis demande avant reservation — ATTENDU : POST /api/v1/trips/{id}/booking-quote */
+/** Devis demande avant reservation : POST /api/v1/trips/{id}/booking-quote */
 export interface BookingQuoteRequest {
   seats: number
   dropoffStopId?: string
@@ -390,20 +390,107 @@ export interface AdminVerificationResponse {
   status: IdentityVerificationStatus
 }
 
-export type PayoutStatus = 'PENDING' | 'PROCESSING' | 'PAID' | 'FAILED'
+/** Valeurs de l'enum backend PayoutStatus ; la vue admin expose `PAID` pour `SETTLED`. */
+export type PayoutStatus = 'PENDING' | 'PROCESSING' | 'PAID' | 'SETTLED' | 'FAILED'
 
 export interface AdminPayoutResponse {
   id: string
   driverId: string
   driverName: string
-  provider: PaymentProvider
-  phone: string
+  provider: PaymentProvider | null
+  phone: string | null
   amount: number
   tripCount: number
   periodStart: string
   periodEnd: string
   status: PayoutStatus
   paidAt: string | null
+}
+
+/** POST /admin/payouts/{id}/pay et GET /me/payouts : lot de reversement brut (dto.payout.PayoutResponse). */
+export interface PayoutResponse {
+  id: string
+  driverId: string
+  amount: number
+  status: PayoutStatus
+  destinationMsisdn: string | null
+  periodStart: string
+  periodEnd: string
+  requestedAt: string
+  settledAt: string | null
+}
+
+/** POST /admin/payouts/run */
+export interface PayoutBatchResultResponse {
+  payoutsCreated: number
+  totalAmountFcfa: number
+  payouts: PayoutResponse[]
+}
+
+/** GET /me/payouts/balance */
+export interface DriverBalanceResponse {
+  pendingBalanceFcfa: number
+  minimumPayoutThresholdFcfa: number
+}
+
+export type SubscriptionStatus = 'PENDING_PAYMENT' | 'ACTIVE' | 'EXPIRED' | 'CANCELLED'
+
+/** GET /me/subscription : abonnement conducteur (2 000 FCFA/mois, commission a 0 %). */
+export interface SubscriptionResponse {
+  id: string | null
+  priceFcfa: number
+  status: SubscriptionStatus | null
+  currentlyActive: boolean
+  startedAt: string | null
+  currentPeriodEnd: string | null
+}
+
+/** POST /reports : exactement une cible (utilisateur ou trajet). */
+export interface CreateReportRequest {
+  reportedUserId?: string
+  reportedTripId?: string
+  reasonCode: ReportReason
+  details?: string
+}
+
+export interface ReportResponse {
+  id: string
+  reporterId: string
+  reportedUserId: string | null
+  reportedTripId: string | null
+  reasonCode: string
+  details: string | null
+  status: ReportStatus
+  resolutionNote: string | null
+  createdAt: string
+  resolvedAt: string | null
+}
+
+/** GET /admin/audit-log (pagine). */
+export interface AuditLogResponse {
+  id: string
+  actorId: string | null
+  action: string
+  entityType: string | null
+  entityId: string | null
+  details: Record<string, unknown> | null
+  createdAt: string
+}
+
+/** PATCH /trips/{id} : chaque champ absent est laisse inchange. */
+export interface UpdateTripRequest {
+  originLabel?: string
+  originLat?: number
+  originLng?: number
+  destLabel?: string
+  destLat?: number
+  destLng?: number
+  departureAt?: string
+  seatsTotal?: number
+  pricePerSeat?: number
+  instantBooking?: boolean
+  luggagePolicy?: string | null
+  description?: string | null
 }
 
 export interface AdminUserResponse {

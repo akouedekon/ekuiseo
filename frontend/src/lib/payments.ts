@@ -88,9 +88,6 @@ export const PAYMENT_MODES: {
   },
 ]
 
-export function paymentModeLabel(mode: PaymentMode): string {
-  return PAYMENT_MODES.find((item) => item.value === mode)?.label ?? mode
-}
 
 /**
  * Plan de paiement ESTIME, utilise tant que la reservation n'existe pas.

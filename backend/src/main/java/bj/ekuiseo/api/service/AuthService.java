@@ -9,6 +9,7 @@ import bj.ekuiseo.api.domain.User;
 import bj.ekuiseo.api.domain.enums.UserStatus;
 import bj.ekuiseo.api.dto.auth.AuthResponse;
 import bj.ekuiseo.api.dto.auth.LoginRequest;
+import bj.ekuiseo.api.dto.auth.OtpRegisterRequest;
 import bj.ekuiseo.api.dto.auth.OtpRequestRequest;
 import bj.ekuiseo.api.dto.auth.OtpVerifyRequest;
 import bj.ekuiseo.api.dto.auth.RefreshRequest;
@@ -26,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.UUID;
 
 @Service
 public class AuthService {
@@ -69,6 +71,30 @@ public class AuthService {
         return tokensFor(user);
     }
 
+    /**
+     * Inscription par OTP (sans mot de passe) : cree le compte avec un mot de passe
+     * aleatoire inutilisable, puis envoie le code SMS. Aucun jeton n'est remis ici :
+     * seule la verification du code (donc la possession du numero) ouvre la session.
+     * Un numero deja inscrit renvoie 409, comme pour l'inscription classique.
+     */
+    @Transactional
+    public void registerWithOtp(OtpRegisterRequest req) {
+        if (userRepository.existsByPhone(req.phone())) {
+            throw new ConflictException("Un compte existe deja avec ce numero de telephone");
+        }
+        String email = req.email() == null || req.email().isBlank() ? null : req.email().trim();
+        User user = User.builder()
+                .phone(req.phone())
+                .firstName(req.firstName().trim())
+                .lastName(req.lastName().trim())
+                .email(email)
+                .passwordHash(passwordEncoder.encode("otp-only-" + UUID.randomUUID()))
+                .status(UserStatus.ACTIVE)
+                .build();
+        userRepository.save(user);
+        requestOtp(new OtpRequestRequest(req.phone()));
+    }
+
     @Transactional
     public void requestOtp(OtpRequestRequest req) {
         String code = String.format("%06d", random.nextInt(1_000_000));
@@ -105,9 +131,17 @@ public class AuthService {
 
         User user = userRepository.findByPhone(req.phone())
                 .orElseThrow(() -> new NotFoundException("Aucun compte associe a ce numero, inscrivez-vous d'abord"));
+        assertActive(user);
         user.setPhoneVerified(true);
         userRepository.save(user);
         return tokensFor(user);
+    }
+
+    /** Un compte suspendu par la moderation ne peut ouvrir ni prolonger une session, quel que soit le parcours. */
+    private void assertActive(User user) {
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            throw new UnauthorizedException("Compte suspendu");
+        }
     }
 
     @Transactional(readOnly = true)
@@ -132,6 +166,7 @@ public class AuthService {
             var userId = jwtService.extractUserId(req.refreshToken());
             User user = userRepository.findById(userId)
                     .orElseThrow(() -> new UnauthorizedException("Utilisateur introuvable"));
+            assertActive(user);
             return tokensFor(user);
         } catch (JwtException ex) {
             throw new UnauthorizedException("Jeton de rafraichissement invalide ou expire");

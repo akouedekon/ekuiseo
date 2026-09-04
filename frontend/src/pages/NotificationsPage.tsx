@@ -13,6 +13,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { Link } from 'react-router'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/misc'
@@ -23,6 +24,7 @@ import {
   useMarkNotificationRead,
   useNotifications,
 } from '@/hooks/useNotifications'
+import { describeError } from '@/lib/errors'
 import { formatFcfa, formatFromNow } from '@/lib/format'
 import { listContainer, listItem } from '@/lib/motion'
 import type { NotificationResponse, NotificationType } from '@/api/types'
@@ -111,7 +113,7 @@ export function NotificationsPage() {
   const markRead = useMarkNotificationRead()
   const markAll = useMarkAllNotificationsRead()
 
-  const list = notifications.data?.data ?? []
+  const list = notifications.data ?? []
   const unread = list.filter((n) => !n.readAt).length
 
   return (
@@ -123,7 +125,17 @@ export function NotificationsPage() {
         subtitle={unread > 0 ? `${unread} non lue${unread > 1 ? 's' : ''}` : 'Tout est à jour'}
         actions={
           unread > 0 ? (
-            <Button variant="ghost" size="sm" onClick={() => markAll.mutate()}>
+            <Button
+              variant="ghost"
+              size="sm"
+              loading={markAll.isPending}
+              onClick={() =>
+                markAll.mutate(undefined, {
+                  onSuccess: () => toast.success('Toutes les notifications sont marquées comme lues'),
+                  onError: (error) => toast.error(describeError(error, "Le marquage n'a pas abouti.")),
+                })
+              }
+            >
               <CheckCheck className="size-4" aria-hidden />
               <span className="hidden sm:inline">Tout marquer comme lu</span>
             </Button>
@@ -202,7 +214,9 @@ export function NotificationsPage() {
                     <button
                       type="button"
                       onClick={() => unreadItem && markRead.mutate(notification.id)}
-                      className="block w-full text-left transition-colors hover:bg-[var(--surface-calm)]"
+                      disabled={!unreadItem}
+                      aria-label={unreadItem ? 'Marquer comme lue' : undefined}
+                      className="block w-full text-left transition-colors enabled:hover:bg-[var(--surface-calm)] disabled:cursor-default"
                     >
                       {body}
                     </button>

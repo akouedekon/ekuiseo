@@ -37,12 +37,14 @@ onlineManager.subscribe((online) => {
 const root = createRoot(document.getElementById('root')!)
 
 const tree = (
-  <ErrorBoundary>
-    <TooltipProvider delayDuration={250}>
-      {/* Sous-chemin de publication (vitrine GitHub Pages) : le routeur doit le connaitre. */}
-      <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
+  <TooltipProvider delayDuration={250}>
+    {/* Sous-chemin de publication (vitrine GitHub Pages) : le routeur doit le connaitre. */}
+    <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
+      {/* La frontiere d'erreur vit dans le routeur : son ecran de secours contient des liens. */}
+      <ErrorBoundary>
         <App />
-        <Toaster
+      </ErrorBoundary>
+      <Toaster
           position="top-center"
           offset={68}
           closeButton
@@ -58,9 +60,8 @@ const tree = (
             },
           }}
         />
-      </BrowserRouter>
-    </TooltipProvider>
-  </ErrorBoundary>
+    </BrowserRouter>
+  </TooltipProvider>
 )
 
 // L'ecran de demarrage inline (index.html) disparait des que React a rendu.

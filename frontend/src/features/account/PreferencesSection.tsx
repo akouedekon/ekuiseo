@@ -3,9 +3,11 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { SettingRow, Skeleton, Switch } from '@/components/ui/misc'
+import { ErrorState } from '@/components/ui/states'
 import { SectionTitle } from '@/components/layout/PageContainer'
 import { useMyPreferences, useUpdatePreferences } from '@/hooks/useAccount'
 import { useTheme } from '@/hooks/useTheme'
+import { describeError } from '@/lib/errors'
 import { cn } from '@/lib/cn'
 import type { UserPreferencesResponse } from '@/api/extended'
 
@@ -33,11 +35,24 @@ export function PreferencesSection({ onLogout }: { onLogout: () => void }) {
   const preferences = useMyPreferences()
   const update = useUpdatePreferences()
   const { mode, setTheme } = useTheme()
-  const prefs = preferences.data?.data
+  const prefs = preferences.data
+
+  // Sans valeurs serveur, aucun interrupteur n'est affiche : un OFF par defaut
+  // serait faux, et le premier clic ecraserait les vrais reglages.
+  const settingsBlock = (rows: { key: ToggleKey; title: string; description?: string }[]) =>
+    preferences.isError ? (
+      <ErrorState
+        title="Réglages indisponibles"
+        description="Impossible de charger vos préférences pour l'instant."
+        onRetry={() => preferences.refetch()}
+      />
+    ) : (
+      <Card className="divide-y divide-rule">{renderRows(rows)}</Card>
+    )
 
   const toggle = (key: ToggleKey, checked: boolean) =>
     update.mutate({ [key]: checked } as Partial<UserPreferencesResponse>, {
-      onError: () => toast.error("Le réglage n'a pas pu être enregistré."),
+      onError: (error) => toast.error(describeError(error, "Le réglage n'a pas pu être enregistré.")),
     })
 
   const renderRows = (rows: { key: ToggleKey; title: string; description?: string }[]) =>
@@ -48,6 +63,7 @@ export function PreferencesSection({ onLogout }: { onLogout: () => void }) {
         ) : (
           <Switch
             checked={prefs?.[row.key] ?? false}
+            disabled={!prefs}
             onCheckedChange={(checked) => toggle(row.key, checked)}
             aria-label={row.title}
           />
@@ -58,10 +74,10 @@ export function PreferencesSection({ onLogout }: { onLogout: () => void }) {
   return (
     <div>
       <SectionTitle>Notifications</SectionTitle>
-      <Card className="divide-y divide-rule">{renderRows(NOTIFICATION_ROWS)}</Card>
+      {settingsBlock(NOTIFICATION_ROWS)}
 
       <SectionTitle className="mt-5">À bord</SectionTitle>
-      <Card className="divide-y divide-rule">{renderRows(ONBOARD_ROWS)}</Card>
+      {settingsBlock(ONBOARD_ROWS)}
 
       <SectionTitle className="mt-5">Apparence</SectionTitle>
       <Card className="p-3">

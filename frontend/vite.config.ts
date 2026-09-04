@@ -1,6 +1,6 @@
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'node:path'
 
@@ -11,7 +11,11 @@ import path from 'node:path'
 const BASE_PATH = (process.env.VITE_BASE_PATH ?? '/').replace(/\/?$/, '/')
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  // Les variables des fichiers .env* ne sont pas dans process.env : on les charge pour le proxy.
+  const env = loadEnv(mode, process.cwd(), '')
+  const devApi = env.VITE_DEV_API_URL || 'http://localhost:8080'
+  return {
   base: BASE_PATH,
   plugins: [
     react(),
@@ -101,5 +105,12 @@ export default defineConfig({
     host: true,
     // PORT permet a un lanceur externe d'imposer un port (ex. quand 5173 est deja pris).
     port: Number(process.env.PORT) || 5173,
+    // En developpement, /api est relaye vers le backend local : memes URL relatives
+    // qu'en production, pas de CORS a configurer. VITE_DEV_API_URL pour un autre backend.
+    proxy: {
+      '/api': { target: devApi, changeOrigin: true },
+      '/actuator': { target: devApi, changeOrigin: true },
+    },
   },
+  }
 })

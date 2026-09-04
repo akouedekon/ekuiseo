@@ -1,28 +1,28 @@
 import { QueryClient } from '@tanstack/react-query'
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister'
-import { DEMO_FALLBACK_ENABLED } from '@/api/resilient'
+import { isTransientError } from '@/lib/errors'
+
+const PERSIST_KEY = 'ekuiseo-query-cache'
 
 /**
  * Configuration adaptee a une connectivite mobile irreguliere (contexte
- * beninois) : on tente plusieurs fois avant d'abandonner, on garde les
- * donnees en cache un peu plus longtemps que la valeur par defaut, et on les
- * persiste dans localStorage pour un affichage instantane (potentiellement
- * perime) au demarrage hors-ligne.
+ * beninois) : on reessaie uniquement quand cela peut changer quelque chose
+ * (reseau, serveur momentanement en panne), jamais sur une erreur definitive
+ * (403, 404, 409...), et on persiste le cache dans localStorage pour un
+ * affichage instantane (potentiellement perime) au demarrage hors-ligne.
  */
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      // En mode demonstration (aucun backend), reessayer trois fois ne ferait
-      // qu'imposer huit secondes de squelettes avant le jeu factice.
-      retry: DEMO_FALLBACK_ENABLED ? 0 : 3,
-      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 15_000),
+      retry: (failureCount, error) => failureCount < 2 && isTransientError(error),
+      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8_000),
       staleTime: 60_000,
       gcTime: 24 * 60 * 60 * 1000,
       refetchOnWindowFocus: false,
       networkMode: 'offlineFirst',
     },
     mutations: {
-      retry: 1,
+      retry: false,
       networkMode: 'offlineFirst',
     },
   },
@@ -32,12 +32,21 @@ export function createPersister() {
   try {
     return createSyncStoragePersister({
       storage: window.localStorage,
-      key: 'ekuiseo-query-cache',
+      key: PERSIST_KEY,
       throttleTime: 1000,
     })
   } catch {
     // localStorage indisponible (navigation privee, etc.) : pas de persistance,
     // l'app fonctionne quand meme avec le cache en memoire uniquement.
     return null
+  }
+}
+
+/** Efface immediatement le cache persiste (donnees personnelles) : a la deconnexion. */
+export function clearPersistedCache(): void {
+  try {
+    window.localStorage.removeItem(PERSIST_KEY)
+  } catch {
+    /* ignore */
   }
 }

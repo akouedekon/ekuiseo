@@ -138,7 +138,6 @@ services:
         # frontend/Dockerfile declare bien `ARG`/`ENV` pour les trois : sans cela,
         # Vite ne verrait jamais ces valeurs au build (le frontend garderait son
         # comportement par defaut - bascule demo DESACTIVEE, carte schematique).
-        VITE_DEMO_FALLBACK: ${VITE_DEMO_FALLBACK:-false}
         VITE_MAP_STYLE_URL: ${VITE_MAP_STYLE_URL:-}
     image: ekuiseo-frontend:latest
     container_name: ekuiseo-frontend

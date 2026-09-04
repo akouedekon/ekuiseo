@@ -11,7 +11,7 @@ import {
   X,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -24,8 +24,10 @@ import { PageContainer } from '@/components/layout/PageContainer'
 import { RouteMap } from '@/components/trip/RouteMap'
 import { TripCard } from '@/components/trip/TripCard'
 import { useCreateTripAlert } from '@/hooks/useAlerts'
+import { useIsAuthenticated } from '@/hooks/useAuth'
 import { useOnlineStatus, useStaleAge } from '@/hooks/useNetwork'
-import { useTripSearch, type TripSearchParams } from '@/hooks/useTrips'
+import { useTripSearchPages, type TripSearchParams } from '@/hooks/useTrips'
+import { describeError } from '@/lib/errors'
 import { estimateDurationMinutes, haversineKm } from '@/lib/cities'
 import { formatDayShort, formatFcfa } from '@/lib/format'
 import { listContainer } from '@/lib/motion'
@@ -37,7 +39,8 @@ const NO_TRIPS: TripResponse[] = []
 type SortKey = 'departure' | 'price' | 'rating' | 'duration'
 
 interface Filters {
-  maxPrice: number
+  /** null = aucun plafond ; la borne du curseur suit les prix reellement proposes. */
+  maxPrice: number | null
   departureWindow: 'ALL' | 'MORNING' | 'AFTERNOON' | 'EVENING'
   minRating: number
   verifiedOnly: boolean
@@ -45,7 +48,7 @@ interface Filters {
 }
 
 const DEFAULT_FILTERS: Filters = {
-  maxPrice: 20_000,
+  maxPrice: null,
   departureWindow: 'ALL',
   minRating: 0,
   verifiedOnly: false,
@@ -61,6 +64,8 @@ const WINDOW_LABEL: Record<Filters['departureWindow'], string> = {
 
 export function SearchResultsPage() {
   const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const authed = useIsAuthenticated()
   const online = useOnlineStatus()
   const [sort, setSort] = useState<SortKey>('departure')
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS)
@@ -85,7 +90,7 @@ export function SearchResultsPage() {
       seats: Number(searchParams.get('seats')) || 1,
       tripType: (searchParams.get('type') as TripType | null) ?? undefined,
       radiusKm: 15,
-      size: 30,
+      size: 20,
     }
     return params
   }, [searchParams])
@@ -95,14 +100,19 @@ export function SearchResultsPage() {
   const dateParam = searchParams.get('date')
   const seats = Number(searchParams.get('seats')) || 1
 
-  const search = useTripSearch(query)
+  const search = useTripSearchPages(query)
   const staleMinutes = useStaleAge(search.dataUpdatedAt || undefined)
-  // Reference stable quand il n'y a pas encore de resultat : sinon le tri et
-  // le filtrage seraient recalcules a chaque rendu.
-  const trips = search.data?.data.content ?? NO_TRIPS
+  // Pages cumulees ; reference stable sans resultat pour ne pas recalculer tri et filtres a chaque rendu.
+  const trips = useMemo(() => search.data?.pages.flatMap((page) => page.content) ?? NO_TRIPS, [search.data])
+  const totalResults = search.data?.pages[0]?.totalElements ?? trips.length
+  // Borne du curseur de prix : le plus cher des resultats, arrondi aux 500 F superieurs.
+  const priceCeiling = useMemo(
+    () => Math.max(5_000, Math.ceil(Math.max(0, ...trips.map((t) => t.pricePerSeat)) / 500) * 500),
+    [trips],
+  )
 
   const activeFilterCount =
-    (filters.maxPrice < DEFAULT_FILTERS.maxPrice ? 1 : 0) +
+    (filters.maxPrice !== null ? 1 : 0) +
     (filters.departureWindow !== 'ALL' ? 1 : 0) +
     (filters.minRating > 0 ? 1 : 0) +
     (filters.verifiedOnly ? 1 : 0) +
@@ -123,6 +133,10 @@ export function SearchResultsPage() {
   }, [searchParams, fromLabel, toLabel])
 
   const submitAlert = () => {
+    if (!authed) {
+      navigate(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`)
+      return
+    }
     const fromLat = Number(searchParams.get('fromLat'))
     const fromLng = Number(searchParams.get('fromLng'))
     const toLat = Number(searchParams.get('toLat'))
@@ -146,7 +160,7 @@ export function SearchResultsPage() {
             description: `Vous serez prévenu dès qu'un trajet ${fromLabel} → ${toLabel} est publié.`,
           })
         },
-        onError: () => toast.error("L'alerte n'a pas pu être créée."),
+        onError: (error) => toast.error(describeError(error, "L'alerte n'a pas pu être créée.")),
       },
     )
   }
@@ -181,7 +195,7 @@ export function SearchResultsPage() {
           </h1>
           <p className="mt-0.5 text-[13px] text-muted">
             {dateParam ? formatDayShort(dateParam) : 'Toutes dates'} · {seats} place{seats > 1 ? 's' : ''}
-            {search.isFetched ? ` · ${visible.length} résultat${visible.length > 1 ? 's' : ''}` : ''}
+            {search.isFetched ? ` · ${totalResults} départ${totalResults > 1 ? 's' : ''}${activeFilterCount > 0 ? `, ${visible.length} affiché${visible.length > 1 ? 's' : ''}` : ''}` : ''}
           </p>
         </div>
 
@@ -223,10 +237,10 @@ export function SearchResultsPage() {
 
       {activeFilterCount > 0 ? (
         <div className="mb-3 flex flex-wrap items-center gap-1.5">
-          {filters.maxPrice < DEFAULT_FILTERS.maxPrice ? (
+          {filters.maxPrice !== null ? (
             <FilterChip
               label={`≤ ${formatFcfa(filters.maxPrice)}`}
-              onClear={() => setFilters((f) => ({ ...f, maxPrice: DEFAULT_FILTERS.maxPrice }))}
+              onClear={() => setFilters((f) => ({ ...f, maxPrice: null }))}
             />
           ) : null}
           {filters.departureWindow !== 'ALL' ? (
@@ -304,6 +318,18 @@ export function SearchResultsPage() {
                 ))}
               </motion.div>
 
+              {search.hasNextPage ? (
+                <Button
+                  variant="secondary"
+                  block
+                  className="mt-4"
+                  loading={search.isFetchingNextPage}
+                  onClick={() => search.fetchNextPage()}
+                >
+                  Voir plus de départs ({totalResults - trips.length} restants)
+                </Button>
+              ) : null}
+
               <Card className="mt-4 flex flex-col items-start gap-3 p-4 sm:flex-row sm:items-center">
                 <BellPlus className="size-5 shrink-0 text-[var(--indigo)]" aria-hidden />
                 <p className="flex-1 text-[14px] text-ink-2">
@@ -362,14 +388,16 @@ export function SearchResultsPage() {
           <div>
             <div className="mb-1 flex items-baseline justify-between">
               <span className="text-[14px] font-semibold">Prix maximum</span>
-              <span className="tnum font-display text-[16px] font-bold">{formatFcfa(filters.maxPrice)}</span>
+              <span className="tnum font-display text-[16px] font-bold">
+                {filters.maxPrice === null ? 'Sans limite' : formatFcfa(filters.maxPrice)}
+              </span>
             </div>
             <Slider
-              value={[filters.maxPrice]}
+              value={[filters.maxPrice ?? priceCeiling]}
               min={500}
-              max={20_000}
+              max={priceCeiling}
               step={500}
-              onValueChange={([value]) => setFilters((f) => ({ ...f, maxPrice: value }))}
+              onValueChange={([value]) => setFilters((f) => ({ ...f, maxPrice: value >= priceCeiling ? null : value }))}
               aria-label="Prix maximum par place"
             />
           </div>
@@ -487,12 +515,11 @@ export function SearchResultsPage() {
 
 function filterAndSort(trips: TripResponse[], filters: Filters, sort: SortKey): TripResponse[] {
   const filtered = trips.filter((trip) => {
-    if (trip.pricePerSeat > filters.maxPrice) return false
-    if (trip.driver.ratingAvg < filters.minRating) return false
+    if (filters.maxPrice !== null && trip.pricePerSeat > filters.maxPrice) return false
+    // Un conducteur sans avis n'est pas un conducteur mal note : il reste visible.
+    if (filters.minRating > 0 && trip.driver.ratingCount > 0 && trip.driver.ratingAvg < filters.minRating) return false
     if (filters.instantOnly && !trip.instantBooking) return false
-    // Drapeau serveur (DriverSummary.identityVerified) ; si un ancien backend ne
-    // l'envoie pas encore, on retombe sur l'heuristique note + volume d'avis.
-    if (filters.verifiedOnly && !(trip.driver.identityVerified ?? trip.driver.ratingCount >= 5)) return false
+    if (filters.verifiedOnly && !trip.driver.identityVerified) return false
     if (filters.departureWindow !== 'ALL') {
       const hour = new Date(trip.departureAt).getHours()
       if (filters.departureWindow === 'MORNING' && hour >= 12) return false

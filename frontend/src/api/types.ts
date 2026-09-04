@@ -1,4 +1,5 @@
-// Types miroirs des DTO exposes par l'API backend (bj.ekuiseo.api).
+// Types miroirs des DTO exposes par l'API backend (bj.ekuiseo.api). Le serveur omet les
+// champs nuls : un champ `X | null` arrive comme `undefined` quand il est vide (tester avec `== null`).
 // Les montants sont en FCFA (XOF), toujours des entiers.
 
 export type TripType = 'INTERURBAIN' | 'QUOTIDIEN'
@@ -45,6 +46,8 @@ export interface UserResponse {
   ratingCount: number
   phoneVerified: boolean
   identityVerified: boolean
+  /** USER par defaut ; ADMIN ouvre le back-office (/api/v1/admin/**). */
+  role: 'USER' | 'ADMIN'
 }
 
 export interface AuthResponse {
@@ -83,7 +86,7 @@ export interface DriverSummary {
   ratingAvg: number
   ratingCount: number
   /** Piece d'identite controlee (envoye par l'API ; optionnel pour tolerer un backend anterieur). */
-  identityVerified?: boolean
+  identityVerified: boolean
 }
 
 export interface VehicleSummary {
@@ -156,11 +159,12 @@ export interface BookingResponse {
   createdAt: string
 }
 
+/** POST /trips/{id}/bookings : le nom JSON attendu par le serveur est `paymentMode`. */
 export interface CreateBookingRequest {
   seats: number
   pickupStopId?: string
   dropoffStopId?: string
-  paymentMethod: PaymentMethod
+  paymentMode: PaymentMethod
 }
 
 export interface ReviewResponse {

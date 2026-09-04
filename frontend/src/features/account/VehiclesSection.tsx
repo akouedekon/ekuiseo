@@ -22,7 +22,7 @@ export function VehiclesSection() {
   const [addOpen, setAddOpen] = useState(false)
   const [toDelete, setToDelete] = useState<VehicleResponse | null>(null)
 
-  const list = vehicles.data?.data ?? []
+  const list = vehicles.data ?? []
 
   const confirmDelete = () => {
     if (!toDelete) return

@@ -26,18 +26,14 @@ import { Input, Label, Textarea } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SegmentedToggle } from '@/components/ui/tabs'
 import { Separator, SettingRow, Switch, Skeleton, Stepper } from '@/components/ui/misc'
+import { ErrorState } from '@/components/ui/states'
 import { CityAutocomplete } from '@/components/trip/CityAutocomplete'
 import { PageContainer, PageHeader, SectionTitle } from '@/components/layout/PageContainer'
 import { useMyVehicles } from '@/hooks/useAccount'
 import { useCreateTrip } from '@/hooks/useTrips'
-import {
-  estimateDurationMinutes,
-  findCityByLabel,
-  haversineKm,
-  suggestPricePerSeat,
-  type CityOption,
-} from '@/lib/cities'
+import { estimateDurationMinutes, haversineKm, suggestPricePerSeat, type CityOption } from '@/lib/cities'
 import { formatDuration, formatFcfa } from '@/lib/format'
+import { describeError } from '@/lib/errors'
 import { estimatePaymentPlan } from '@/lib/payments'
 import type { CreateTripRequest, StopRequest, TripType } from '@/api/types'
 
@@ -69,7 +65,10 @@ const schema = z.object({
   description: z.string().max(400).optional(),
   stops: z.array(
     z.object({
-      label: z.string().min(1),
+      label: z.string().min(1, 'Choisissez une ville'),
+      // Coordonnees posees par l'autocompletion : un arret sans position n'est pas envoye en aveugle.
+      lat: z.number({ message: 'Choisissez une ville dans la liste' }),
+      lng: z.number({ message: 'Choisissez une ville dans la liste' }),
       priceFromOrigin: z.number().min(0),
     }),
   ),
@@ -129,7 +128,7 @@ export function PublishTripPage() {
   const goNext = async () => {
     const fields: (keyof FormValues)[][] = [
       ['tripType', 'originLabel', 'destLabel', 'date', 'time'],
-      ['vehicleId', 'seatsTotal', 'pricePerSeat'],
+      ['vehicleId', 'seatsTotal', 'pricePerSeat', 'stops'],
       [],
     ]
     const valid = await form.trigger(fields[step] as never)
@@ -150,13 +149,13 @@ export function PublishTripPage() {
       return
     }
     const departureAt = new Date(`${data.date}T${data.time}:00`).toISOString()
-    const stops: StopRequest[] = data.stops
-      .map((stop) => {
-        const city = findCityByLabel(stop.label)
-        if (!city) return null
-        return { label: city.label, lat: city.lat, lng: city.lng, priceFromOrigin: stop.priceFromOrigin }
-      })
-      .filter((stop): stop is StopRequest => stop !== null)
+    // Chaque arret porte les coordonnees choisies dans l'autocompletion (valide par le schema).
+    const stops: StopRequest[] = data.stops.map((stop) => ({
+      label: stop.label,
+      lat: stop.lat,
+      lng: stop.lng,
+      priceFromOrigin: stop.priceFromOrigin,
+    }))
 
     const payload: CreateTripRequest = {
       vehicleId: data.vehicleId,
@@ -189,11 +188,11 @@ export function PublishTripPage() {
         })
         navigate('/trips/mine')
       },
-      onError: () => toast.error("Le trajet n'a pas pu être publié."),
+      onError: (error) => toast.error(describeError(error, "Le trajet n'a pas pu être publié.")),
     })
   })
 
-  const vehicleList = vehicles.data?.data ?? []
+  const vehicleList = vehicles.data ?? []
 
   return (
     <PageContainer width="md" className="pb-12">
@@ -391,6 +390,12 @@ export function PublishTripPage() {
                 <SectionTitle>Véhicule</SectionTitle>
                 {vehicles.isPending ? (
                   <Skeleton className="h-11 w-full" />
+                ) : vehicles.isError ? (
+                  <ErrorState
+                    title="Véhicules indisponibles"
+                    description="Impossible de charger vos véhicules pour l'instant."
+                    onRetry={() => vehicles.refetch()}
+                  />
                 ) : vehicleList.length === 0 ? (
                   <div className="rounded-[var(--radius-control)] border border-dashed border-rule-strong p-4 text-center">
                     <Car className="mx-auto size-6 text-muted" aria-hidden />
@@ -505,7 +510,7 @@ export function PublishTripPage() {
                   action={
                     <button
                       type="button"
-                      onClick={() => stopsField.append({ label: '', priceFromOrigin: 0 })}
+                      onClick={() => stopsField.append({ label: '', lat: undefined as unknown as number, lng: undefined as unknown as number, priceFromOrigin: 0 })}
                       className="flex items-center gap-1 text-[13px] font-semibold text-[var(--indigo)] underline-offset-4 hover:underline"
                     >
                       <Plus className="size-3.5" aria-hidden />
@@ -523,11 +528,33 @@ export function PublishTripPage() {
                   <ul className="space-y-2">
                     {stopsField.fields.map((field, index) => (
                       <li key={field.id} className="flex items-end gap-2">
-                        <Input
-                          label={index === 0 ? 'Ville' : undefined}
-                          placeholder="Ex. Allada"
-                          className="flex-1"
-                          {...form.register(`stops.${index}.label` as const)}
+                        <Controller
+                          control={form.control}
+                          name={`stops.${index}.label` as const}
+                          render={({ field: labelField, fieldState }) => {
+                            const lat = form.getValues(`stops.${index}.lat`)
+                            const lng = form.getValues(`stops.${index}.lng`)
+                            const current: CityOption | null =
+                              labelField.value && typeof lat === 'number' && typeof lng === 'number'
+                                ? { label: labelField.value, lat, lng, region: '' }
+                                : null
+                            return (
+                              <div className="flex-1">
+                                <CityAutocomplete
+                                  label={index === 0 ? 'Ville' : `Arrêt ${index + 1}`}
+                                  placeholder="Ex. Allada"
+                                  value={current}
+                                  exclude={destination}
+                                  error={fieldState.error?.message ?? form.formState.errors.stops?.[index]?.lat?.message}
+                                  onChange={(city) => {
+                                    labelField.onChange(city?.label ?? '')
+                                    form.setValue(`stops.${index}.lat`, city?.lat as number, { shouldValidate: !!city })
+                                    form.setValue(`stops.${index}.lng`, city?.lng as number, { shouldValidate: !!city })
+                                  }}
+                                />
+                              </div>
+                            )
+                          }}
                         />
                         <Input
                           label={index === 0 ? 'Prix' : undefined}

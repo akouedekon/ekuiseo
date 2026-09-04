@@ -109,10 +109,7 @@ services:
       backend:
         condition: service_healthy
     environment:
-      VITE_API_URL: ${VITE_API_URL:-http://localhost:8080}
-      # Repli sur donnees factices si l'API est injoignable : pratique par defaut en
-      # dev, mais DOIT valoir "false" en production (voir .env.example).
-      VITE_DEMO_FALLBACK: ${VITE_DEMO_FALLBACK:-true}
+      VITE_API_URL: ${VITE_API_URL:-}
     volumes:
       - ./frontend:/app
       # Volume anonyme pour que node_modules installe dans le conteneur ne soit pas

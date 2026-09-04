@@ -6,11 +6,14 @@ import {
   Cigarette,
   Dog,
   Music,
+  Flag,
   Snowflake,
   Users,
   Zap,
 } from 'lucide-react'
+import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
+import { ReportDialog } from '@/components/feedback/ReportDialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -22,7 +25,7 @@ import { RouteTimeline } from '@/components/trip/RouteTimeline'
 import { ShareTripButton } from '@/components/trip/ShareTripButton'
 import { buildRoutePoints } from '@/lib/route'
 import { estimatePaymentPlan } from '@/lib/payments'
-import { useMe } from '@/hooks/useAuth'
+import { useIsAuthenticated, useMe } from '@/hooks/useAuth'
 import { usePublicUser, useUserReviews } from '@/hooks/useReviews'
 import { useTrip, useTripStops } from '@/hooks/useTrips'
 import { estimateDurationMinutes, haversineKm } from '@/lib/cities'
@@ -34,7 +37,9 @@ export function TripDetailPage() {
   const trip = useTrip(id)
   const stops = useTripStops(id)
   const me = useMe()
-  const driverId = trip.data?.data.driver.id
+  const authed = useIsAuthenticated()
+  const [reportOpen, setReportOpen] = useState(false)
+  const driverId = trip.data?.driver.id
   const driver = usePublicUser(driverId)
   const reviews = useUserReviews(driverId)
 
@@ -50,11 +55,11 @@ export function TripDetailPage() {
       </PageContainer>
     )
 
-  const data = trip.data.data
+  const data = trip.data
   const km = haversineKm(data.originLat, data.originLng, data.destLat, data.destLng)
   const durationMin = estimateDurationMinutes(km)
   const arrival = new Date(new Date(data.departureAt).getTime() + durationMin * 60_000).toISOString()
-  const stopList = stops.data?.data ?? []
+  const stopList = stops.data ?? []
   const points = buildRoutePoints(
     data.originLabel,
     data.destLabel,
@@ -71,9 +76,9 @@ export function TripDetailPage() {
   const full = data.seatsAvailable === 0
   const cancelled = data.status === 'CANCELLED'
   // Regle metier n.8 : un conducteur ne reserve pas sur son propre trajet.
-  const isOwnTrip = me.data?.data.id === data.driver.id
-  const driverData = driver.data?.data
-  const reviewList = (reviews.data?.data ?? []).slice(0, 4)
+  const isOwnTrip = me.data?.id === data.driver.id
+  const driverData = driver.data
+  const reviewList = (reviews.data ?? []).slice(0, 4)
   const shareText = `${data.originLabel} → ${data.destLabel}, ${formatRelativeDay(data.departureAt).toLowerCase()} — ${formatFcfa(data.pricePerSeat)} par place sur Ekuiseo`
   const primaryLabel = isOwnTrip ? 'Votre trajet' : full ? 'Complet' : cancelled ? 'Trajet annulé' : 'Réserver'
 
@@ -119,6 +124,16 @@ export function TripDetailPage() {
                   <Skeleton className="h-5 w-2/3" />
                   <Skeleton className="h-5 w-1/2" />
                 </div>
+              ) : stops.isError ? (
+                <>
+                  <RouteTimeline points={points} />
+                  <p className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-control)] bg-[var(--ocre-soft)] px-3 py-2 text-[13px] text-[var(--ocre-ink)]">
+                    Arrêts intermédiaires indisponibles pour l'instant.
+                    <button type="button" className="font-semibold underline-offset-4 hover:underline" onClick={() => stops.refetch()}>
+                      Réessayer
+                    </button>
+                  </p>
+                </>
               ) : (
                 <RouteTimeline points={points} />
               )}
@@ -150,7 +165,7 @@ export function TripDetailPage() {
                     {data.driver.firstName} {data.driver.lastName}
                   </p>
                   <RatingStars value={data.driver.ratingAvg} count={data.driver.ratingCount} className="mt-0.5" />
-                  {driverData?.identityVerified ? (
+                  {data.driver.identityVerified ? (
                     <Badge tone="success" className="mt-1.5">
                       <BadgeCheck aria-hidden />
                       Identité vérifiée
@@ -249,6 +264,13 @@ export function TripDetailPage() {
                   <Skeleton className="h-4 w-32" />
                   <Skeleton className="h-4 w-full" />
                 </Card>
+              ) : reviews.isError ? (
+                <Card className="flex flex-wrap items-center justify-between gap-2 p-4 text-[14px] text-muted">
+                  Avis indisponibles pour l'instant.
+                  <Button variant="secondary" size="sm" onClick={() => reviews.refetch()}>
+                    Réessayer
+                  </Button>
+                </Card>
               ) : reviewList.length === 0 ? (
                 <Card className="p-4 text-[14px] text-muted">Aucun avis pour l'instant.</Card>
               ) : (
@@ -274,6 +296,15 @@ export function TripDetailPage() {
                 </div>
               )}
             </section>
+
+            {authed && !isOwnTrip ? (
+              <div className="flex justify-end">
+                <Button variant="ghost" size="sm" className="text-muted" onClick={() => setReportOpen(true)}>
+                  <Flag className="size-4" aria-hidden />
+                  Signaler ce trajet
+                </Button>
+              </div>
+            ) : null}
           </div>
 
           {/* --- Colonne de reservation (desktop) --- */}
@@ -312,6 +343,12 @@ export function TripDetailPage() {
           </aside>
         </div>
       </PageContainer>
+
+      <ReportDialog
+        open={reportOpen}
+        onOpenChange={setReportOpen}
+        target={{ tripId: data.id, label: `le trajet ${data.originLabel} → ${data.destLabel}` }}
+      />
 
       {/* --- Barre d'action collante (mobile) --- */}
       <div className="ek-glass safe-bottom fixed inset-x-0 bottom-[68px] z-30 border-t border-rule px-4 py-3 lg:hidden">
