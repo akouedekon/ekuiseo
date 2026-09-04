@@ -66,6 +66,7 @@ function isPastBooking(booking: BookingDetailResponse): boolean {
 function canReview(booking: BookingDetailResponse): boolean {
   return (
     (booking.status === 'COMPLETED' || booking.status === 'CONFIRMED') &&
+    !booking.reviewedByMe &&
     new Date(booking.trip.departureAt).getTime() < Date.now()
   )
 }

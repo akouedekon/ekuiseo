@@ -18,7 +18,7 @@ function toDate(value: string | Date): Date {
 }
 
 export function formatDateTime(value: string | Date): string {
-  return format(toDate(value), "EEE d MMM 'a' HH:mm", { locale: fr })
+  return format(toDate(value), "EEE d MMM 'à' HH:mm", { locale: fr })
 }
 
 export function formatTime(value: string | Date): string {

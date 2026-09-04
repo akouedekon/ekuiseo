@@ -23,6 +23,7 @@ import bj.ekuiseo.api.mapper.BookingMapper;
 import bj.ekuiseo.api.repository.BookingRepository;
 import bj.ekuiseo.api.repository.DriverSubscriptionRepository;
 import bj.ekuiseo.api.repository.MessageRepository;
+import bj.ekuiseo.api.repository.ReviewRepository;
 import bj.ekuiseo.api.repository.TripRepository;
 import bj.ekuiseo.api.repository.TripStopRepository;
 import bj.ekuiseo.api.repository.UserRepository;
@@ -59,6 +60,7 @@ public class BookingService {
     private final UserRepository userRepository;
     private final DriverSubscriptionRepository driverSubscriptionRepository;
     private final MessageRepository messageRepository;
+    private final ReviewRepository reviewRepository;
     private final BookingMapper bookingMapper;
     private final CancellationPolicy cancellationPolicy;
     private final DriverCancellationPolicy driverCancellationPolicy;
@@ -70,7 +72,7 @@ public class BookingService {
 
     public BookingService(BookingRepository bookingRepository, TripRepository tripRepository,
                            TripStopRepository tripStopRepository, UserRepository userRepository, DriverSubscriptionRepository driverSubscriptionRepository,
-                           MessageRepository messageRepository, BookingMapper bookingMapper,
+                           MessageRepository messageRepository, ReviewRepository reviewRepository, BookingMapper bookingMapper,
                            CancellationPolicy cancellationPolicy, DriverCancellationPolicy driverCancellationPolicy,
                            NotificationService notificationService, PaymentService paymentService,
                            AuditService auditService, FeePolicy feePolicy,
@@ -81,6 +83,7 @@ public class BookingService {
         this.userRepository = userRepository;
         this.driverSubscriptionRepository = driverSubscriptionRepository;
         this.messageRepository = messageRepository;
+        this.reviewRepository = reviewRepository;
         this.bookingMapper = bookingMapper;
         this.cancellationPolicy = cancellationPolicy;
         this.driverCancellationPolicy = driverCancellationPolicy;
@@ -291,7 +294,8 @@ public class BookingService {
                         vehicle.getComfortLevel()));
         return new BookingDetailResponse(booking.getId(), trip.getId(), booking.getPassenger().getId(),
                 booking.getSeats(), booking.getAmount(), booking.getServiceFee(), booking.getStatus(),
-                booking.getPaymentMethod(), booking.getCreatedAt(), buildPaymentPlan(booking), tripSummary, unread);
+                booking.getPaymentMethod(), booking.getCreatedAt(), buildPaymentPlan(booking), tripSummary, unread,
+                reviewRepository.existsByTripIdAndAuthorIdAndTargetId(trip.getId(), requesterId, driver.getId()));
     }
 
     /**

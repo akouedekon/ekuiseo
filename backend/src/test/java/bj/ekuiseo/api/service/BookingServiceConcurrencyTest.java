@@ -104,7 +104,7 @@ class BookingServiceConcurrencyTest {
         });
 
         BookingService bookingService = new BookingService(bookingRepository, tripRepository, mock(bj.ekuiseo.api.repository.TripStopRepository.class), userRepository,
-                driverSubscriptionRepository, messageRepository, bookingMapper, new CancellationPolicy(), new DriverCancellationPolicy(),
+                driverSubscriptionRepository, messageRepository, mock(bj.ekuiseo.api.repository.ReviewRepository.class), bookingMapper, new CancellationPolicy(), new DriverCancellationPolicy(),
                 notificationService, paymentService, auditService, feePolicy, 20);
 
         CreateBookingRequest request = new CreateBookingRequest(1, null, null, PaymentMethod.MOMO_DEPOSIT);

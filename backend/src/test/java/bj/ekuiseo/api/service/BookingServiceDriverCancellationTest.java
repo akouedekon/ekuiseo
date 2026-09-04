@@ -79,7 +79,7 @@ class BookingServiceDriverCancellationTest {
                 .thenReturn(new PaymentService.RefundOutcome(PaymentService.RefundOutcome.Status.SUCCEEDED, "ok"));
 
         BookingService bookingService = new BookingService(bookingRepository, tripRepository, mock(bj.ekuiseo.api.repository.TripStopRepository.class), userRepository,
-                driverSubscriptionRepository, messageRepository, bookingMapper, new CancellationPolicy(), new DriverCancellationPolicy(),
+                driverSubscriptionRepository, messageRepository, mock(bj.ekuiseo.api.repository.ReviewRepository.class), bookingMapper, new CancellationPolicy(), new DriverCancellationPolicy(),
                 notificationService, paymentService, auditService, feePolicy, 20);
 
         bookingService.cascadeCancelForDriverTripCancellation(trip);
@@ -125,7 +125,7 @@ class BookingServiceDriverCancellationTest {
         when(bookingRepository.findByTripIdAndStatusIn(eq(tripId), any())).thenReturn(List.of());
 
         BookingService bookingService = new BookingService(bookingRepository, tripRepository, mock(bj.ekuiseo.api.repository.TripStopRepository.class), userRepository,
-                driverSubscriptionRepository, messageRepository, bookingMapper, new CancellationPolicy(), new DriverCancellationPolicy(),
+                driverSubscriptionRepository, messageRepository, mock(bj.ekuiseo.api.repository.ReviewRepository.class), bookingMapper, new CancellationPolicy(), new DriverCancellationPolicy(),
                 notificationService, paymentService, auditService, feePolicy, 20);
 
         bookingService.cascadeCancelForDriverTripCancellation(trip);

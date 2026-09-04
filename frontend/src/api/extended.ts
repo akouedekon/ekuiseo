@@ -147,6 +147,8 @@ export interface BookingDetailResponse {
   }
   /** Nombre de messages non lus dans la conversation liee. */
   unreadMessages: number
+  /** Vrai si j'ai deja note le conducteur pour ce trajet (un seul avis par trajet). */
+  reviewedByMe: boolean
 }
 
 /* ------------------------------------------------------------- Preferences */

@@ -34,7 +34,9 @@ public record BookingDetailResponse(
         Instant createdAt,
         PaymentPlanResponse paymentPlan,
         TripSummary trip,
-        long unreadMessages
+        long unreadMessages,
+        /** Vrai si le demandeur a deja note le conducteur pour ce trajet (un seul avis par trajet et par cible). */
+        boolean reviewedByMe
 ) {
 
     public record TripSummary(

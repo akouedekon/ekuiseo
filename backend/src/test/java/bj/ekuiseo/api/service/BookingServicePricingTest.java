@@ -1,5 +1,6 @@
 package bj.ekuiseo.api.service;
 
+import bj.ekuiseo.api.common.FeePolicy;
 import bj.ekuiseo.api.common.exception.BadRequestException;
 import bj.ekuiseo.api.domain.Trip;
 import bj.ekuiseo.api.domain.TripStop;
@@ -64,7 +65,7 @@ class BookingServicePricingTest {
         when(subscriptions.hasActiveSubscription(any(), any())).thenReturn(false);
 
         service = new BookingService(mock(BookingRepository.class), tripRepository, tripStopRepository,
-                mock(UserRepository.class), subscriptions, mock(MessageRepository.class), mock(BookingMapper.class),
+                mock(UserRepository.class), subscriptions, mock(MessageRepository.class), mock(bj.ekuiseo.api.repository.ReviewRepository.class), mock(BookingMapper.class),
                 new CancellationPolicy(), new DriverCancellationPolicy(), mock(NotificationService.class),
                 mock(PaymentService.class), mock(AuditService.class), new FeePolicy(0.08, 5, 1000), 20);
     }

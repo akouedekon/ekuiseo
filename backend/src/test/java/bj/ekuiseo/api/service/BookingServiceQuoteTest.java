@@ -41,8 +41,8 @@ class BookingServiceQuoteTest {
     private static final FeePolicy REAL_FEE_POLICY = new FeePolicy(0.08, 5, 1000);
 
     private BookingService newService(TripRepository tripRepository, DriverSubscriptionRepository driverSubscriptionRepository) {
-        return new BookingService(mock(BookingRepository.class), tripRepository, mock(UserRepository.class),
-                driverSubscriptionRepository, mock(MessageRepository.class), mock(BookingMapper.class),
+        return new BookingService(mock(BookingRepository.class), tripRepository, mock(bj.ekuiseo.api.repository.TripStopRepository.class), mock(UserRepository.class),
+                driverSubscriptionRepository, mock(MessageRepository.class), mock(bj.ekuiseo.api.repository.ReviewRepository.class), mock(BookingMapper.class),
                 new CancellationPolicy(), new DriverCancellationPolicy(), mock(NotificationService.class),
                 mock(PaymentService.class), mock(AuditService.class), REAL_FEE_POLICY, 20);
     }
