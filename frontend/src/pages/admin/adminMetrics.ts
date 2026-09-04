@@ -5,10 +5,11 @@
  *
  * Graphiques : une seule serie par axe, pas d'effet 3D, pas de degrade
  * decoratif. Les couleurs viennent des tokens et portent du sens :
- * indigo = volume, vert = revenu / bon signe, ocre = attente, vermillon = perte.
+ * graphite = volume, vert = revenu / bon signe, jaune = attente, rouge = perte.
  */
 export const CHART = {
-  indigo: 'var(--indigo)',
+  // Volume en graphite : le vert est reserve au revenu et au bon signe.
+  indigo: 'var(--ink-2)',
   vert: 'var(--vert)',
   ocre: 'var(--ocre)',
   vermillon: 'var(--vermillon)',

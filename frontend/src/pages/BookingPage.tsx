@@ -31,6 +31,7 @@ import { useMe } from '@/hooks/useAuth'
 import { useTrip, useTripStops } from '@/hooks/useTrips'
 import { estimateDurationMinutes, haversineKm } from '@/lib/cities'
 import { formatFcfa, formatPhone, formatRelativeDay, formatTime } from '@/lib/format'
+import { phoneSchema } from '@/lib/validation'
 import type { PaymentMode, PaymentProvider } from '@/api/extended'
 
 /** Delai laisse au passager pour honorer l'acompte (aligne sur le backend). */
@@ -152,9 +153,9 @@ export function BookingPage() {
   }
 
   const submitDeposit = () => {
-    const digits = phone.replace(/\D/g, '')
-    if (digits.length < 8) {
-      setPhoneError('Numéro mobile money incomplet')
+    const parsed = phoneSchema.safeParse(phone)
+    if (!parsed.success) {
+      setPhoneError(parsed.error.issues[0]?.message ?? 'Numéro mobile money incomplet')
       return
     }
     setPhoneError(undefined)

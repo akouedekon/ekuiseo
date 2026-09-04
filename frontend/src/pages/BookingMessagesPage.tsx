@@ -157,7 +157,7 @@ export function BookingMessagesPage() {
           }}
           rows={1}
           placeholder="Écrire un message…"
-          className="max-h-32 min-h-11 flex-1 resize-none rounded-[var(--radius-control)] border border-rule-strong bg-surface px-3 py-2.5 text-[15px] text-ink placeholder:text-muted focus:border-[var(--indigo)] focus:outline-none"
+          className="ek-field max-h-32 min-h-11 flex-1 resize-none rounded-[var(--radius-control)] px-3 py-2.5 text-base placeholder:text-muted"
         />
         <Button type="submit" size="icon" disabled={!draft.trim()} aria-label="Envoyer le message">
           <Send className="size-[18px]" aria-hidden />

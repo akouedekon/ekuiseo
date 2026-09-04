@@ -16,7 +16,7 @@ export const DialogOverlay = forwardRef<
     <DialogPrimitive.Overlay
       ref={ref}
       className={cn(
-        'ek-anim-fade fixed inset-0 z-50 bg-[rgb(21_26_33/0.55)] backdrop-blur-[2px]',
+        'ek-anim-fade fixed inset-0 z-50 bg-[var(--overlay)] backdrop-blur-[2px]',
         className,
       )}
       {...props}

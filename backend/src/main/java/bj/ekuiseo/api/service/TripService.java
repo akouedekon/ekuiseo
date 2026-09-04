@@ -10,6 +10,7 @@ import bj.ekuiseo.api.domain.Vehicle;
 import bj.ekuiseo.api.domain.enums.TripStatus;
 import bj.ekuiseo.api.domain.enums.TripType;
 import bj.ekuiseo.api.dto.trip.CreateTripRequest;
+import bj.ekuiseo.api.dto.trip.PopularRouteResponse;
 import bj.ekuiseo.api.dto.trip.StopRequest;
 import bj.ekuiseo.api.dto.trip.TripResponse;
 import bj.ekuiseo.api.dto.trip.TripStopResponse;
@@ -235,6 +236,22 @@ public class TripService {
                     page.getTotalElements());
         }
         return page.map(tripMapper::toResponse);
+    }
+
+    /** Axes les plus proposes en ce moment (GET /api/v1/trips/popular), public, borne a 12 resultats. */
+    @Transactional(readOnly = true)
+    public List<PopularRouteResponse> popularRoutes(int limit) {
+        int bounded = Math.max(1, Math.min(12, limit));
+        return tripRepository.findPopularRoutes(Instant.now(), bounded).stream()
+                .map(r -> new PopularRouteResponse(
+                        r.getOriginLabel(), nz(r.getOriginLat()), nz(r.getOriginLng()),
+                        r.getDestLabel(), nz(r.getDestLat()), nz(r.getDestLng()),
+                        r.getTrips(), r.getMinPrice()))
+                .toList();
+    }
+
+    private static double nz(Double value) {
+        return value == null ? 0.0 : value;
     }
 
     /**

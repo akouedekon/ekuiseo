@@ -35,7 +35,7 @@ export function Sheet({ open, onOpenChange, title, description, children, footer
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.18 }}
-                className="fixed inset-0 z-50 bg-[rgb(21_26_33/0.55)] backdrop-blur-[2px]"
+                className="fixed inset-0 z-50 bg-[var(--overlay)] backdrop-blur-[2px]"
               />
             </DialogPrimitive.Overlay>
 

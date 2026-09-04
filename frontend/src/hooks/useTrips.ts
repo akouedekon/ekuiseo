@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/api/client'
-import { demoTrip, demoTripSearch, demoTripStops, DEMO_MY_TRIPS, DEMO_RECURRING } from '@/api/demo'
+import { demoTrip, demoTripSearch, demoTripStops, DEMO_MY_TRIPS, DEMO_POPULAR_ROUTES, DEMO_RECURRING } from '@/api/demo'
 import { resilient, resilientMutation, type Sourced } from '@/api/resilient'
-import type { RecurringTripResponse, TripStopResponse } from '@/api/extended'
+import type { PopularRouteResponse, RecurringTripResponse, TripStopResponse } from '@/api/extended'
 import type { CreateTripRequest, Page, TripResponse, TripType } from '@/api/types'
 
 export interface TripSearchParams {
@@ -42,6 +42,22 @@ export function useTripSearch(params: TripSearchParams | null) {
         demoTripSearch,
       ),
     enabled: !!params,
+  })
+}
+
+/**
+ * Axes les plus proposes en ce moment (raccourcis de l'accueil).
+ * GET /api/v1/trips/popular — public, sans donnee personnelle.
+ */
+export function usePopularRoutes(limit = 4) {
+  return useQuery<Sourced<PopularRouteResponse[]>>({
+    queryKey: ['trips', 'popular', limit],
+    queryFn: () =>
+      resilient(
+        () => apiClient.get<PopularRouteResponse[]>(`/api/v1/trips/popular?limit=${limit}`, { auth: false }),
+        () => DEMO_POPULAR_ROUTES.slice(0, limit),
+      ),
+    staleTime: 10 * 60_000,
   })
 }
 

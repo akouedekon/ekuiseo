@@ -97,8 +97,14 @@ chaîne de déploiement, jeu de démonstration, documentation d'exploitation.
   géocodage des villes béninoises en base, rôles et back-office, reversements, signalements,
   journal d'audit, alertes de recherche, abonnements, trace des recherches (`search_events`,
   V9) et indicateurs de liquidité (`/api/v1/admin/stats/liquidity`, export CSV).
-- `frontend/` — 69 fichiers TS/TSX. Design system maison sur Radix + Tailwind, mode sombre,
-  PWA. Une vingtaine d'écrans dont `/admin`.
+- `frontend/` — Design system maison sur Radix + Tailwind (tokens dans `index.css`, dont
+  une échelle typographique nommée `text-caption` … `text-display`), mode sombre, PWA.
+  Une vingtaine d'écrans dont `/admin`. Conventions : `components/ui` (primitives),
+  `components/{feedback,forms,tables,layout,trip,booking}` (briques réutilisables :
+  `ConfirmDialog`, `SelectField`, `DataTable`, `AdminPageHeader`, `ShareTripButton`),
+  `features/<domaine>` (sections d'écran et formulaires RHF + Zod, schémas dans
+  `lib/validation.ts`), `pages/` (orchestration seulement). Toute action destructrice ou
+  financière passe par `ConfirmDialog` ; les toasts de succès ne partent qu'en `onSuccess`.
 - `docs/` — `DEPLOIEMENT.md`, `EXPLOITATION.md`, `CONFORMITE.md`, `LANCEMENT.md`,
   `donnees-demo.sql` (jeu de démonstration réellement rejoué contre PostGIS, idempotent).
 - `backend/README.md` — architecture, modèle de données, endpoints, règles métier

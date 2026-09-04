@@ -7,13 +7,13 @@ import { TooltipProvider } from '@radix-ui/react-tooltip'
 import { Toaster } from 'sonner'
 
 // Polices auto-hebergees (pas de CDN) : seul le sous-ensemble latin est charge.
-import '@fontsource/archivo/latin-600.css'
+// Archivo pour ce qui se lit de loin (titres, prix), Inter pour le reste.
 import '@fontsource/archivo/latin-700.css'
 import '@fontsource/archivo/latin-800.css'
-import '@fontsource/instrument-sans/latin-400.css'
-import '@fontsource/instrument-sans/latin-500.css'
-import '@fontsource/instrument-sans/latin-600.css'
-import '@fontsource/instrument-sans/latin-700.css'
+import '@fontsource/inter/latin-400.css'
+import '@fontsource/inter/latin-500.css'
+import '@fontsource/inter/latin-600.css'
+import '@fontsource/inter/latin-700.css'
 
 import { queryClient, createPersister } from '@/lib/queryClient'
 import { applyTheme, readStoredTheme } from '@/lib/theme'

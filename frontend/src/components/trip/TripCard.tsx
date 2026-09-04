@@ -26,18 +26,20 @@ export function TripCard({ trip, animate = true }: { trip: TripResponse; animate
     <Link
       to={`/trips/${trip.id}`}
       className={cn(
-        'group block rounded-[var(--radius-card)] border border-rule bg-surface shadow-e1 transition-all duration-200',
-        'hover:-translate-y-0.5 hover:border-rule-strong hover:shadow-e2 active:translate-y-0 active:scale-[0.995]',
+        'ek-lift group block rounded-[var(--radius-card)] border border-rule bg-surface shadow-e1',
         full && 'opacity-70',
       )}
     >
-      <div className="grid grid-cols-[auto_10px_minmax(0,1fr)_auto] items-center gap-x-3 px-4 pb-3 pt-3.5">
+      <div className="grid grid-cols-[auto_12px_minmax(0,1fr)_auto] items-center gap-x-3 px-5 pb-3.5 pt-4">
         {/* Ligne 1 : depart */}
-        <span className="tnum font-display text-[17px] font-bold leading-none">{formatTime(trip.departureAt)}</span>
-        <span aria-hidden className="mx-auto size-2.5 rounded-full border-2 border-[var(--indigo)]" />
-        <span className="truncate font-display text-[15px] font-bold leading-tight">{trip.originLabel}</span>
-        <span className="tnum row-span-3 self-start text-right font-display text-[21px] font-extrabold leading-none tracking-[-0.03em]">
-          {formatFcfa(trip.pricePerSeat)}
+        <span className="tnum font-display text-title font-bold leading-none">{formatTime(trip.departureAt)}</span>
+        <span aria-hidden className="mx-auto size-2.5 rounded-full border-2 border-primary bg-surface" />
+        <span className="truncate font-display text-base font-bold leading-tight">{trip.originLabel}</span>
+        <span className="row-span-3 self-start text-right">
+          <span className="tnum block font-display text-[22px] font-extrabold leading-none tracking-[-0.03em] text-ink">
+            {formatFcfa(trip.pricePerSeat)}
+          </span>
+          <span className="mt-1 block text-caption text-muted">par place</span>
         </span>
 
         {/* Ligne 2 : duree du trajet, le long du filet */}
@@ -46,35 +48,32 @@ export function TripCard({ trip, animate = true }: { trip: TripResponse; animate
         <span aria-hidden />
 
         {/* Ligne 3 : arrivee */}
-        <span className="tnum font-display text-[17px] font-bold leading-none text-muted">{formatTime(arrival)}</span>
-        <span aria-hidden className="mx-auto size-2.5 rounded-[2px] bg-[var(--vermillon)]" />
-        <span className="truncate font-display text-[15px] font-bold leading-tight text-ink-2">{trip.destLabel}</span>
+        <span className="tnum font-display text-title font-bold leading-none text-muted">{formatTime(arrival)}</span>
+        <span aria-hidden className="mx-auto size-2.5 rounded-[3px] bg-danger" />
+        <span className="truncate font-display text-base font-bold leading-tight text-ink-2">{trip.destLabel}</span>
       </div>
 
       {/* Le bandeau conducteur passe a la ligne plutot que de tronquer le nom. */}
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-rule px-4 py-2.5">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-t border-rule px-5 py-3">
         <Avatar
           firstName={trip.driver.firstName}
           lastName={trip.driver.lastName}
           photoUrl={trip.driver.photoUrl}
           size={28}
         />
-        <span className="text-[13px] font-medium">
+        <span className="text-label font-semibold">
           {trip.driver.firstName} {trip.driver.lastName.charAt(0)}.
         </span>
         <RatingStars value={trip.driver.ratingAvg} size={12} />
+        {trip.driver.identityVerified ? (
+          <BadgeCheck className="size-4 text-success-ink" aria-label="Identité vérifiée" />
+        ) : null}
 
-        <span className="ml-auto flex shrink-0 items-center gap-1">
+        <span className="ml-auto flex shrink-0 items-center gap-1.5">
           {trip.instantBooking ? (
             <Badge tone="indigo" title="Réservation instantanée">
               <Zap aria-hidden />
               Immédiat
-            </Badge>
-          ) : null}
-          {trip.vehicle.comfortLevel === 'PREMIUM' ? (
-            <Badge tone="neutral" className="hidden sm:inline-flex">
-              <BadgeCheck aria-hidden />
-              Premium
             </Badge>
           ) : null}
           <Badge tone={full ? 'danger' : trip.seatsAvailable <= 1 ? 'warning' : 'neutral'}>

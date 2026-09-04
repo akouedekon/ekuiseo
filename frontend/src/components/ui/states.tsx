@@ -21,15 +21,16 @@ export function EmptyState({
   className?: string
 }) {
   return (
-    <div className={cn('flex flex-col items-center gap-3 px-6 py-12 text-center', className)}>
-      <span className="flex size-14 items-center justify-center rounded-full bg-[var(--surface-calm)] text-ink-2">
+    <div className={cn('relative flex flex-col items-center gap-3 overflow-hidden px-6 py-12 text-center', className)}>
+      <span aria-hidden className="ek-dots pointer-events-none absolute inset-x-0 top-0 h-32" />
+      <span className="relative flex size-14 items-center justify-center rounded-[var(--radius-card)] bg-primary-soft text-primary-ink shadow-e1 ring-4 ring-surface">
         <Icon className="size-6" aria-hidden />
       </span>
-      <div className="max-w-xs">
-        <h3 className="font-display text-[17px] font-bold tracking-[-0.02em]">{title}</h3>
-        {description ? <p className="mt-1 text-[14px] leading-relaxed text-muted">{description}</p> : null}
+      <div className="relative max-w-xs">
+        <h3 className="font-display text-title font-bold tracking-[-0.02em]">{title}</h3>
+        {description ? <p className="mt-1 text-body leading-relaxed text-muted">{description}</p> : null}
       </div>
-      {action ? <div className="mt-1">{action}</div> : null}
+      {action ? <div className="relative mt-1">{action}</div> : null}
     </div>
   )
 }
@@ -48,12 +49,12 @@ export function ErrorState({
 }) {
   return (
     <div className={cn('flex flex-col items-center gap-3 px-6 py-10 text-center', className)} role="alert">
-      <span className="flex size-14 items-center justify-center rounded-full bg-[var(--vermillon-soft)] text-[var(--vermillon)]">
+      <span className="flex size-14 items-center justify-center rounded-[var(--radius-card)] bg-danger-soft text-danger-ink shadow-e1 ring-4 ring-surface">
         <AlertTriangle className="size-6" aria-hidden />
       </span>
       <div className="max-w-xs">
-        <h3 className="font-display text-[17px] font-bold tracking-[-0.02em]">{title}</h3>
-        <p className="mt-1 text-[14px] leading-relaxed text-muted">{description}</p>
+        <h3 className="font-display text-title font-bold tracking-[-0.02em]">{title}</h3>
+        <p className="mt-1 text-body leading-relaxed text-muted">{description}</p>
       </div>
       {onRetry ? (
         <Button variant="secondary" onClick={onRetry}>

@@ -8,6 +8,7 @@ import bj.ekuiseo.api.dto.payment.PaymentPlanResponse;
 import bj.ekuiseo.api.dto.review.CreateReviewRequest;
 import bj.ekuiseo.api.dto.review.ReviewResponse;
 import bj.ekuiseo.api.dto.trip.CreateTripRequest;
+import bj.ekuiseo.api.dto.trip.PopularRouteResponse;
 import bj.ekuiseo.api.dto.trip.TripResponse;
 import bj.ekuiseo.api.dto.trip.TripStopResponse;
 import bj.ekuiseo.api.dto.trip.UpdateTripRequest;
@@ -72,6 +73,12 @@ public class TripController {
         // recherche est alors anonyme elle aussi).
         return tripService.search(currentUser.idOrNull(), originLabel, destLabel,
                 originLat, originLng, destLat, destLng, date, seats, radiusKm, tripType, pageable);
+    }
+
+    @Operation(summary = "Axes les plus proposes", description = "Public. Trajets PUBLISHED a venir avec au moins une place, regroupes par origine/destination, classes par nombre de departs. Alimente les raccourcis de l'accueil.")
+    @GetMapping("/popular")
+    public List<PopularRouteResponse> popular(@RequestParam(defaultValue = "4") int limit) {
+        return tripService.popularRoutes(limit);
     }
 
     @Operation(summary = "Consulter un trajet", description = "Public pour un trajet PUBLISHED. Un trajet DRAFT renvoie 404 pour toute personne autre que son conducteur (jamais 403, pour ne pas reveler son existence).")

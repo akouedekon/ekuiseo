@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { EmptyState, ErrorState } from '@/components/ui/states'
+import { AdminPageHeader } from '@/components/layout/AdminPageHeader'
 import { useAdminVerifications, useReviewVerification } from '@/hooks/useAdmin'
 import { formatFromNow, formatPhone } from '@/lib/format'
 import { listContainer, listItem } from '@/lib/motion'
@@ -59,6 +60,11 @@ export function AdminVerifications() {
 
   return (
     <div>
+      <AdminPageHeader
+        title="Vérifications d'identité"
+        count={verifications.isSuccess ? list.length : undefined}
+        description="Dossiers en attente, du plus ancien au plus récent. Un refus doit être motivé : l'utilisateur reçoit le motif."
+      />
 
       {verifications.isPending ? (
         <div className="space-y-2">

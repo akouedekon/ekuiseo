@@ -23,8 +23,8 @@ export default defineConfig({
         scope: '/',
         display: 'standalone',
         orientation: 'portrait',
-        background_color: '#FFFDF7',
-        theme_color: '#2E3FA8',
+        background_color: '#F6F6F3',
+        theme_color: '#0E7C4A',
         categories: ['travel', 'navigation', 'lifestyle'],
         icons: [
           { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
@@ -91,6 +91,7 @@ export default defineConfig({
   },
   server: {
     host: true,
-    port: 5173,
+    // PORT permet a un lanceur externe d'imposer un port (ex. quand 5173 est deja pris).
+    port: Number(process.env.PORT) || 5173,
   },
 })

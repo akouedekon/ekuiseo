@@ -21,7 +21,7 @@ export function applyTheme(mode: ThemeMode): void {
   const dark = mode === 'dark' || (mode === 'system' && prefersDark())
   document.documentElement.classList.toggle('dark', dark)
   const meta = document.querySelector('meta[name="theme-color"]')
-  if (meta) meta.setAttribute('content', dark ? '#101419' : '#2E3FA8')
+  if (meta) meta.setAttribute('content', dark ? '#0d0d0f' : '#0e7c4a')
 }
 
 export function storeTheme(mode: ThemeMode): void {

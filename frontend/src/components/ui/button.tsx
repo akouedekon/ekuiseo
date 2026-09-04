@@ -5,31 +5,36 @@ import { forwardRef, type ButtonHTMLAttributes } from 'react'
 import { cn } from '@/lib/cn'
 
 /*
- * Cibles tactiles : 44 px minimum (md), 54 px pour les actions principales (lg).
- * Le retour a l'appui est un enfoncement bref (active:scale), coupe par
- * prefers-reduced-motion via la neutralisation globale des transitions.
+ * Cibles tactiles : 36 px (sm, actions secondaires de liste), 44 px (md),
+ * 52 px (lg, action principale d'un ecran). Etats dans l'ordre ou l'oeil les
+ * rencontre : repos, survol (un cran de teinte), appui (deux crans + leger
+ * enfoncement), focus clavier (anneau global), desactive, chargement.
  */
 const buttonVariants = cva(
-  'relative inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-[var(--radius-control)] font-medium transition-[transform,background-color,color,box-shadow] duration-150 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50',
+  'relative inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-[var(--radius-control)] font-semibold tracking-[-0.005em] transition-[transform,background-color,color,box-shadow,border-color] duration-150 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 [&>svg]:shrink-0',
   {
     variants: {
       variant: {
-        primary: 'bg-[var(--indigo)] text-[var(--indigo-contrast)] shadow-e1 hover:bg-[var(--indigo-deep)]',
-        secondary: 'bg-[var(--surface)] text-ink border border-rule-strong hover:bg-[var(--surface-calm)]',
-        subtle: 'bg-[var(--surface-calm)] text-ink hover:bg-[var(--rule)]',
-        ghost: 'text-ink-2 hover:bg-[var(--surface-calm)] hover:text-ink',
-        danger: 'bg-[var(--vermillon)] text-[var(--vermillon-contrast)] hover:brightness-95',
-        success: 'bg-[var(--vert)] text-[var(--vert-contrast)] hover:brightness-95',
+        primary:
+          'bg-primary text-on-primary shadow-[0_1px_0_0_rgb(255_255_255/0.14)_inset,var(--shadow-1)] hover:bg-primary-hover active:bg-primary-active',
+        secondary:
+          'border border-rule-strong bg-surface text-ink shadow-e1 hover:border-[color-mix(in_srgb,var(--rule-strong)_55%,var(--ink-2))] hover:bg-surface-2 active:bg-rule',
+        subtle: 'bg-surface-2 text-ink hover:bg-rule active:bg-rule-strong',
+        ghost: 'text-ink-2 hover:bg-surface-2 hover:text-ink active:bg-rule',
+        danger:
+          'bg-danger text-on-danger shadow-[0_1px_0_0_rgb(255_255_255/0.14)_inset,var(--shadow-1)] hover:bg-[var(--danger-hover)] active:bg-[var(--danger-active)]',
+        success:
+          'bg-success text-on-success shadow-[0_1px_0_0_rgb(255_255_255/0.14)_inset,var(--shadow-1)] hover:bg-[var(--success-hover)] active:bg-[var(--success-active)]',
         outlineBrand:
-          'border border-[var(--indigo)] text-[var(--indigo)] bg-transparent hover:bg-[var(--indigo-soft)]',
-        link: 'text-[var(--indigo)] underline-offset-4 hover:underline px-0 h-auto',
+          'border border-primary bg-transparent text-primary-ink hover:bg-primary-soft active:bg-primary-soft-2',
+        link: 'h-auto px-0 text-primary-ink underline-offset-4 hover:underline active:text-primary-active',
       },
       size: {
-        sm: 'h-9 px-3 text-[13px]',
-        md: 'h-11 px-4 text-[15px]',
-        lg: 'h-[54px] px-6 text-base font-semibold',
-        icon: 'h-11 w-11 p-0',
-        iconSm: 'h-9 w-9 p-0',
+        sm: 'h-9 px-3.5 text-label [&>svg]:size-4',
+        md: 'h-11 px-4.5 text-body [&>svg]:size-[18px]',
+        lg: 'h-13 px-6 text-base [&>svg]:size-5',
+        icon: 'size-11 p-0 [&>svg]:size-[18px]',
+        iconSm: 'size-9 p-0 [&>svg]:size-4',
       },
       block: { true: 'w-full', false: '' },
     },
@@ -72,7 +77,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     >
       {loading ? (
         <>
-          <Loader2 aria-hidden className="size-4 animate-spin" />
+          <Loader2 aria-hidden className="animate-spin" />
           <span className="sr-only">Chargement en cours</span>
         </>
       ) : null}

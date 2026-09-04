@@ -30,6 +30,8 @@ const AdminVerifications = lazy(() =>
 )
 const AdminPayouts = lazy(() => import('@/pages/admin/AdminPayouts').then((m) => ({ default: m.AdminPayouts })))
 const AdminUsers = lazy(() => import('@/pages/admin/AdminUsers').then((m) => ({ default: m.AdminUsers })))
+/* Charte graphique vivante : reference de l'equipe, jamais liee a l'accueil. */
+const StyleGuidePage = lazy(() => import('@/pages/StyleGuidePage').then((m) => ({ default: m.StyleGuidePage })))
 
 export default function App() {
   return (
@@ -44,6 +46,7 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/offline" element={<OfflinePage />} />
+        <Route path="/charte" element={<Suspense fallback={<AppLoadingScreen />}><StyleGuidePage /></Suspense>} />
 
         {/* --- Parcours authentifie --- */}
         <Route path="/book/:tripId" element={<RequireAuth><BookingPage /></RequireAuth>} />

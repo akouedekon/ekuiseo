@@ -40,19 +40,19 @@ export function StatTile({
 }) {
   return (
     <motion.div variants={listItem}>
-      <Card className="h-full p-4">
-        <p className="text-[13px] text-muted">{label}</p>
+      <Card className="h-full p-5">
+        <p className="text-label font-medium text-muted">{label}</p>
         <p
           title={title}
-          className="tnum mt-1.5 font-display text-[24px] font-extrabold leading-none tracking-[-0.03em]"
+          className="tnum mt-2 font-display text-[26px] font-extrabold leading-none tracking-[-0.03em] text-ink"
         >
           {value}
         </p>
-        <p className="mt-2 flex flex-wrap items-center gap-x-1.5 text-[13px]">
+        <p className="mt-2.5 flex flex-wrap items-center gap-x-1.5 text-label">
           <DeltaBadge delta={delta} unit={deltaUnit} lowerIsBetter={lowerIsBetter} />
           <span className="text-muted">vs période précédente</span>
         </p>
-        {hint ? <p className="mt-1 text-[12px] text-muted">{hint}</p> : null}
+        {hint ? <p className="mt-1 text-caption text-muted">{hint}</p> : null}
       </Card>
     </motion.div>
   )
@@ -82,8 +82,8 @@ export function DeltaBadge({
   return (
     <span
       className={cn(
-        'tnum inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap font-semibold',
-        good ? 'text-[var(--vert)]' : 'text-[var(--vermillon)]',
+        'tnum inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded-[var(--radius-chip)] px-1.5 py-0.5 text-caption font-semibold',
+        good ? 'bg-success-soft text-success-ink' : 'bg-danger-soft text-danger-ink',
       )}
     >
       {up ? <ArrowUpRight className="size-3.5" aria-hidden /> : <ArrowDownRight className="size-3.5" aria-hidden />}

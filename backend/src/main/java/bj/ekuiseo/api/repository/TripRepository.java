@@ -158,6 +158,50 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
                        @Param("dateTo") Instant dateTo,
                        Pageable pageable);
 
+    /** Axe propose en ce moment, pour {@link #findPopularRoutes}. */
+    interface PopularRouteStats {
+        String getOriginLabel();
+
+        String getDestLabel();
+
+        Double getOriginLat();
+
+        Double getOriginLng();
+
+        Double getDestLat();
+
+        Double getDestLng();
+
+        long getTrips();
+
+        long getMinPrice();
+    }
+
+    /**
+     * Axes les plus proposes (GET /api/v1/trips/popular) : trajets PUBLISHED a venir
+     * avec au moins une place, regroupes par libelles exacts d'origine/destination,
+     * classes par nombre de departs puis prix plancher. Coordonnees moyennees pour
+     * pre-remplir une recherche depuis l'accueil.
+     */
+    @Query(value = """
+            select t.origin_label as origin_label,
+                   t.dest_label as dest_label,
+                   avg(t.origin_lat) as origin_lat,
+                   avg(t.origin_lng) as origin_lng,
+                   avg(t.dest_lat) as dest_lat,
+                   avg(t.dest_lng) as dest_lng,
+                   count(*) as trips,
+                   min(t.price_per_seat) as min_price
+            from trips t
+            where t.status = 'PUBLISHED'
+              and t.departure_at >= :now
+              and t.seats_available > 0
+            group by t.origin_label, t.dest_label
+            order by trips desc, min_price asc
+            limit :limit
+            """, nativeQuery = true)
+    List<PopularRouteStats> findPopularRoutes(@Param("now") Instant now, @Param("limit") int limit);
+
     // ------------------------------------------------------------------
     // Indicateurs de liquidite (AdminLiquidityService). Requetes natives
     // agregees : jamais de chargement de trajets en memoire pour compter.

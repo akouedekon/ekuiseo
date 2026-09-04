@@ -68,7 +68,7 @@ export function StatusBanners({ className }: { className?: string }) {
   const fetching = useIsFetching()
 
   return (
-    <div className={cn('sticky top-[57px] z-30', className)} aria-live="polite">
+    <div className={cn('sticky top-[67px] z-30', className)} aria-live="polite">
       <AnimatePresence initial={false}>
         {!online ? (
           <motion.div

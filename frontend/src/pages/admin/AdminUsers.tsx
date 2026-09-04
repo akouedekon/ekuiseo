@@ -1,130 +1,211 @@
-import { motion } from 'motion/react'
-import { Ban, RotateCcw, Search, ShieldCheck, UserX } from 'lucide-react'
+import { Ban, RotateCcw, Search, ShieldCheck, Star, UserX } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { ConfirmDialog } from '@/components/feedback/ConfirmDialog'
+import { AdminPageHeader } from '@/components/layout/AdminPageHeader'
+import { DataTable, type DataTableColumn } from '@/components/tables/DataTable'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Avatar, RatingStars, Skeleton } from '@/components/ui/misc'
+import { Avatar } from '@/components/ui/misc'
 import { EmptyState, ErrorState } from '@/components/ui/states'
 import { useAdminUsers, useToggleUserSuspension } from '@/hooks/useAdmin'
 import { formatDayShort, formatPhone } from '@/lib/format'
-import { listContainer, listItem } from '@/lib/motion'
+import type { AdminUserResponse } from '@/api/extended'
+
+const SEARCH_DEBOUNCE_MS = 350
+
+const COLUMNS: DataTableColumn<AdminUserResponse>[] = [
+  {
+    id: 'name',
+    header: 'Utilisateur',
+    mobile: 'title',
+    sortValue: (user) => `${user.lastName} ${user.firstName}`,
+    className: 'min-w-[220px]',
+    cell: (user) => (
+      <span className="flex items-center gap-3">
+        <Avatar firstName={user.firstName} lastName={user.lastName} size={36} className="hidden lg:inline-flex" />
+        <span className="min-w-0">
+          <span className="block truncate font-semibold text-ink">
+            {user.firstName} {user.lastName}
+          </span>
+          <span className="tnum block truncate text-label text-muted">
+            {formatPhone(user.phone)}
+            {user.email ? <span className="hidden 2xl:inline"> · {user.email}</span> : null}
+          </span>
+        </span>
+      </span>
+    ),
+  },
+  {
+    id: 'status',
+    header: 'Statut',
+    mobile: 'badge',
+    sortValue: (user) => (user.suspended ? 2 : user.identityVerified ? 0 : 1),
+    cell: (user) =>
+      user.suspended ? (
+        <Badge tone="danger">
+          <Ban aria-hidden />
+          Suspendu
+        </Badge>
+      ) : user.identityVerified ? (
+        <Badge tone="success">
+          <ShieldCheck aria-hidden />
+          Vérifié
+        </Badge>
+      ) : (
+        <Badge tone="neutral">Actif</Badge>
+      ),
+  },
+  {
+    id: 'trips',
+    header: 'Trajets',
+    align: 'right',
+    mobile: 'value',
+    sortValue: (user) => user.tripsPublished,
+    cell: (user) => user.tripsPublished.toLocaleString('fr-FR'),
+  },
+  {
+    id: 'bookings',
+    header: 'Résas',
+    align: 'right',
+    mobile: 'value',
+    className: 'hidden xl:table-cell',
+    sortValue: (user) => user.bookingsMade,
+    cell: (user) => user.bookingsMade.toLocaleString('fr-FR'),
+  },
+  {
+    id: 'rating',
+    header: 'Note',
+    align: 'right',
+    mobile: 'value',
+    sortValue: (user) => (user.ratingAvg > 0 ? user.ratingAvg : null),
+    cell: (user) =>
+      user.ratingAvg > 0 ? (
+        <span className="inline-flex items-center gap-1 font-semibold">
+          <Star className="size-3.5 fill-[var(--ocre)] text-[var(--ocre)]" aria-hidden />
+          {user.ratingAvg.toFixed(1).replace('.', ',')}
+        </span>
+      ) : (
+        <span className="text-muted">—</span>
+      ),
+  },
+  {
+    id: 'createdAt',
+    header: 'Inscrit le',
+    align: 'right',
+    mobile: 'value',
+    className: 'hidden xl:table-cell',
+    sortValue: (user) => user.createdAt,
+    cell: (user) => <span className="text-ink-2">{formatDayShort(user.createdAt)}</span>,
+  },
+]
 
 export function AdminUsers() {
   const [input, setInput] = useState('')
   const [query, setQuery] = useState('')
+  const [target, setTarget] = useState<AdminUserResponse | null>(null)
   const users = useAdminUsers(query)
   const toggle = useToggleUserSuspension()
 
-  // Anti-rebond : on n'interroge l'API qu'apres 350 ms de calme.
+  // Anti-rebond : on n'interroge l'API qu'apres un court silence de saisie.
   useEffect(() => {
-    const id = window.setTimeout(() => setQuery(input), 350)
+    const id = window.setTimeout(() => setQuery(input.trim()), SEARCH_DEBOUNCE_MS)
     return () => window.clearTimeout(id)
   }, [input])
 
   const list = users.data?.data ?? []
 
+  const confirmToggle = () => {
+    if (!target) return
+    const user = target
+    const suspend = !user.suspended
+    toggle.mutate(
+      { id: user.id, suspend },
+      {
+        onSuccess: () =>
+          toast.success(suspend ? `${user.firstName} ${user.lastName} a été suspendu` : `${user.firstName} ${user.lastName} a été réactivé`),
+        onError: () => toast.error("L'action n'a pas abouti. Réessayez."),
+        onSettled: () => setTarget(null),
+      },
+    )
+  }
+
   return (
     <div>
+      <AdminPageHeader
+        title="Utilisateurs"
+        count={users.isSuccess ? list.length : undefined}
+        description="Recherche par nom, numéro ou e-mail. Une suspension bloque la connexion et les réservations."
+      />
 
       <Input
-        label="Rechercher un utilisateur"
+        label="Rechercher"
         placeholder="Nom, numéro ou e-mail"
         value={input}
         onChange={(event) => setInput(event.target.value)}
         leading={<Search />}
         className="mb-4"
+        aria-describedby={undefined}
       />
 
-      {users.isPending ? (
-        <div className="space-y-2">
-          {[0, 1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-20 rounded-[var(--radius-card)]" />
-          ))}
-        </div>
-      ) : users.isError ? (
+      {users.isError ? (
         <ErrorState onRetry={() => users.refetch()} />
-      ) : list.length === 0 ? (
-        <EmptyState
-          icon={UserX}
-          title="Aucun utilisateur"
-          description={query ? `Aucun résultat pour « ${query} ».` : 'La base est vide.'}
-        />
       ) : (
-        <motion.ul variants={listContainer} initial="hidden" animate="show" className="space-y-2">
-          {list.map((user) => (
-            <motion.li key={user.id} variants={listItem} layout>
-              <Card className={user.suspended ? 'border-l-[3px] border-l-[var(--vermillon)]' : ''}>
-                <div className="flex flex-wrap items-start gap-3 p-4">
-                  <Avatar firstName={user.firstName} lastName={user.lastName} size={44} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-display text-[16px] font-bold">
-                        {user.firstName} {user.lastName}
-                      </p>
-                      {user.identityVerified ? (
-                        <Badge tone="success">
-                          <ShieldCheck aria-hidden />
-                          Vérifié
-                        </Badge>
-                      ) : null}
-                      {user.suspended ? (
-                        <Badge tone="danger">
-                          <Ban aria-hidden />
-                          Suspendu
-                        </Badge>
-                      ) : null}
-                    </div>
-                    <p className="tnum text-[13px] text-muted">
-                      {formatPhone(user.phone)}
-                      {user.email ? ` · ${user.email}` : ''}
-                    </p>
-                    <p className="tnum mt-1 text-[13px] text-ink-2">
-                      {user.tripsPublished} trajets publiés · {user.bookingsMade} réservations · inscrit le{' '}
-                      {formatDayShort(user.createdAt)}
-                    </p>
-                    {user.ratingAvg > 0 ? <RatingStars value={user.ratingAvg} size={12} className="mt-1" /> : null}
-                  </div>
-
-                  <Button
-                    size="sm"
-                    variant={user.suspended ? 'secondary' : 'ghost'}
-                    className={user.suspended ? '' : 'text-[var(--vermillon)]'}
-                    onClick={() =>
-                      toggle.mutate(
-                        { id: user.id, suspend: !user.suspended },
-                        {
-                          onSuccess: () =>
-                            toast.success(
-                              user.suspended
-                                ? `${user.firstName} a été réactivé`
-                                : `${user.firstName} a été suspendu`,
-                            ),
-                          onError: () => toast.error("L'action a échoué."),
-                        },
-                      )
-                    }
-                  >
-                    {user.suspended ? (
-                      <>
-                        <RotateCcw className="size-4" aria-hidden />
-                        Réactiver
-                      </>
-                    ) : (
-                      <>
-                        <Ban className="size-4" aria-hidden />
-                        Suspendre
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </Card>
-            </motion.li>
-          ))}
-        </motion.ul>
+        <DataTable
+          caption="Liste des utilisateurs"
+          columns={COLUMNS}
+          rows={list}
+          rowKey={(user) => user.id}
+          loading={users.isPending}
+          initialSort={{ id: 'createdAt', direction: 'desc' }}
+          rowAccent={(user) => (user.suspended ? 'var(--vermillon)' : undefined)}
+          empty={
+            <EmptyState
+              icon={UserX}
+              title="Aucun utilisateur"
+              description={query ? `Aucun résultat pour « ${query} ».` : 'Aucun compte enregistré pour le moment.'}
+            />
+          }
+          rowActions={(user) => (
+            <Button
+              size="sm"
+              variant={user.suspended ? 'secondary' : 'ghost'}
+              className={user.suspended ? undefined : 'text-[var(--vermillon)]'}
+              onClick={() => setTarget(user)}
+            >
+              {user.suspended ? (
+                <>
+                  <RotateCcw className="size-4" aria-hidden />
+                  Réactiver
+                </>
+              ) : (
+                <>
+                  <Ban className="size-4" aria-hidden />
+                  Suspendre
+                </>
+              )}
+            </Button>
+          )}
+        />
       )}
+
+      <ConfirmDialog
+        open={target !== null}
+        onOpenChange={(open) => !open && setTarget(null)}
+        title={target?.suspended ? 'Réactiver ce compte ?' : 'Suspendre ce compte ?'}
+        description={
+          target
+            ? target.suspended
+              ? `${target.firstName} ${target.lastName} pourra de nouveau se connecter, réserver et publier.`
+              : `${target.firstName} ${target.lastName} ne pourra plus se connecter ni réserver. Ses trajets à venir restent visibles jusqu'à leur annulation manuelle.`
+            : undefined
+        }
+        tone={target?.suspended ? 'default' : 'danger'}
+        confirmLabel={target?.suspended ? 'Réactiver' : 'Suspendre'}
+        loading={toggle.isPending}
+        onConfirm={confirmToggle}
+      />
     </div>
   )
 }

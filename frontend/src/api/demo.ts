@@ -30,6 +30,7 @@ import type {
   PaymentMethodResponse,
   PaymentMode,
   PaymentPlanResponse,
+  PopularRouteResponse,
   PublicUserResponse,
   RecurringTripResponse,
   TripStopResponse,
@@ -76,11 +77,11 @@ export const DEMO_ME: UserResponse = {
 }
 
 const DRIVERS = [
-  { id: 'u-01', firstName: 'Koffi', lastName: 'Aholou', ratingAvg: 4.9, ratingCount: 132 },
-  { id: 'u-02', firstName: 'Mariam', lastName: 'Bio', ratingAvg: 4.7, ratingCount: 64 },
-  { id: 'u-03', firstName: 'Serge', lastName: 'Hounkpatin', ratingAvg: 4.4, ratingCount: 21 },
-  { id: 'u-04', firstName: 'Estelle', lastName: 'Zinsou', ratingAvg: 5.0, ratingCount: 9 },
-  { id: 'u-05', firstName: 'Rachidi', lastName: 'Yacoubou', ratingAvg: 4.6, ratingCount: 88 },
+  { id: 'u-01', firstName: 'Koffi', lastName: 'Aholou', ratingAvg: 4.9, ratingCount: 132, identityVerified: true },
+  { id: 'u-02', firstName: 'Mariam', lastName: 'Bio', ratingAvg: 4.7, ratingCount: 64, identityVerified: true },
+  { id: 'u-03', firstName: 'Serge', lastName: 'Hounkpatin', ratingAvg: 4.4, ratingCount: 21, identityVerified: false },
+  { id: 'u-04', firstName: 'Estelle', lastName: 'Zinsou', ratingAvg: 5.0, ratingCount: 9, identityVerified: true },
+  { id: 'u-05', firstName: 'Rachidi', lastName: 'Yacoubou', ratingAvg: 4.6, ratingCount: 88, identityVerified: false },
 ] as const
 
 const VEHICLES = [
@@ -422,6 +423,14 @@ export function demoAdminStats(days = 30): AdminStatsResponse {
     ],
   }
 }
+
+/** Axes les plus proposes (GET /api/v1/trips/popular), raccourcis de l'accueil. */
+export const DEMO_POPULAR_ROUTES: PopularRouteResponse[] = [
+  { originLabel: 'Cotonou', originLat: 6.3703, originLng: 2.3912, destLabel: 'Bohicon', destLat: 7.1782, destLng: 2.0667, trips: 14, minPrice: 3500 },
+  { originLabel: 'Cotonou', originLat: 6.3703, originLng: 2.3912, destLabel: 'Porto-Novo', destLat: 6.4969, destLng: 2.6289, trips: 11, minPrice: 1500 },
+  { originLabel: 'Cotonou', originLat: 6.3703, originLng: 2.3912, destLabel: 'Parakou', destLat: 9.3372, destLng: 2.6303, trips: 6, minPrice: 9000 },
+  { originLabel: 'Abomey-Calavi', originLat: 6.4489, originLng: 2.3556, destLabel: 'Cotonou', destLat: 6.3703, destLng: 2.3912, trips: 22, minPrice: 1000 },
+]
 
 /**
  * Indicateurs de liquidite (GET /api/v1/admin/stats/liquidity). Les volumes sont

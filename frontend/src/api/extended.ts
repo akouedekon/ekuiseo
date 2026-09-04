@@ -180,6 +180,31 @@ export interface IdentityVerificationResponse {
   rejectionReason: string | null
 }
 
+/* ------------------------------------------------------------ Geocodage */
+
+/** Lieu du referentiel serveur (GET /api/v1/geo/search, migration V3). */
+export interface GeoPlaceResponse {
+  id: string
+  name: string
+  region: string | null
+  countryCode: string
+  kind: 'CITY' | 'DISTRICT'
+  lat: number
+  lng: number
+}
+
+/** Axe le plus propose en ce moment (GET /api/v1/trips/popular), raccourcis de l'accueil. */
+export interface PopularRouteResponse {
+  originLabel: string
+  originLat: number
+  originLng: number
+  destLabel: string
+  destLat: number
+  destLng: number
+  trips: number
+  minPrice: number
+}
+
 /* ------------------------------------------------------ Trajets recurrents */
 
 /** « Votre trajet de la semaine » — trajet quotidien memorise du passager. */

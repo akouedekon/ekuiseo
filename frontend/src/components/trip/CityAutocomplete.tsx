@@ -2,7 +2,8 @@ import { AnimatePresence, motion } from 'motion/react'
 import { MapPin, X } from 'lucide-react'
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/cn'
-import { searchCities, type CityOption } from '@/lib/cities'
+import { useCitySuggestions } from '@/hooks/useGeo'
+import type { CityOption } from '@/lib/cities'
 
 interface CityAutocompleteProps {
   label: string
@@ -16,7 +17,8 @@ interface CityAutocompleteProps {
 }
 
 /**
- * Champ ville avec autocompletion sur la liste locale (lib/cities.ts).
+ * Champ ville avec autocompletion : referentiel serveur (GET /api/v1/geo/search)
+ * complete par la liste locale (lib/cities.ts), qui sert seule hors ligne.
  * Combobox conforme WAI-ARIA : navigation flechee, Entree pour valider,
  * Echap pour fermer, `aria-activedescendant` sur l'option survolee.
  */
@@ -36,10 +38,12 @@ export function CityAutocomplete({
   const [highlight, setHighlight] = useState(0)
   const rootRef = useRef<HTMLDivElement>(null)
 
-  const suggestions = useMemo(() => {
-    const results = searchCities(query, 7)
-    return exclude ? results.filter((city) => city.label !== exclude.label) : results
-  }, [query, exclude])
+  // Referentiel serveur + liste locale (voir useCitySuggestions) : on ne propose pas A -> A.
+  const candidates = useCitySuggestions(query, 8)
+  const suggestions = useMemo(
+    () => (exclude ? candidates.filter((city) => city.label !== exclude.label) : candidates).slice(0, 7),
+    [candidates, exclude],
+  )
 
   // Fermeture au clic exterieur : le champ ne doit jamais rester ouvert « dans le vide ».
   useEffect(() => {
@@ -104,10 +108,7 @@ export function CityAutocomplete({
               setOpen(false)
             }
           }}
-          className={cn(
-            'h-12 w-full rounded-[var(--radius-control)] border bg-surface pl-10 pr-10 text-[15px] font-medium text-ink placeholder:font-normal placeholder:text-muted transition-colors focus:border-[var(--indigo)] focus:outline-none',
-            error ? 'border-[var(--vermillon)]' : 'border-rule-strong',
-          )}
+          className="ek-field h-12 w-full rounded-[var(--radius-control)] pl-10 pr-10 text-base font-medium placeholder:font-normal placeholder:text-muted"
         />
         {value || query ? (
           <button

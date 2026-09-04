@@ -19,8 +19,10 @@ import { ErrorState } from '@/components/ui/states'
 import { PageContainer, PageHeader, SectionTitle } from '@/components/layout/PageContainer'
 import { RouteMap } from '@/components/trip/RouteMap'
 import { RouteTimeline } from '@/components/trip/RouteTimeline'
+import { ShareTripButton } from '@/components/trip/ShareTripButton'
 import { buildRoutePoints } from '@/lib/route'
 import { estimatePaymentPlan } from '@/lib/payments'
+import { useMe } from '@/hooks/useAuth'
 import { usePublicUser, useUserReviews } from '@/hooks/useReviews'
 import { useTrip, useTripStops } from '@/hooks/useTrips'
 import { estimateDurationMinutes, haversineKm } from '@/lib/cities'
@@ -31,6 +33,7 @@ export function TripDetailPage() {
   const navigate = useNavigate()
   const trip = useTrip(id)
   const stops = useTripStops(id)
+  const me = useMe()
   const driverId = trip.data?.data.driver.id
   const driver = usePublicUser(driverId)
   const reviews = useUserReviews(driverId)
@@ -67,8 +70,12 @@ export function TripDetailPage() {
   ]
   const full = data.seatsAvailable === 0
   const cancelled = data.status === 'CANCELLED'
+  // Regle metier n.8 : un conducteur ne reserve pas sur son propre trajet.
+  const isOwnTrip = me.data?.data.id === data.driver.id
   const driverData = driver.data?.data
   const reviewList = (reviews.data?.data ?? []).slice(0, 4)
+  const shareText = `${data.originLabel} → ${data.destLabel}, ${formatRelativeDay(data.departureAt).toLowerCase()} — ${formatFcfa(data.pricePerSeat)} par place sur Ekuiseo`
+  const primaryLabel = isOwnTrip ? 'Votre trajet' : full ? 'Complet' : cancelled ? 'Trajet annulé' : 'Réserver'
 
   return (
     <>
@@ -77,6 +84,15 @@ export function TripDetailPage() {
         <PageHeader
           title={`${data.originLabel} → ${data.destLabel}`}
           subtitle={`${formatRelativeDay(data.departureAt)} · ${formatDuration(durationMin)} de route`}
+          backTo="/search"
+          actions={
+            <ShareTripButton
+              title={`${data.originLabel} → ${data.destLabel}`}
+              text={shareText}
+              path={`/trips/${data.id}`}
+              className="hidden sm:inline-flex"
+            />
+          }
         />
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
@@ -266,18 +282,31 @@ export function TripDetailPage() {
               <RouteMap points={mapPoints} className="h-[240px]" />
               <Card className="p-4">
                 <PriceBlock pricePerSeat={data.pricePerSeat} />
-                <Button
-                  size="lg"
-                  block
-                  className="mt-4"
-                  disabled={full || cancelled}
-                  onClick={() => navigate(`/book/${data.id}`)}
-                >
-                  {full ? 'Complet' : cancelled ? 'Trajet annulé' : 'Réserver'}
-                </Button>
-                <p className="mt-2 text-center text-[12px] text-muted">
-                  Acompte en ligne, solde en espèces à bord — ou paiement intégral si vous préférez.
-                </p>
+                {isOwnTrip ? (
+                  <>
+                    <Button asChild variant="secondary" size="lg" block className="mt-4">
+                      <Link to="/trips/mine">Gérer mes trajets</Link>
+                    </Button>
+                    <p className="mt-2 text-center text-[12px] text-muted">
+                      Vous conduisez ce trajet. Partagez le lien pour remplir les places.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <Button
+                      size="lg"
+                      block
+                      className="mt-4"
+                      disabled={full || cancelled}
+                      onClick={() => navigate(`/book/${data.id}`)}
+                    >
+                      {primaryLabel}
+                    </Button>
+                    <p className="mt-2 text-center text-[12px] text-muted">
+                      Acompte en ligne, solde en espèces à bord — ou paiement intégral si vous préférez.
+                    </p>
+                  </>
+                )}
               </Card>
             </div>
           </aside>
@@ -285,22 +314,36 @@ export function TripDetailPage() {
       </PageContainer>
 
       {/* --- Barre d'action collante (mobile) --- */}
-      <div className="safe-bottom fixed inset-x-0 bottom-[57px] z-30 border-t border-rule bg-[color-mix(in_srgb,var(--surface)_95%,transparent)] px-4 py-3 backdrop-blur-md lg:hidden">
-        <div className="mx-auto flex max-w-3xl items-center gap-3">
+      <div className="ek-glass safe-bottom fixed inset-x-0 bottom-[68px] z-30 border-t border-rule px-4 py-3 lg:hidden">
+        <div className="mx-auto flex max-w-3xl items-center gap-2">
           <div className="min-w-0">
             <p className="tnum font-display text-[22px] font-extrabold leading-none tracking-[-0.03em]">
               {formatFcfa(data.pricePerSeat)}
             </p>
             <p className="text-[12px] text-muted">par place</p>
           </div>
-          <Button
+          <ShareTripButton
+            title={`${data.originLabel} → ${data.destLabel}`}
+            text={shareText}
+            path={`/trips/${data.id}`}
             size="lg"
-            className="ml-auto flex-1 sm:flex-none sm:px-10"
-            disabled={full || cancelled}
-            onClick={() => navigate(`/book/${data.id}`)}
-          >
-            {full ? 'Complet' : cancelled ? 'Annulé' : 'Réserver'}
-          </Button>
+            iconOnly
+            className="ml-auto sm:hidden"
+          />
+          {isOwnTrip ? (
+            <Button asChild variant="secondary" size="lg" className="flex-1 sm:ml-auto sm:flex-none sm:px-10">
+              <Link to="/trips/mine">Gérer mes trajets</Link>
+            </Button>
+          ) : (
+            <Button
+              size="lg"
+              className="flex-1 sm:ml-auto sm:flex-none sm:px-10"
+              disabled={full || cancelled}
+              onClick={() => navigate(`/book/${data.id}`)}
+            >
+              {full ? 'Complet' : cancelled ? 'Annulé' : 'Réserver'}
+            </Button>
+          )}
         </div>
       </div>
     </>

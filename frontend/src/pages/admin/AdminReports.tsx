@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/misc'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { AdminPageHeader } from '@/components/layout/AdminPageHeader'
 import { EmptyState, ErrorState } from '@/components/ui/states'
 import { useAdminReports, useUpdateReportStatus } from '@/hooks/useAdmin'
 import { formatFromNow } from '@/lib/format'
@@ -54,6 +55,11 @@ export function AdminReports() {
 
   return (
     <div>
+      <AdminPageHeader
+        title="Signalements"
+        count={reports.isSuccess ? list.length : undefined}
+        description="Prenez en charge, résolvez ou classez. La personne signalée n'est jamais informée de l'identité de l'auteur."
+      />
 
       <Tabs value={filter} onValueChange={(value) => setFilter(value as ReportStatus | 'ALL')} className="mb-4">
         <TabsList>

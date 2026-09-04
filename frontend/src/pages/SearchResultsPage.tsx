@@ -11,9 +11,8 @@ import {
   X,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/misc'
@@ -161,7 +160,7 @@ export function SearchResultsPage() {
           description="Le départ et l'arrivée n'ont pas été transmis. Relancez la recherche depuis l'accueil."
           action={
             <Button asChild>
-              <a href="/">Retour à la recherche</a>
+              <Link to="/">Retour à la recherche</Link>
             </Button>
           }
         />
@@ -432,7 +431,7 @@ export function SearchResultsPage() {
               />
               <span className="flex-1">
                 <span className="block text-[14px] font-medium">Conducteurs vérifiés uniquement</span>
-                <span className="block text-[12px] text-muted">Identité contrôlée et au moins 5 avis</span>
+                <span className="block text-[12px] text-muted">Pièce d'identité contrôlée par Ekuiseo</span>
               </span>
             </label>
             <label className="flex min-h-[56px] cursor-pointer items-center gap-3 px-4">
@@ -491,8 +490,9 @@ function filterAndSort(trips: TripResponse[], filters: Filters, sort: SortKey): 
     if (trip.pricePerSeat > filters.maxPrice) return false
     if (trip.driver.ratingAvg < filters.minRating) return false
     if (filters.instantOnly && !trip.instantBooking) return false
-    // « Verifie » cote client : note et volume d'avis, en attendant le drapeau backend.
-    if (filters.verifiedOnly && trip.driver.ratingCount < 5) return false
+    // Drapeau serveur (DriverSummary.identityVerified) ; si un ancien backend ne
+    // l'envoie pas encore, on retombe sur l'heuristique note + volume d'avis.
+    if (filters.verifiedOnly && !(trip.driver.identityVerified ?? trip.driver.ratingCount >= 5)) return false
     if (filters.departureWindow !== 'ALL') {
       const hour = new Date(trip.departureAt).getHours()
       if (filters.departureWindow === 'MORNING' && hour >= 12) return false
@@ -525,19 +525,18 @@ function median(values: number[]): number {
   return sorted.length % 2 === 0 ? Math.round((sorted[mid - 1] + sorted[mid]) / 2) : sorted[mid]
 }
 
+/** Filtre actif : la puce entiere est le bouton de retrait (cible 32 px, pas une croix de 20 px). */
 function FilterChip({ label, onClear }: { label: string; onClear: () => void }) {
   return (
-    <Badge tone="indigo" className="h-7 pr-1">
+    <button
+      type="button"
+      onClick={onClear}
+      aria-label={`Retirer le filtre ${label}`}
+      className="group inline-flex h-8 items-center gap-1 rounded-[var(--radius-chip)] bg-[var(--indigo-soft)] pl-2.5 pr-1.5 text-caption font-semibold text-[var(--indigo-deep)] transition-colors hover:bg-[var(--indigo)] hover:text-[var(--indigo-contrast)]"
+    >
       {label}
-      <button
-        type="button"
-        onClick={onClear}
-        aria-label={`Retirer le filtre ${label}`}
-        className="ml-0.5 flex size-5 items-center justify-center rounded-full hover:bg-[var(--indigo)] hover:text-[var(--indigo-contrast)]"
-      >
-        <X className="size-3" aria-hidden />
-      </button>
-    </Badge>
+      <X className="size-3.5 opacity-70 group-hover:opacity-100" aria-hidden />
+    </button>
   )
 }
 

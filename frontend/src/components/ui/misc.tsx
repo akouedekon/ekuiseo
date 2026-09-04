@@ -33,7 +33,7 @@ export function Avatar({
   return (
     <AvatarPrimitive.Root
       className={cn(
-        'relative inline-flex shrink-0 select-none items-center justify-center overflow-hidden rounded-full border border-rule bg-[var(--indigo-soft)]',
+        'relative inline-flex shrink-0 select-none items-center justify-center overflow-hidden rounded-full bg-primary-soft-2 ring-1 ring-inset ring-[color-mix(in_srgb,var(--primary)_18%,transparent)]',
         className,
       )}
       style={{ width: size, height: size }}
@@ -41,7 +41,7 @@ export function Avatar({
       {photoUrl ? <AvatarPrimitive.Image src={photoUrl} alt={label} className="size-full object-cover" /> : null}
       <AvatarPrimitive.Fallback
         delayMs={photoUrl ? 300 : 0}
-        className="font-display font-bold uppercase text-[var(--indigo-deep)]"
+        className="font-display font-bold uppercase text-primary-ink"
         style={{ fontSize: Math.max(11, Math.round(size * 0.38)) }}
       >
         {buildInitials(firstName || '?', lastName || '?')}

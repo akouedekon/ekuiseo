@@ -82,6 +82,8 @@ export interface DriverSummary {
   photoUrl: string | null
   ratingAvg: number
   ratingCount: number
+  /** Piece d'identite controlee (envoye par l'API ; optionnel pour tolerer un backend anterieur). */
+  identityVerified?: boolean
 }
 
 export interface VehicleSummary {

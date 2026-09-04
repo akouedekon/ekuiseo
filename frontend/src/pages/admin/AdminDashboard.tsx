@@ -22,7 +22,6 @@ import { Card } from '@/components/ui/card'
 import { Progress } from '@/components/ui/misc'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ErrorState, StatSkeleton } from '@/components/ui/states'
-import { SectionTitle } from '@/components/layout/PageContainer'
 import { useAdminLiquidity, useAdminStats } from '@/hooks/useAdmin'
 import { formatFcfa, formatFcfaCompact } from '@/lib/format'
 import { listContainer } from '@/lib/motion'
@@ -42,6 +41,7 @@ const STATUS_LABEL: Record<BookingStatus, string> = {
 const STATUS_COLOR: Record<BookingStatus, string> = {
   CONFIRMED: CHART.vert,
   PENDING_PAYMENT: CHART.ocre,
+  // Terminee = graphite : la reservation a vecu, elle n'appelle plus d'action.
   COMPLETED: CHART.indigo,
   CANCELLED_BY_PASSENGER: CHART.vermillon,
   CANCELLED_BY_DRIVER: CHART.vermillon,
@@ -82,8 +82,11 @@ export function AdminDashboard() {
   return (
     <div>
 
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <SectionTitle className="mb-0">Vue d'ensemble</SectionTitle>
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="font-display text-heading font-extrabold tracking-[-0.03em]">Vue d'ensemble</h2>
+          <p className="mt-0.5 text-label text-muted">Métrique nord, liquidité, puis volume.</p>
+        </div>
         <Select value={String(days)} onValueChange={(value) => setDays(Number(value))}>
           <SelectTrigger className="h-10 w-auto min-w-[150px] gap-2 text-[14px]" aria-label="Période analysée">
             <CalendarRange className="size-4 text-muted" aria-hidden />
@@ -98,19 +101,22 @@ export function AdminDashboard() {
       </div>
 
       {/* --- Metrique nord : places confirmees vs seuil de viabilite --- */}
-      <Card className="p-4">
+      <Card className="relative overflow-hidden p-5 sm:p-6">
+        <span aria-hidden className="ek-glow pointer-events-none absolute inset-x-0 top-0 h-full" />
         {liquidity.isPending || !liq ? (
           <div className="shimmer h-[168px] rounded-[var(--radius-control)]" />
         ) : liquidity.isError ? (
           <p className="text-[14px] text-muted">Métrique nord indisponible pour l'instant.</p>
         ) : (
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+          <div className="relative grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
             <div>
-              <p className="flex items-center gap-1.5 text-[13px] text-muted">
-                <Target className="size-4" aria-hidden />
+              <p className="flex items-center gap-1.5 text-label font-medium text-muted">
+                <span className="flex size-6 items-center justify-center rounded-[var(--radius-chip)] bg-primary-soft text-primary-ink">
+                  <Target className="size-3.5" aria-hidden />
+                </span>
                 Places confirmées sur la période
               </p>
-              <p className="tnum mt-1.5 font-display text-[36px] font-extrabold leading-none tracking-[-0.03em]">
+              <p className="tnum mt-3 font-display text-[44px] font-extrabold leading-none tracking-[-0.035em] text-ink">
                 {liq.northStar.confirmedSeats.toLocaleString('fr-FR')}
               </p>
               <p className="mt-2 flex flex-wrap items-center gap-x-1.5 text-[13px]">

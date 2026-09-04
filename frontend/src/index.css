@@ -1,103 +1,192 @@
 @import "tailwindcss";
 
 /*
- * Ekuiseo — systeme de design.
- * Inspiration : signalisation routiere beninoise + bannieres appliquees d'Abomey.
+ * Ekuiseo — systeme de design « Route ouverte ».
+ *
+ * Les couleurs du drapeau beninois (vert, jaune, rouge) en teintes de signal,
+ * posees sur des neutres graphite. Aucun bleu, nulle part.
  * Toutes les couleurs vivent ici, en variables CSS. Aucun hexadecimal ailleurs.
+ *
+ * Deux jeux de noms coexistent volontairement :
+ *  - les roles (--bg, --surface, --primary, --accent, --danger, --success…),
+ *    a utiliser dans tout nouveau code ;
+ *  - les noms historiques (--paper, --indigo, --vermillon, --ocre, --vert…),
+ *    conserves comme alias pour ne casser aucun ecran existant.
  */
 
-/* Le mode sombre est pilote par la classe .dark posee sur <html> (voir lib/theme.ts),
-   ce qui permet un choix explicite de l'utilisateur en plus de la preference systeme. */
+/* Le mode sombre est pilote par la classe .dark posee sur <html> (voir lib/theme.ts). */
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
   color-scheme: light;
 
-  /* --- Surfaces & encres (mode clair, valeurs de la charte) --- */
-  --paper: #fffdf7;
+  /* --- Neutres : graphite sur pierre claire, sans la moindre nuance bleue --- */
+  --bg: #f6f6f3;
   --surface: #ffffff;
-  --surface-calm: #f0ebdd;
-  --surface-sunk: #f7f4ea;
-  --ink: #151a21;
-  --ink-2: #4a4638;
-  --muted: #7a7464; /* seuil de contraste 4,5:1 — ne jamais eclaircir */
-  --rule: #e7e1d2;
-  --rule-strong: #d5cdb8;
+  --surface-2: #f0efeb;
+  --surface-sunk: #e9e8e3;
+  --ink: #15161a;
+  --ink-2: #45464b;
+  --muted: #6b6b70; /* 4,9:1 sur le fond, 4,6:1 sur surface-2 — ne jamais eclaircir */
+  --rule: #e6e5e0;
+  --rule-strong: #d1d0c9;
 
-  /* --- Couleurs de signalisation --- */
-  --indigo: #2e3fa8;
-  --indigo-deep: #1e2a73;
-  --indigo-soft: #e6e9f7;
-  --indigo-contrast: #ffffff;
+  /*
+   * --- Teintes de signal : les couleurs du drapeau ---
+   * Vert Benin en primaire (l'action, la route, le « go »), jaune soleil en
+   * accent, rouge en danger. Chaque teinte existe en six roles : pleine,
+   * -hover, -active (boutons pleins), -soft et -soft-2 (fonds pales), -ink
+   * (texte lisible >= 4,5:1 sur fond pale). Un texte sur fond -soft utilise
+   * TOUJOURS la version -ink.
+   */
+  --primary: #0e7c4a;
+  --primary-hover: #0c6b40;
+  --primary-active: #0a5836;
+  --primary-soft: #e4f4ec;
+  --primary-soft-2: #c4e9d6;
+  --primary-ink: #0b5a37;
+  --primary-contrast: #ffffff;
 
-  --vermillon: #d4452b;
-  --vermillon-soft: #fbe7e3;
-  --vermillon-contrast: #ffffff;
+  --accent: #e5b100;
+  --accent-hover: #cf9f00;
+  --accent-active: #b88d00;
+  --accent-soft: #fbf3d0;
+  --accent-soft-2: #f5e7a3;
+  --accent-ink: #785c00;
+  --accent-contrast: #2a2000;
 
-  --ocre: #e0a020;
-  --ocre-soft: #fbf0d8;
-  --ocre-contrast: #2a1f06;
-  --ocre-ink: #7d5806; /* ocre lisible en texte sur fond clair (>= 4,5:1) */
+  --danger: #d63b2a;
+  --danger-hover: #bf3424;
+  --danger-active: #a62c1e;
+  --danger-soft: #fcebe8;
+  --danger-soft-2: #f8d5cf;
+  --danger-ink: #ad2f20;
+  --danger-contrast: #ffffff;
 
-  --vert: #1e8a5c;
-  --vert-soft: #e0f2ea;
-  --vert-contrast: #ffffff;
+  /* Le succes partage la teinte primaire : confirmer, c'est avancer. */
+  --success: var(--primary);
+  --success-hover: var(--primary-hover);
+  --success-active: var(--primary-active);
+  --success-soft: var(--primary-soft);
+  --success-soft-2: var(--primary-soft-2);
+  --success-ink: var(--primary-ink);
+  --success-contrast: var(--primary-contrast);
 
-  /* --- Ombres : discretes, jamais diffuses --- */
-  --shadow-1: 0 1px 2px rgb(21 26 33 / 0.05), 0 1px 1px rgb(21 26 33 / 0.04);
-  --shadow-2: 0 2px 6px rgb(21 26 33 / 0.07), 0 1px 2px rgb(21 26 33 / 0.05);
-  --shadow-3: 0 12px 32px -8px rgb(21 26 33 / 0.18), 0 2px 8px rgb(21 26 33 / 0.06);
-  --shadow-sheet: 0 -8px 40px -12px rgb(21 26 33 / 0.28);
+  /* --- Voile, focus, nappe lumineuse du hero --- */
+  --overlay: rgb(21 22 26 / 0.55);
+  --focus-ring: var(--primary);
+  --glow: radial-gradient(60% 50% at 50% 0%, rgb(14 124 74 / 0.1), transparent 70%);
 
-  /* --- Rayons --- */
-  --radius-chip: 4px;
-  --radius-control: 8px;
-  --radius-card: 12px;
-  --radius-panel: 16px;
+  /* --- Ombres : hairline + ombre courte, jamais diffuse --- */
+  --shadow-1: 0 0 0 1px rgb(21 22 26 / 0.04), 0 1px 2px rgb(21 22 26 / 0.05);
+  --shadow-2: 0 0 0 1px rgb(21 22 26 / 0.04), 0 4px 12px -4px rgb(21 22 26 / 0.12);
+  --shadow-3: 0 0 0 1px rgb(21 22 26 / 0.05), 0 16px 40px -12px rgb(21 22 26 / 0.22);
+  --shadow-sheet: 0 -8px 40px -12px rgb(21 22 26 / 0.3);
+
+  /* --- Rayons : quatre crans --- */
+  --radius-chip: 6px;
+  --radius-control: 10px;
+  --radius-card: 14px;
+  --radius-panel: 18px;
+  --radius-pill: 999px;
+
+  /* --- Mouvement : deux durees, une courbe (voir lib/motion.ts) --- */
+  --duration-fast: 150ms;
+  --duration-base: 220ms;
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* --- Alias historiques (ne pas utiliser dans du code neuf) --- */
+  --paper: var(--bg);
+  --surface-calm: var(--surface-2);
+  --indigo: var(--primary);
+  --indigo-hover: var(--primary-hover);
+  --indigo-active: var(--primary-active);
+  --indigo-deep: var(--primary-ink);
+  --indigo-soft: var(--primary-soft);
+  --indigo-ink: var(--primary-ink);
+  --indigo-contrast: var(--primary-contrast);
+  --vermillon: var(--danger);
+  --vermillon-hover: var(--danger-hover);
+  --vermillon-active: var(--danger-active);
+  --vermillon-soft: var(--danger-soft);
+  --vermillon-ink: var(--danger-ink);
+  --vermillon-contrast: var(--danger-contrast);
+  --ocre: var(--accent);
+  --ocre-hover: var(--accent-hover);
+  --ocre-active: var(--accent-active);
+  --ocre-soft: var(--accent-soft);
+  --ocre-ink: var(--accent-ink);
+  --ocre-contrast: var(--accent-contrast);
+  --vert: var(--success);
+  --vert-hover: var(--success-hover);
+  --vert-active: var(--success-active);
+  --vert-soft: var(--success-soft);
+  --vert-ink: var(--success-ink);
+  --vert-contrast: var(--success-contrast);
 }
 
 :root.dark {
   color-scheme: dark;
 
-  --paper: #101419;
-  --surface: #171c24;
-  --surface-calm: #1e242e;
-  --surface-sunk: #0b0e12;
-  --ink: #f3f0e7;
-  --ink-2: #cdc7b6;
-  --muted: #9a9382;
-  --rule: #2a313b;
-  --rule-strong: #3b434f;
+  --bg: #0d0d0f;
+  --surface: #151518;
+  --surface-2: #1c1c20;
+  --surface-sunk: #08080a;
+  --ink: #f0efeb;
+  --ink-2: #c5c4bd;
+  --muted: #979690;
+  --rule: #27272c;
+  --rule-strong: #373741;
 
-  --indigo: #8494ee;
-  --indigo-deep: #a6b2f5;
-  --indigo-soft: #1d2440;
-  --indigo-contrast: #0e1220;
+  --primary: #4ccb8f;
+  --primary-hover: #63d49f;
+  --primary-active: #3bb87e;
+  --primary-soft: #0f2a1f;
+  --primary-soft-2: #163d2c;
+  --primary-ink: #7fdcb0;
+  --primary-contrast: #04150d;
 
-  --vermillon: #f4715a;
-  --vermillon-soft: #351a16;
-  --vermillon-contrast: #1a0906;
+  --accent: #f0c531;
+  --accent-hover: #f4d051;
+  --accent-active: #e6b81c;
+  --accent-soft: #332a08;
+  --accent-soft-2: #4a3d0e;
+  --accent-ink: #f3d466;
+  --accent-contrast: #241c04;
 
-  --ocre: #edb544;
-  --ocre-soft: #33270e;
-  --ocre-contrast: #241a04;
-  --ocre-ink: #f0c469;
+  --danger: #f4725b;
+  --danger-hover: #f78872;
+  --danger-active: #ec5d46;
+  --danger-soft: #361b16;
+  --danger-soft-2: #4d261f;
+  --danger-ink: #ff9c88;
+  --danger-contrast: #1a0906;
 
-  --vert: #3fbe86;
-  --vert-soft: #10291f;
-  --vert-contrast: #04150d;
+  --success: var(--primary);
+  --success-hover: var(--primary-hover);
+  --success-active: var(--primary-active);
+  --success-soft: var(--primary-soft);
+  --success-soft-2: var(--primary-soft-2);
+  --success-ink: var(--primary-ink);
+  --success-contrast: var(--primary-contrast);
 
-  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
-  --shadow-2: 0 2px 8px rgb(0 0 0 / 0.45);
-  --shadow-3: 0 14px 36px -10px rgb(0 0 0 / 0.7);
-  --shadow-sheet: 0 -8px 40px -12px rgb(0 0 0 / 0.75);
+  --overlay: rgb(0 0 0 / 0.68);
+  --focus-ring: var(--primary);
+  --glow: radial-gradient(60% 50% at 50% 0%, rgb(76 203 143 / 0.12), transparent 70%);
+
+  --shadow-1: 0 0 0 1px rgb(255 255 255 / 0.05), 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-2: 0 0 0 1px rgb(255 255 255 / 0.05), 0 4px 14px -4px rgb(0 0 0 / 0.55);
+  --shadow-3: 0 0 0 1px rgb(255 255 255 / 0.06), 0 16px 40px -12px rgb(0 0 0 / 0.75);
+  --shadow-sheet: 0 -8px 40px -12px rgb(0 0 0 / 0.8);
 }
 
 /* Pont vers les utilitaires Tailwind : bg-surface, text-muted, border-rule, etc. */
 @theme inline {
-  --color-paper: var(--paper);
+  --color-bg: var(--bg);
+  --color-paper: var(--bg);
   --color-surface: var(--surface);
-  --color-surface-calm: var(--surface-calm);
+  --color-surface-2: var(--surface-2);
+  --color-surface-calm: var(--surface-2);
   --color-surface-sunk: var(--surface-sunk);
   --color-ink: var(--ink);
   --color-ink-2: var(--ink-2);
@@ -105,36 +194,98 @@
   --color-rule: var(--rule);
   --color-rule-strong: var(--rule-strong);
 
-  --color-indigo-brand: var(--indigo);
-  --color-indigo-deep: var(--indigo-deep);
-  --color-indigo-soft: var(--indigo-soft);
-  --color-on-indigo: var(--indigo-contrast);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-active: var(--primary-active);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-soft-2: var(--primary-soft-2);
+  --color-primary-ink: var(--primary-ink);
+  --color-on-primary: var(--primary-contrast);
 
-  --color-vermillon: var(--vermillon);
-  --color-vermillon-soft: var(--vermillon-soft);
-  --color-on-vermillon: var(--vermillon-contrast);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --color-on-accent: var(--accent-contrast);
 
-  --color-ocre: var(--ocre);
-  --color-ocre-soft: var(--ocre-soft);
-  --color-ocre-ink: var(--ocre-ink);
-  --color-on-ocre: var(--ocre-contrast);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-ink: var(--danger-ink);
+  --color-on-danger: var(--danger-contrast);
 
-  --color-vert: var(--vert);
-  --color-vert-soft: var(--vert-soft);
-  --color-on-vert: var(--vert-contrast);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-success-ink: var(--success-ink);
+  --color-on-success: var(--success-contrast);
+
+  /* Alias historiques */
+  --color-indigo-brand: var(--primary);
+  --color-indigo-hover: var(--primary-hover);
+  --color-indigo-active: var(--primary-active);
+  --color-indigo-deep: var(--primary-ink);
+  --color-indigo-soft: var(--primary-soft);
+  --color-indigo-ink: var(--primary-ink);
+  --color-on-indigo: var(--primary-contrast);
+  --color-vermillon: var(--danger);
+  --color-vermillon-hover: var(--danger-hover);
+  --color-vermillon-soft: var(--danger-soft);
+  --color-vermillon-ink: var(--danger-ink);
+  --color-on-vermillon: var(--danger-contrast);
+  --color-ocre: var(--accent);
+  --color-ocre-hover: var(--accent-hover);
+  --color-ocre-soft: var(--accent-soft);
+  --color-ocre-ink: var(--accent-ink);
+  --color-on-ocre: var(--accent-contrast);
+  --color-vert: var(--success);
+  --color-vert-hover: var(--success-hover);
+  --color-vert-soft: var(--success-soft);
+  --color-vert-ink: var(--success-ink);
+  --color-on-vert: var(--success-contrast);
+
+  --color-overlay: var(--overlay);
+  --color-focus-ring: var(--focus-ring);
 
   --font-display: "Archivo", "Archivo Fallback", "Helvetica Neue", Arial, sans-serif;
-  --font-sans: "Instrument Sans", "Instrument Sans Fallback", "Segoe UI", Roboto, system-ui, sans-serif;
+  --font-sans: "Inter", "Inter Fallback", "Segoe UI", Roboto, system-ui, sans-serif;
 
-  --radius-chip: 4px;
-  --radius-control: 8px;
-  --radius-card: 12px;
-  --radius-panel: 16px;
+  --radius-chip: 6px;
+  --radius-control: 10px;
+  --radius-card: 14px;
+  --radius-panel: 18px;
+  --radius-pill: 999px;
+
+  /* La courbe maison remplace le ease-out de Tailwind : une seule courbe dans l'app. */
+  --ease-out: var(--ease-standard);
+  --default-transition-duration: var(--duration-fast);
 
   --shadow-e1: var(--shadow-1);
   --shadow-e2: var(--shadow-2);
   --shadow-e3: var(--shadow-3);
   --shadow-sheet: var(--shadow-sheet);
+
+  /*
+   * Echelle typographique nommee (text-caption, text-label, text-body...).
+   * Une taille arbitraire (text-[13px]) est un signal qu'il manque un cran.
+   */
+  --text-caption: 12px;
+  --text-caption--line-height: 16px;
+  --text-label: 13px;
+  --text-label--line-height: 18px;
+  --text-body: 14px;
+  --text-body--line-height: 21px;
+  --text-base: 15px;
+  --text-base--line-height: 22px;
+  --text-lead: 16px;
+  --text-lead--line-height: 24px;
+  --text-title: 17px;
+  --text-title--line-height: 22px;
+  --text-heading: 20px;
+  --text-heading--line-height: 26px;
+  --text-display: 24px;
+  --text-display--line-height: 28px;
+  --text-display-lg: 32px;
+  --text-display-lg--line-height: 36px;
+  --text-hero: 44px;
+  --text-hero--line-height: 46px;
 }
 
 @layer base {
@@ -148,13 +299,14 @@
   }
 
   body {
-    background-color: var(--paper);
+    background-color: var(--bg);
     color: var(--ink);
     font-family: var(--font-sans);
     font-size: 15px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    font-feature-settings: "cv11" 1, "ss01" 1;
     overscroll-behavior-y: none;
   }
 
@@ -168,7 +320,6 @@
     color: var(--ink);
   }
 
-  /* Les gros titres serrent davantage, comme sur les maquettes. */
   h1 {
     letter-spacing: -0.03em;
   }
@@ -181,19 +332,27 @@
     -webkit-tap-highlight-color: transparent;
   }
 
-  /* Focus visible unique et lisible sur les deux themes. */
+  /*
+   * Focus visible unique et lisible sur les deux themes : un anneau de 2 px
+   * decolle de 2 px. Les champs de saisie ont leur propre anneau interieur
+   * (voir .ek-field), le contour exterieur y est donc retire.
+   */
   :focus-visible {
-    outline: 2px solid var(--indigo);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
     border-radius: 3px;
   }
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline: none;
+  }
 
   ::selection {
-    background: var(--indigo-soft);
+    background: var(--primary-soft-2);
     color: var(--ink);
   }
 
-  /* Barres de defilement discretes (listes de filtres, colonnes desktop). */
   .scroll-thin {
     scrollbar-width: thin;
     scrollbar-color: var(--rule-strong) transparent;
@@ -208,11 +367,77 @@
   }
 }
 
+@layer components {
+  /*
+   * Anatomie d'un champ de saisie, partagee par Input, Textarea, Select et
+   * l'autocompletion des villes : filet fort au repos, filet primaire + anneau
+   * pale au focus, filet danger en erreur, fond creux desactive.
+   */
+  .ek-field {
+    border: 1px solid var(--rule-strong);
+    background: var(--surface);
+    color: var(--ink);
+    transition:
+      border-color var(--duration-fast) var(--ease-standard),
+      box-shadow var(--duration-fast) var(--ease-standard),
+      background-color var(--duration-fast) var(--ease-standard);
+  }
+  .ek-field:hover:not(:disabled):not([data-disabled]) {
+    border-color: color-mix(in srgb, var(--rule-strong) 55%, var(--ink-2));
+  }
+  .ek-field:focus,
+  .ek-field:focus-within,
+  .ek-field[data-state="open"] {
+    border-color: var(--focus-ring);
+    box-shadow: 0 0 0 3px var(--primary-soft-2);
+    outline: none;
+  }
+  .ek-field[aria-invalid="true"] {
+    border-color: var(--danger);
+  }
+  .ek-field[aria-invalid="true"]:focus,
+  .ek-field[aria-invalid="true"]:focus-within {
+    border-color: var(--danger);
+    box-shadow: 0 0 0 3px var(--danger-soft-2);
+  }
+  .ek-field:disabled,
+  .ek-field[data-disabled] {
+    background: var(--surface-sunk);
+    color: var(--muted);
+    opacity: 1;
+    cursor: not-allowed;
+  }
+
+  /* Surface en verre depoli de l'en-tete et des barres collantes. */
+  .ek-glass {
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    backdrop-filter: saturate(160%) blur(14px);
+    -webkit-backdrop-filter: saturate(160%) blur(14px);
+  }
+
+  /* Carte cliquable : elevation douce au survol, retour a plat a l'appui. */
+  .ek-lift {
+    transition:
+      transform var(--duration-base) var(--ease-standard),
+      box-shadow var(--duration-base) var(--ease-standard),
+      border-color var(--duration-base) var(--ease-standard);
+  }
+  .ek-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-2);
+    border-color: var(--rule-strong);
+  }
+  .ek-lift:active {
+    transform: translateY(0) scale(0.995);
+    box-shadow: var(--shadow-1);
+  }
+}
+
 @layer utilities {
   /* Chiffres alignes : prix, heures, comptes a rebours, tableaux admin. */
   .tnum {
     font-variant-numeric: tabular-nums;
-    font-feature-settings: "tnum" 1;
+    font-feature-settings: "tnum" 1, "cv11" 1;
   }
 
   .font-display {
@@ -223,19 +448,32 @@
   .headline {
     font-family: var(--font-display);
     font-weight: 800;
-    letter-spacing: -0.03em;
-    line-height: 1.05;
+    letter-spacing: -0.035em;
+    line-height: 1.02;
   }
 
-  /* Bandeau applique facon banniere d'Abomey : bandes fines et regulieres. */
+  /* Filet tricolore : signature de la marque, 3 px sous l'en-tete uniquement. */
   .banner-rule {
     background-image: repeating-linear-gradient(
       90deg,
-      var(--indigo) 0 14px,
-      var(--ocre) 14px 22px,
-      var(--vermillon) 22px 30px,
-      transparent 30px 44px
+      var(--primary) 0 16px,
+      var(--accent) 16px 24px,
+      var(--danger) 24px 32px,
+      transparent 32px 48px
     );
+  }
+
+  /* Nappe lumineuse du hero : une seule, tres discrete, jamais ailleurs. */
+  .ek-glow {
+    background-image: var(--glow);
+  }
+
+  /* Grille pointillee tres pale derriere le hero et les etats vides. */
+  .ek-dots {
+    background-image: radial-gradient(color-mix(in srgb, var(--ink) 9%, transparent) 1px, transparent 1px);
+    background-size: 22px 22px;
+    mask-image: linear-gradient(180deg, rgb(0 0 0 / 0.9), transparent 85%);
+    -webkit-mask-image: linear-gradient(180deg, rgb(0 0 0 / 0.9), transparent 85%);
   }
 
   .safe-bottom {
@@ -246,14 +484,14 @@
   .shimmer {
     position: relative;
     overflow: hidden;
-    background: var(--surface-calm);
+    background: var(--surface-2);
   }
   .shimmer::after {
     content: "";
     position: absolute;
     inset: 0;
     transform: translateX(-100%);
-    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.35), transparent);
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.5), transparent);
     animation: ek-shimmer 1.6s infinite;
   }
   :root.dark .shimmer::after {
@@ -267,7 +505,6 @@
   }
 }
 
-/* Retour haptique visuel : bref enfoncement a l'appui. */
 @keyframes ek-press {
   0% {
     transform: scale(1);
@@ -280,7 +517,6 @@
   }
 }
 
-/* Compte a rebours d'acompte qui arrive a echeance. */
 @keyframes ek-pulse-warn {
   0%,
   100% {
@@ -291,22 +527,20 @@
   }
 }
 
-
 /* --- Animations Radix (overlay / contenu), pilotees par data-state --- */
 @keyframes ek-fade-in { from { opacity: 0 } to { opacity: 1 } }
 @keyframes ek-fade-out { from { opacity: 1 } to { opacity: 0 } }
-@keyframes ek-zoom-in { from { opacity: 0; transform: translate(-50%, -48%) scale(0.97) } to { opacity: 1; transform: translate(-50%, -50%) scale(1) } }
+@keyframes ek-zoom-in { from { opacity: 0; transform: translate(-50%, -47%) scale(0.96) } to { opacity: 1; transform: translate(-50%, -50%) scale(1) } }
 @keyframes ek-zoom-out { from { opacity: 1; transform: translate(-50%, -50%) scale(1) } to { opacity: 0; transform: translate(-50%, -48%) scale(0.98) } }
-@keyframes ek-pop-in { from { opacity: 0; transform: translateY(-4px) scale(0.98) } to { opacity: 1; transform: translateY(0) scale(1) } }
+@keyframes ek-pop-in { from { opacity: 0; transform: translateY(-6px) scale(0.98) } to { opacity: 1; transform: translateY(0) scale(1) } }
 
 .ek-anim-fade[data-state="open"] { animation: ek-fade-in 0.2s ease-out }
 .ek-anim-fade[data-state="closed"] { animation: ek-fade-out 0.15s ease-in }
-.ek-anim-zoom[data-state="open"] { animation: ek-zoom-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) }
+.ek-anim-zoom[data-state="open"] { animation: ek-zoom-in 0.24s cubic-bezier(0.22, 1, 0.36, 1) }
 .ek-anim-zoom[data-state="closed"] { animation: ek-zoom-out 0.15s ease-in }
-.ek-anim-pop[data-state="open"] { animation: ek-pop-in 0.16s cubic-bezier(0.22, 1, 0.36, 1) }
+.ek-anim-pop[data-state="open"] { animation: ek-pop-in 0.18s cubic-bezier(0.22, 1, 0.36, 1) }
 .ek-anim-pop[data-state="closed"] { animation: ek-fade-out 0.12s ease-in }
 
-/* Accordeon Radix : hauteur animee via la variable exposee par le composant. */
 @keyframes ek-acc-down { from { height: 0 } to { height: var(--radix-accordion-content-height) } }
 @keyframes ek-acc-up { from { height: var(--radix-accordion-content-height) } to { height: 0 } }
 .ek-acc[data-state="open"] { animation: ek-acc-down 0.22s cubic-bezier(0.22, 1, 0.36, 1) }
@@ -324,8 +558,7 @@
   color: var(--muted) !important;
 }
 
-/* Respect strict de prefers-reduced-motion : aucune animation n'est porteuse
-   d'information, elles peuvent donc toutes etre neutralisees. */
+/* Respect strict de prefers-reduced-motion : aucune animation n'est porteuse d'information. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -337,5 +570,8 @@
   }
   .shimmer::after {
     display: none;
+  }
+  .ek-lift:hover {
+    transform: none;
   }
 }

@@ -15,8 +15,8 @@ export const Label = forwardRef<
   )
 })
 
-const controlBase =
-  'w-full rounded-[var(--radius-control)] border border-rule-strong bg-surface px-3 text-[15px] text-ink placeholder:text-muted transition-colors focus:border-[var(--indigo)] focus:outline-none focus-visible:outline-none disabled:opacity-60'
+/* Anatomie commune des champs : voir .ek-field dans index.css (repos, survol, focus, erreur, desactive). */
+const controlBase = 'ek-field w-full rounded-[var(--radius-control)] px-3 text-base placeholder:text-muted'
 
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string
@@ -49,14 +49,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
           id={inputId}
           aria-invalid={error ? true : undefined}
           aria-describedby={describedBy}
-          className={cn(
-            controlBase,
-            'h-11',
-            leading && 'pl-10',
-            trailing && 'pr-10',
-            error && 'border-[var(--vermillon)]',
-            className,
-          )}
+          className={cn(controlBase, 'h-11', leading && 'pl-10', trailing && 'pr-10', className)}
           {...props}
         />
         {trailing ? <span className="absolute right-3 text-muted [&>svg]:size-[18px]">{trailing}</span> : null}
@@ -93,7 +86,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
         ref={ref}
         id={areaId}
         aria-invalid={error ? true : undefined}
-        className={cn(controlBase, 'min-h-24 resize-y py-2.5 leading-relaxed', error && 'border-[var(--vermillon)]', className)}
+        className={cn(controlBase, 'min-h-24 resize-y py-2.5 leading-relaxed', className)}
         {...props}
       />
       {error ? (

@@ -1,12 +1,20 @@
 import type { HTMLAttributes } from 'react'
 import { cn } from '@/lib/cn'
 
-/** Surface elementaire : rayon 12 px, filet 1 px, ombre minimale. */
-export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+/**
+ * Surface elementaire : rayon 14 px, hairline + ombre courte.
+ * `interactive` ajoute l'elevation douce au survol (cartes cliquables).
+ */
+export function Card({
+  className,
+  interactive = false,
+  ...props
+}: HTMLAttributes<HTMLDivElement> & { interactive?: boolean }) {
   return (
     <div
       className={cn(
         'rounded-[var(--radius-card)] border border-rule bg-surface shadow-e1',
+        interactive && 'ek-lift',
         className,
       )}
       {...props}
@@ -15,25 +23,25 @@ export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
 }
 
 export function CardHeader({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('flex flex-col gap-1 px-4 pt-4', className)} {...props} />
+  return <div className={cn('flex flex-col gap-1 px-5 pt-5', className)} {...props} />
 }
 
 export function CardTitle({ className, ...props }: HTMLAttributes<HTMLHeadingElement>) {
   return (
-    <h3 className={cn('font-display text-[17px] font-bold leading-tight tracking-[-0.02em]', className)} {...props} />
+    <h3 className={cn('font-display text-title font-bold leading-tight tracking-[-0.02em]', className)} {...props} />
   )
 }
 
 export function CardDescription({ className, ...props }: HTMLAttributes<HTMLParagraphElement>) {
-  return <p className={cn('text-[13px] text-muted', className)} {...props} />
+  return <p className={cn('text-label text-muted', className)} {...props} />
 }
 
 export function CardContent({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('px-4 py-4', className)} {...props} />
+  return <div className={cn('px-5 py-5', className)} {...props} />
 }
 
 export function CardFooter({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('flex items-center gap-2 border-t border-rule px-4 py-3', className)} {...props} />
+  return <div className={cn('flex items-center gap-2 border-t border-rule px-5 py-3.5', className)} {...props} />
 }
 
 /** Panneau de section, plus large, utilise dans les pages compte et admin. */

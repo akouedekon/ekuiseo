@@ -48,3 +48,9 @@ backups/
 
 # --- Divers ---------------------------------------------------------------
 *.log
+
+# --- Vitrine Vercel : mode de build sans backend, versionne volontairement ---
+!frontend/.env.showcase
+
+# --- Configuration locale de l outil (lanceur de previsualisation) ---
+.claude/

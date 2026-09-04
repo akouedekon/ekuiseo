@@ -12,6 +12,7 @@ import { Logo } from '@/components/layout/Logo'
 import { useRequestOtp, useVerifyOtp } from '@/hooks/useAuth'
 import { useCountdown } from '@/hooks/useNetwork'
 import { formatCountdown, formatPhone } from '@/lib/format'
+import { phoneSchema } from '@/lib/validation'
 
 const RESEND_DELAY_MS = 45_000
 
@@ -45,9 +46,9 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
 
   const sendCode = (event?: React.FormEvent) => {
     event?.preventDefault()
-    const digits = phone.replace(/\D/g, '')
-    if (digits.length < 8) {
-      setPhoneError('Numéro de téléphone incomplet')
+    const parsed = phoneSchema.safeParse(phone)
+    if (!parsed.success) {
+      setPhoneError(parsed.error.issues[0]?.message ?? 'Numéro de téléphone incomplet')
       return
     }
     setPhoneError(undefined)
@@ -84,9 +85,9 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
 
   return (
     <PageContainer width="sm" className="flex min-h-[calc(100dvh-8rem)] flex-col justify-center">
-      <div className="mb-6 text-center">
-        <Logo size={44} withWordmark={false} className="justify-center" />
-        <h1 className="headline mt-4 text-[28px]">
+      <div className="mb-8 text-center">
+        <Logo size={48} variant="mark" className="justify-center drop-shadow-[0_8px_16px_rgb(14_124_74/0.28)]" />
+        <h1 className="headline mt-5 text-[28px] sm:text-display-lg">
           {mode === 'register' ? 'Créer un compte' : 'Bienvenue sur Ekuiseo'}
         </h1>
         <p className="mt-1.5 text-[14px] text-muted">
