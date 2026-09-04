@@ -204,6 +204,13 @@ export interface InitiatePaymentResponse {
   amount: number
   kkiapayPublicKey: string
   sandbox: boolean
+  /** A transmettre tel quel au parametre `data` du widget Kkiapay (contient bookingId). */
+  widgetData?: Record<string, string>
+}
+
+/** POST /api/v1/payments/{id}/confirm : identifiant remis par l'evenement success du widget. */
+export interface ConfirmPaymentRequest {
+  transactionId: string
 }
 
 export interface Page<T> {

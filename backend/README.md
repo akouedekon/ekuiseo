@@ -118,7 +118,14 @@ Tout est calculé par requêtes natives agrégées (`SearchEventRepository`, `Tr
 La trace de recherche elle-même est écrite par `TripService#search` → `SearchEventService#record` (`@Async`, exécuteur dédié à file bornée : une file pleine abandonne la trace en journalisant, jamais en ralentissant la recherche), uniquement pour la **première page** (feuilleter n'est pas chercher). `GET /api/v1/trips/search` accepte désormais `originLabel` et `destLabel` optionnels, qui ne filtrent rien et ne servent qu'à la lisibilité de la trace.
 
 ### Webhook (public, sécurisé par secret partagé, pas par JWT)
-- `POST /api/v1/payments/kkiapay/webhook`
+- `POST /api/v1/payments/kkiapay/webhook` — URL à déclarer dans le tableau de bord Kkiapay
+  (menu Webhook) : `https://<domaine>/api/v1/payments/kkiapay/webhook`, avec le même
+  « secret hash » que `KKIAPAY_WEBHOOK_SECRET`. La corrélation avec la réservation passe par
+  `stateData.bookingId` (le paramètre `data` du widget, posé par `frontend/src/lib/kkiapay.ts`),
+  accepté indifféremment comme objet JSON ou comme chaîne JSON. Le webhook réutilise le paiement
+  `INITIATED` préparé par `/payments/deposit` (pas de seconde ligne), reverifie statut et montant,
+  et ne reconfirme jamais une réservation déjà expirée (places libérées) : le cas est journalisé
+  en `ERROR` pour remboursement manuel.
 
 ### Actuator
 - `/actuator/health`, `/actuator/info` publics ; le reste (`/actuator/**`, dont `/metrics`) réservé à `ROLE_ADMIN`.
@@ -138,6 +145,7 @@ Le front (`frontend/src/api/extended.ts`, `types.ts`, hooks) appelait des endpoi
 | `GET /api/v1/trips/{id}/stops` | Arrêts intermédiaires avec prix par tronçon depuis l'origine. Même règle de visibilité que `GET /api/v1/trips/{id}` (public si `PUBLISHED`, 404 sinon pour un tiers). |
 | `POST /api/v1/bookings/{id}/payments/deposit` | Initie l'acompte mobile money pour cette réservation ; renvoie la même charge utile que `POST /api/v1/payments/kkiapay/initiate` (conservé, devient l'alias historique). |
 | `GET /api/v1/payments/{paymentId}` | État d'un paiement (sondage front en attendant le webhook) ; réservé au passager propriétaire. |
+| `POST /api/v1/payments/{paymentId}/confirm` | Confirmation immédiate à partir de l'évènement `success` du widget Kkiapay (`{ transactionId }`). Le serveur reverifie la transaction auprès de Kkiapay — statut **et** montant (un widget ouvert avec 5 F ne confirme pas une réservation à 1 000 F) — puis inscrit l'identifiant Kkiapay dans `provider_tx_id`, ce qui rend le webhook ultérieur idempotent. Réservé au passager propriétaire. |
 | `PATCH /api/v1/me` | Mise à jour partielle du profil (endpoint déjà présent, aucune modification nécessaire — vérifié conforme au contrat front). |
 | `GET`/`PATCH /api/v1/me/preferences` | Préférences de notification (push/SMS/e-mail, langue) et préférences à bord (musique, fumeur, animaux, bavardage). Table `user_preferences` (V6), ligne créée paresseusement à la première consultation. |
 | `GET`/`POST /api/v1/me/identity` | Dépôt et état de la vérification d'identité (`identity_verifications`, V6). Le téléversement de la photo du document reste un TODO documenté (voir §10) : seuls le type et le numéro de document sont enregistrés. |

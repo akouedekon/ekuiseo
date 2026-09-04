@@ -233,9 +233,14 @@ s'interprète pas.
   rémunéré au Bénin n'est pas tranché. `docs/CONFORMITE.md` pose la question sans y
   répondre — c'est à un juriste béninois de le faire. Un éventuel agrément auprès du
   ministère des Transports n'a pas été confirmé.
-- Le format exact de l'API Kkiapay n'a pas pu être confronté à la documentation officielle
-  depuis l'environnement de génération. L'appel est isolé derrière `KkiapayGateway` — à
-  vérifier avant la mise en production.
+- Kkiapay : le widget est intégré côté front (`src/lib/kkiapay.ts`, script officiel
+  `cdn.kkiapay.me/k.js`, ouvert depuis `BookingPage` après `/payments/deposit`, `data` =
+  `{ bookingId }`), et le serveur confirme par deux voies indépendantes — le webhook signé
+  et `POST /api/v1/payments/{id}/confirm` appelé sur l'évènement `success` du widget —
+  toujours après re-vérification du statut **et du montant** auprès de l'API Kkiapay.
+  Reste à valider sur un compte marchand réel (sandbox validée d'abord) : le nom exact
+  des options du widget selon la version du script (`key` / `api_key`, les deux sont
+  passés) et le format de `stateData` (objet ou chaîne, les deux sont acceptés).
 - Aucun fournisseur SMS réel n'est choisi (`SmsGateway` avec implémentation journalisée).
 - Le téléversement de la photo de pièce d'identité n'est pas implémenté (stockage sécurisé
   à décider) ; seul l'état de la vérification existe.

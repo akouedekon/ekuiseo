@@ -11,7 +11,7 @@ import type {
   PaymentPlanResponse,
   PaymentStatusResponse,
 } from '@/api/extended'
-import type { BookingResponse, CreateBookingRequest, InitiatePaymentResponse } from '@/api/types'
+import type { BookingResponse, ConfirmPaymentRequest, CreateBookingRequest, InitiatePaymentResponse } from '@/api/types'
 
 /**
  * Liste des reservations, enrichie du trajet et du plan de paiement.
@@ -163,6 +163,25 @@ export function useInitiateDeposit(bookingId: string | undefined, expectedAmount
           sandbox: true,
         }),
       ),
+  })
+}
+
+/**
+ * Confirmation immediate apres l'evenement "success" du widget Kkiapay.
+ * ATTENDU : POST /api/v1/payments/{paymentId}/confirm { transactionId }
+ * Le serveur reverifie la transaction (statut, montant) avant de confirmer ;
+ * en cas d'echec reseau ici, le sondage et le webhook prennent le relais.
+ */
+export function useConfirmPayment(paymentId: string | undefined) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: ConfirmPaymentRequest) =>
+      apiClient.post<PaymentStatusResponse>(`/api/v1/payments/${paymentId}/confirm`, input),
+    onSuccess: (status) => {
+      // Le sondage lit la meme cle : l'ecran bascule sans attendre le prochain tick.
+      queryClient.setQueryData<Sourced<PaymentStatusResponse>>(['payments', paymentId], { data: status, demo: false })
+      queryClient.invalidateQueries({ queryKey: ['bookings'] })
+    },
   })
 }
 

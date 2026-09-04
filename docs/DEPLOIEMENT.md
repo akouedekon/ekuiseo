@@ -210,6 +210,15 @@ concernent le code du backend (hors du périmètre de ce dépôt d'infrastructur
 - `GET /api/v1/trips/{id}` public sans filtrer le statut `DRAFT`.
 - Le webhook Kkiapay refuse tout appel si `KKIAPAY_WEBHOOK_SECRET` est vide — assurez-vous
   qu'il est bien renseigné, et que `KKIAPAY_MODE=http`, avant d'activer des paiements réels.
+  Dans le tableau de bord Kkiapay (menu Webhook), déclarez l'URL
+  `https://<votre-domaine>/api/v1/payments/kkiapay/webhook` avec ce même secret. Même sans
+  webhook, la réservation se confirme dès que le widget signale le succès (le serveur
+  reverifie alors la transaction lui-même) ; le webhook couvre le cas du navigateur fermé.
+- Passage sandbox → réel : `KKIAPAY_SANDBOX=false` et les clés *live* (`KKIAPAY_PUBLIC_KEY`,
+  `KKIAPAY_PRIVATE_KEY`, `KKIAPAY_SECRET`) dans `.env`, puis
+  `docker compose -f docker-compose.prod.yml -f docker-compose.vps.yml up -d backend`.
+  La clé publique et le drapeau sandbox sont transmis au front par l'API à chaque
+  paiement : aucune reconstruction du front n'est nécessaire.
 - Voir `docs/LANCEMENT.md` pour la liste complète de la checklist avant ouverture au
   public.
 

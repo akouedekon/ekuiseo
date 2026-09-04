@@ -140,6 +140,10 @@ public class PaymentService {
         if (booking == null || !booking.getPassenger().getId().equals(requesterId)) {
             throw new ForbiddenException("Ce paiement ne vous appartient pas");
         }
+        return toStatusResponse(payment, booking);
+    }
+
+    private PaymentStatusResponse toStatusResponse(Payment payment, Booking booking) {
         String status = mapStatusForClient(payment, booking);
         boolean awaitingWebhook = status.equals("PENDING") || status.equals("PROCESSING");
         String instruction = awaitingWebhook
@@ -148,6 +152,102 @@ public class PaymentService {
         return new PaymentStatusResponse(payment.getId(), booking.getId(), payment.getProviderTxId(),
                 mapProviderForClient(payment.getChannel()), status, payment.getAmount(), instruction,
                 payment.getCreatedAt());
+    }
+
+    /**
+     * POST /api/v1/payments/{paymentId}/confirm : le widget Kkiapay vient d'emettre son
+     * evenement "success" cote frontend, avec l'identifiant de transaction Kkiapay.
+     * Chemin de confirmation <b>complementaire</b> au webhook (qui reste la source de
+     * verite en cas de fermeture du navigateur) : il rend la confirmation immediate au
+     * lieu de dependre du delai et de la bonne configuration du webhook.
+     *
+     * <p>Meme rigueur que {@link #handleWebhook} : rien n'est cru sur parole. La
+     * transaction est reverifiee aupres de l'API Kkiapay, son montant doit couvrir le
+     * montant attendu (sinon un passager pourrait ouvrir le widget avec 5 F et confirmer
+     * une reservation a 4 000 F), et l'identifiant Kkiapay remplace la reference interne
+     * dans {@code provider_tx_id} - ce qui rend le webhook ulterieur idempotent (il
+     * retrouvera ce paiement deja SUCCEEDED et s'arretera la).</p>
+     */
+    @Transactional
+    public PaymentStatusResponse confirmFromWidget(UUID paymentId, UUID requesterId, String transactionId) {
+        Payment payment = paymentRepository.findById(paymentId)
+                .orElseThrow(() -> new NotFoundException("Paiement introuvable"));
+        Booking booking = payment.getBooking();
+        if (booking == null || !booking.getPassenger().getId().equals(requesterId)) {
+            throw new ForbiddenException("Ce paiement ne vous appartient pas");
+        }
+        if (transactionId == null || transactionId.isBlank()) {
+            throw new BadRequestException("transactionId manquant");
+        }
+        String txId = transactionId.trim();
+        if (payment.getStatus() == PaymentStatus.SUCCEEDED) {
+            return toStatusResponse(payment, booking); // deja confirme (webhook passe avant nous)
+        }
+
+        // Course avec le webhook : il a pu creer/renseigner un paiement portant deja ce
+        // transactionId pour la meme reservation. On renvoie alors son etat, sans rien refaire.
+        Optional<Payment> byTx = paymentRepository.findByProviderAndProviderTxId(PaymentProvider.KKIAPAY, txId);
+        if (byTx.isPresent() && !byTx.get().getId().equals(payment.getId())) {
+            Payment other = byTx.get();
+            if (other.getBooking() == null || !other.getBooking().getId().equals(booking.getId())) {
+                throw new BadRequestException("Cette transaction ne correspond pas a cette reservation");
+            }
+            return toStatusResponse(other, booking);
+        }
+
+        KkiapayGateway.VerificationResult verified = kkiapayGateway.verifyTransaction(txId);
+        boolean amountOk = isAmountSufficient(verified, payment.getAmount());
+        boolean succeeded = verified.success() && amountOk;
+        boolean stillPending = !verified.success() && !isFinalFailure(verified);
+
+        payment.setProviderTxId(txId);
+        payment.setFee(verified.feesFcfa());
+        payment.setRawPayload(Map.of(
+                "source", "widget-confirm",
+                "verifiedStatus", String.valueOf(verified.rawStatus()),
+                "verifiedAmount", String.valueOf(verified.amountFcfa()),
+                "expectedAmount", String.valueOf(payment.getAmount()),
+                "amountSufficient", String.valueOf(amountOk)));
+        if (succeeded) {
+            payment.setStatus(PaymentStatus.SUCCEEDED);
+        } else if (!stillPending) {
+            payment.setStatus(PaymentStatus.FAILED);
+        }
+        paymentRepository.save(payment);
+
+        if (verified.success() && !amountOk) {
+            log.error("Paiement Kkiapay {} d'un montant insuffisant ({} F verifies pour {} F attendus) sur la "
+                            + "reservation {} : non confirme, remboursement manuel a traiter.",
+                    txId, verified.amountFcfa(), payment.getAmount(), booking.getId());
+        }
+        if (!stillPending) {
+            handleBookingPaymentResult(booking, succeeded);
+        }
+        return toStatusResponse(payment, booking);
+    }
+
+    /**
+     * Le montant reellement verifie chez Kkiapay doit couvrir le montant attendu. Un
+     * montant verifie a 0 signifie que l'API ne l'a pas renvoye : on ne peut pas
+     * conclure, on refuse (mieux vaut un passager qui attend le webhook qu'une
+     * reservation confirmee pour 5 F).
+     */
+    private boolean isAmountSufficient(KkiapayGateway.VerificationResult verified, long expectedAmount) {
+        return verified.amountFcfa() > 0 && verified.amountFcfa() >= expectedAmount;
+    }
+
+    /**
+     * Distingue un echec definitif (Kkiapay repond FAILED/REFUSED...) d'un etat non
+     * conclusif (transaction encore en cours, reponse vide, erreur HTTP transitoire) :
+     * dans le second cas le paiement reste INITIATED et le webhook tranchera.
+     */
+    private boolean isFinalFailure(KkiapayGateway.VerificationResult verified) {
+        String raw = verified.rawStatus() == null ? "" : verified.rawStatus().toUpperCase();
+        if (raw.isEmpty() || raw.equals("EMPTY_RESPONSE") || raw.startsWith("HTTP_")) {
+            return false;
+        }
+        return !(raw.contains("PENDING") || raw.contains("PROCESSING") || raw.contains("INITIATED")
+                || raw.contains("WAITING"));
     }
 
     /**
@@ -246,20 +346,28 @@ public class PaymentService {
         UUID subscriptionId = payload.extractSubscriptionId();
 
         Payment payment;
+        long expectedAmount;
         if (existing.isPresent()) {
             payment = existing.get();
+            expectedAmount = payment.getAmount();
         } else if (bookingId != null) {
             Booking booking = bookingRepository.findById(bookingId)
                     .orElseThrow(() -> new NotFoundException("Reservation introuvable pour ce paiement webhook"));
-            payment = Payment.builder()
-                    .booking(booking)
-                    .provider(PaymentProvider.KKIAPAY)
-                    .providerTxId(payload.transactionId())
-                    // Repli sur deposit_amount (pas amount) : c'est la partie de la
-                    // reservation reellement prelevee en ligne (regle metier n.21).
-                    .amount(verified.amountFcfa() > 0 ? verified.amountFcfa() : booking.getDepositAmount())
-                    .status(PaymentStatus.INITIATED)
-                    .build();
+            // Le paiement INITIATED prepare par initiate() porte encore la reference interne
+            // "ekuiseo-booking-..." : on le reutilise (et on y inscrit l'identifiant Kkiapay)
+            // plutot que de creer une seconde ligne pour la meme reservation.
+            payment = paymentRepository
+                    .findFirstByBookingIdAndStatusOrderByCreatedAtDesc(booking.getId(), PaymentStatus.INITIATED)
+                    .orElseGet(() -> Payment.builder()
+                            .booking(booking)
+                            .provider(PaymentProvider.KKIAPAY)
+                            // Repli sur deposit_amount (pas amount) : c'est la partie de la
+                            // reservation reellement prelevee en ligne (regle metier n.21).
+                            .amount(booking.getDepositAmount())
+                            .status(PaymentStatus.INITIATED)
+                            .build());
+            payment.setProviderTxId(payload.transactionId());
+            expectedAmount = booking.getDepositAmount();
         } else if (subscriptionId != null) {
             DriverSubscription subscription = driverSubscriptionRepository.findById(subscriptionId)
                     .orElseThrow(() -> new NotFoundException("Abonnement introuvable pour ce paiement webhook"));
@@ -267,9 +375,10 @@ public class PaymentService {
                     .subscription(subscription)
                     .provider(PaymentProvider.KKIAPAY)
                     .providerTxId(payload.transactionId())
-                    .amount(verified.amountFcfa() > 0 ? verified.amountFcfa() : subscription.getPriceFcfa())
+                    .amount(subscription.getPriceFcfa())
                     .status(PaymentStatus.INITIATED)
                     .build();
+            expectedAmount = subscription.getPriceFcfa();
         } else {
             // Ni provider_tx_id connu ni correlation retrouvee dans stateData : on ne peut rien
             // rattacher cote applicatif. On journalise et on repond 2xx (deja fait par le
@@ -280,24 +389,52 @@ public class PaymentService {
             return;
         }
 
-        payment.setChannel(parseChannel(payload.method()));
+        // Meme garde-fou que confirmFromWidget : le montant est fixe par le widget cote
+        // client, donc par l'utilisateur. Un montant verifie inferieur a l'attendu ne
+        // confirme rien (journalise pour remboursement manuel).
+        boolean amountOk = isAmountSufficient(verified, expectedAmount);
+        boolean succeeded = verified.success() && amountOk;
+        if (verified.success() && !amountOk) {
+            log.error("Webhook Kkiapay {} d'un montant insuffisant ({} F verifies pour {} F attendus) : "
+                    + "non confirme, remboursement manuel a traiter.", payload.transactionId(),
+                    verified.amountFcfa(), expectedAmount);
+        }
+
+        PaymentChannel channel = parseChannel(payload.method());
+        if (channel != null) {
+            payment.setChannel(channel);
+        }
         payment.setFee(verified.feesFcfa());
         payment.setRawPayload(Map.of(
+                "source", "webhook",
                 "event", String.valueOf(payload.event()),
                 "webhookClaimedSuccess", String.valueOf(payload.paymentSucceeded()),
-                "verifiedStatus", String.valueOf(verified.rawStatus())));
-        payment.setStatus(verified.success() ? PaymentStatus.SUCCEEDED : PaymentStatus.FAILED);
+                "verifiedStatus", String.valueOf(verified.rawStatus()),
+                "verifiedAmount", String.valueOf(verified.amountFcfa()),
+                "expectedAmount", String.valueOf(expectedAmount),
+                "amountSufficient", String.valueOf(amountOk)));
+        payment.setStatus(succeeded ? PaymentStatus.SUCCEEDED : PaymentStatus.FAILED);
         paymentRepository.save(payment);
 
         if (payment.getBooking() != null) {
-            handleBookingPaymentResult(payment.getBooking(), verified.success());
+            handleBookingPaymentResult(payment.getBooking(), succeeded);
         } else {
-            handleSubscriptionPaymentResult(payment.getSubscription(), verified.success());
+            handleSubscriptionPaymentResult(payment.getSubscription(), succeeded);
         }
     }
 
     private void handleBookingPaymentResult(Booking booking, boolean success) {
         if (success) {
+            if (booking.getStatus() == BookingStatus.CONFIRMED) {
+                return; // deja confirmee (webhook et widget se sont croises)
+            }
+            if (booking.getStatus() != BookingStatus.PENDING_PAYMENT) {
+                // Les places ont deja ete liberees (expiration au bout de 20 min, regle metier n.6,
+                // ou annulation) : on ne peut pas re-confirmer sans risquer une surreservation.
+                log.error("Paiement Kkiapay recu pour la reservation {} en etat {} : non confirmee, "
+                        + "remboursement manuel a traiter.", booking.getId(), booking.getStatus());
+                return;
+            }
             booking.setStatus(BookingStatus.CONFIRMED);
             bookingRepository.save(booking);
             notificationService.notifyCritical(booking.getPassenger(), NotificationType.PAYMENT_SUCCEEDED,

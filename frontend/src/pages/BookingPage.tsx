@@ -26,13 +26,22 @@ import { PaymentSplit } from '@/components/booking/PaymentSplit'
 import { PAYMENT_MODES, PROVIDERS, estimatePaymentPlan } from '@/lib/payments'
 import { RouteTimeline } from '@/components/trip/RouteTimeline'
 import { buildRoutePoints } from '@/lib/route'
-import { useBooking, useBookingQuote, useCreateBooking, useInitiateDeposit, usePaymentStatus } from '@/hooks/useBookings'
+import {
+  useBooking,
+  useBookingQuote,
+  useConfirmPayment,
+  useCreateBooking,
+  useInitiateDeposit,
+  usePaymentStatus,
+} from '@/hooks/useBookings'
+import { openKkiapay } from '@/lib/kkiapay'
 import { useMe } from '@/hooks/useAuth'
 import { useTrip, useTripStops } from '@/hooks/useTrips'
 import { estimateDurationMinutes, haversineKm } from '@/lib/cities'
 import { formatFcfa, formatPhone, formatRelativeDay, formatTime } from '@/lib/format'
 import { phoneSchema } from '@/lib/validation'
 import type { PaymentMode, PaymentProvider } from '@/api/extended'
+import type { InitiatePaymentResponse } from '@/api/types'
 
 /** Delai laisse au passager pour honorer l'acompte (aligne sur le backend). */
 const DEPOSIT_WINDOW_MS = 20 * 60 * 1000
@@ -59,6 +68,10 @@ export function BookingPage() {
   const [bookingId, setBookingId] = useState<string>()
   const [paymentId, setPaymentId] = useState<string>()
   const [deadline, setDeadline] = useState<number | null>(null)
+  // Derniere preparation de paiement : permet de rouvrir le widget Kkiapay si
+  // l'utilisateur l'a ferme sans conclure. Absent en mode demonstration.
+  const [widgetPayment, setWidgetPayment] = useState<InitiatePaymentResponse | null>(null)
+  const [widgetOpen, setWidgetOpen] = useState(false)
 
   const data = trip.data?.data
   const stopList = stops.data?.data ?? []
@@ -85,6 +98,7 @@ export function BookingPage() {
     bookingId,
     plan.depositAmount,
   )
+  const confirmPayment = useConfirmPayment(paymentId)
 
   const phone = phoneInput ?? me.data?.data.phone ?? ''
 
@@ -165,10 +179,60 @@ export function BookingPage() {
         onSuccess: (payment) => {
           setPaymentId(payment.paymentId)
           setStep('waiting')
+          // 'demo' = repli hors ligne : le sondage simule seul la confirmation.
+          if (payment.kkiapayPublicKey !== 'demo') {
+            setWidgetPayment(payment)
+            void launchWidget(payment)
+          }
         },
         onError: () => toast.error("Le paiement n'a pas pu être lancé."),
       },
     )
+  }
+
+  /*
+   * Ouverture du widget Kkiapay (cle publique) : c'est lui qui debite le passager.
+   * Son evenement "success" ne vaut pas confirmation : on le transmet au serveur,
+   * qui reverifie la transaction (statut ET montant) avant de confirmer la
+   * reservation. Si cet appel echoue (reseau), le sondage et le webhook tranchent.
+   */
+  const launchWidget = async (payment: InitiatePaymentResponse) => {
+    if (widgetOpen) return
+    setWidgetOpen(true)
+    try {
+      const result = await openKkiapay({
+        amount: payment.amount,
+        publicKey: payment.kkiapayPublicKey,
+        sandbox: payment.sandbox,
+        phone,
+        name: me.data ? `${me.data.data.firstName} ${me.data.data.lastName}`.trim() : undefined,
+        data: payment.widgetData ?? (bookingId ? { bookingId } : undefined),
+        onClose: () => setWidgetOpen(false),
+      })
+      confirmPayment.mutate(
+        { transactionId: result.transactionId },
+        {
+          onError: () =>
+            toast.message('Paiement reçu, confirmation en cours', {
+              description: "Nous attendons la réponse de l'opérateur, cela ne prend que quelques secondes.",
+            }),
+        },
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : ''
+      if (message.startsWith('Kkiapay :')) {
+        toast.error('La fenêtre de paiement ne peut pas s’ouvrir', {
+          description: 'Vérifiez votre connexion ou un éventuel bloqueur de contenu, puis réessayez.',
+        })
+      } else {
+        toast.error('Le paiement a été refusé par l’opérateur', {
+          description: 'Vérifiez votre solde ou changez de numéro, puis réessayez.',
+        })
+        setStep('payment')
+      }
+    } finally {
+      setWidgetOpen(false)
+    }
   }
 
   return (
@@ -378,18 +442,31 @@ export function BookingPage() {
 
               <div>
                 <h2 className="font-display text-[19px] font-bold tracking-[-0.02em]">
-                  Validez sur votre téléphone
+                  {widgetPayment ? 'Réglez dans la fenêtre Kkiapay' : 'Validez sur votre téléphone'}
                 </h2>
                 <p className="mx-auto mt-1.5 max-w-sm text-[14px] leading-relaxed text-ink-2">
-                  {paymentStatus.data?.data.instruction ??
-                    `Une demande de ${formatFcfa(plan.depositAmount)} a été envoyée au ${formatPhone(phone)}. Saisissez votre code secret pour la confirmer.`}
+                  {widgetPayment
+                    ? `Choisissez votre opérateur, confirmez ${formatFcfa(plan.depositAmount)} pour le ${formatPhone(phone)}, puis validez avec votre code secret sur votre téléphone.`
+                    : (paymentStatus.data?.data.instruction ??
+                      `Une demande de ${formatFcfa(plan.depositAmount)} a été envoyée au ${formatPhone(phone)}. Saisissez votre code secret pour la confirmer.`)}
                 </p>
               </div>
 
               <Badge tone="warning">
                 <RefreshCw aria-hidden className="animate-spin" />
-                En attente de confirmation de l'opérateur
+                {confirmPayment.isPending ? 'Vérification du paiement' : "En attente de confirmation de l'opérateur"}
               </Badge>
+
+              {widgetPayment ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => void launchWidget(widgetPayment)}
+                  loading={widgetOpen}
+                  disabled={confirmPayment.isPending}
+                >
+                  Rouvrir la fenêtre de paiement
+                </Button>
+              ) : null}
 
               {paymentStatus.data?.data.transactionRef ? (
                 <p className="tnum text-[12px] text-muted">
@@ -404,7 +481,15 @@ export function BookingPage() {
               vous recevrez une notification.
             </Card>
 
-            <Button variant="ghost" block onClick={() => setStep('payment')}>
+            <Button
+              variant="ghost"
+              block
+              disabled={confirmPayment.isPending}
+              onClick={() => {
+                setWidgetPayment(null)
+                setStep('payment')
+              }}
+            >
               Changer d'opérateur ou de numéro
             </Button>
           </motion.div>

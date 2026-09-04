@@ -2,6 +2,8 @@ package bj.ekuiseo.api.dto.payment;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
 import java.util.Map;
@@ -30,12 +32,12 @@ import java.util.UUID;
  * pour eviter toute ambiguite de mappage.
  *
  * <p><b>Correlation avec la reservation</b> : Kkiapay ne connait pas nos identifiants
- * internes. Le champ {@code stateData} est un objet JSON libre que Kkiapay renvoie
- * tel quel s'il a ete fourni en parametre "data" a l'ouverture du widget cote frontend.
- * Ce backend n'initie PAS la transaction lui-meme (voir KkiapayGateway) : c'est donc
- * au frontend de passer {@code data: { bookingId: "<uuid de la reservation>" }} lors
- * de l'ouverture du widget, afin que {@code stateData.bookingId} permette de retrouver
- * la reservation ici. A confirmer avec l'equipe frontend/l'integration widget reelle.</p>
+ * internes. Le champ {@code stateData} renvoie ce que le frontend a fourni au parametre
+ * {@code data} du widget (voir {@code frontend/src/lib/kkiapay.ts}). La documentation
+ * type ce parametre comme une chaine : selon la version du widget, il revient donc soit
+ * comme un objet JSON, soit comme une chaine contenant du JSON. Les deux formes sont
+ * acceptees ici ({@code Object} + analyse tolerante), afin que {@code bookingId} /
+ * {@code subscriptionId} soient retrouves dans tous les cas.</p>
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record KkiapayWebhookPayload(
@@ -49,38 +51,69 @@ public record KkiapayWebhookPayload(
         Long fees,
         String partnerId,
         Instant performedAt,
-        Map<String, Object> stateData
+        Object stateData
 ) {
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
+    };
 
     /** Extrait le bookingId depuis stateData.bookingId (voir javadoc de la classe). Null si absent/invalide. */
     public UUID extractBookingId() {
-        if (stateData == null) {
+        return extractUuid("bookingId");
+    }
+
+    /** Extrait le subscriptionId depuis stateData.subscriptionId (abonnement conducteur, regle metier n.11). */
+    public UUID extractSubscriptionId() {
+        return extractUuid("subscriptionId");
+    }
+
+    private UUID extractUuid(String key) {
+        Map<String, Object> data = stateDataAsMap();
+        if (data == null) {
             return null;
         }
-        Object raw = stateData.get("bookingId");
+        Object raw = data.get(key);
         if (raw == null) {
             return null;
         }
         try {
-            return UUID.fromString(raw.toString());
+            return UUID.fromString(raw.toString().trim());
         } catch (IllegalArgumentException ex) {
             return null;
         }
     }
 
-    /** Extrait le subscriptionId depuis stateData.subscriptionId (abonnement conducteur, regle metier n.11). */
-    public UUID extractSubscriptionId() {
-        if (stateData == null) {
+    /**
+     * {@code stateData} normalise en Map, que Kkiapay l'ait renvoye comme objet JSON ou
+     * comme chaine JSON (eventuellement encodee deux fois). Null si absent ou inexploitable.
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> stateDataAsMap() {
+        Object current = stateData;
+        // Au plus deux niveaux de "chaine contenant du JSON" : certains widgets serialisent
+        // data une premiere fois, puis le webhook re-encode la chaine.
+        for (int depth = 0; depth < 2; depth++) {
+            if (current == null) {
+                return null;
+            }
+            if (current instanceof Map<?, ?> map) {
+                return (Map<String, Object>) map;
+            }
+            if (current instanceof String text) {
+                String trimmed = text.trim();
+                if (trimmed.isEmpty()) {
+                    return null;
+                }
+                try {
+                    current = MAPPER.readValue(trimmed, Object.class);
+                } catch (Exception ex) {
+                    return null;
+                }
+                continue;
+            }
             return null;
         }
-        Object raw = stateData.get("subscriptionId");
-        if (raw == null) {
-            return null;
-        }
-        try {
-            return UUID.fromString(raw.toString());
-        } catch (IllegalArgumentException ex) {
-            return null;
-        }
+        return current instanceof Map<?, ?> map ? (Map<String, Object>) map : null;
     }
 }
