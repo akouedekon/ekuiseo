@@ -88,6 +88,9 @@ jobs:
       - name: Lint (oxlint)
         run: npm run lint
 
+      - name: Tests unitaires (vitest)
+        run: npm test
+
       - name: Verification des types + build de production
         run: npm run build
         env:

@@ -1,6 +1,7 @@
 package bj.ekuiseo.api.security;
 
 import bj.ekuiseo.api.domain.User;
+import bj.ekuiseo.api.domain.enums.UserStatus;
 import bj.ekuiseo.api.repository.UserRepository;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
@@ -38,7 +39,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             try {
                 UUID userId = jwtService.extractUserId(token);
                 if (SecurityContextHolder.getContext().getAuthentication() == null) {
-                    Optional<User> user = userRepository.findById(userId);
+                    // Un compte suspendu perd l'acces immediatement, sans attendre l'expiration du jeton.
+                    Optional<User> user = userRepository.findById(userId)
+                            .filter(u -> u.getStatus() == UserStatus.ACTIVE);
                     user.ifPresent(u -> {
                         EkuiseoUserDetails principal = EkuiseoUserDetails.from(u);
                         var auth = new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());

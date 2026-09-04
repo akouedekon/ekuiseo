@@ -122,7 +122,7 @@ export function VehiclesSection() {
               {
                 onSuccess: () => {
                   setAddOpen(false)
-                  toast.success('Véhicule ajouté', { description: 'Il sera vérifié sous 48 h.' })
+                  toast.success('Véhicule ajouté', { description: "Il sera vérifié par l'équipe Ekuiseo avant votre première publication." })
                 },
                 onError: () => toast.error("Le véhicule n'a pas pu être ajouté. Réessayez."),
               },
