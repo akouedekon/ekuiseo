@@ -95,7 +95,7 @@ export function SubscriptionSection({ user }: { user: UserResponse }) {
             </div>
             <p className="mt-1 text-label text-ink-2">
               {active && data.currentPeriodEnd
-                ? `Valable jusqu'au ${formatDayShort(data.currentPeriodEnd)}. Vos passagers paient l'acompte, vous recevez la totalité.`
+                ? `Valable jusqu'au ${formatDayShort(data.currentPeriodEnd)} — vos passagers paient l'acompte, vous recevez la totalité.`
                 : 'Sans abonnement, Ekuiseo retient 8 % de chaque réservation. Avec, la commission tombe à 0 % pendant 30 jours : rentable dès 25 000 FCFA de réservations par mois.'}
             </p>
           </div>
