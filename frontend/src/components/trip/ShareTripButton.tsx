@@ -33,7 +33,8 @@ export function ShareTripButton({
   const [copied, setCopied] = useState(false)
 
   const share = async () => {
-    const url = `${window.location.origin}${path}`
+    // BASE_URL porte le sous-chemin de publication eventuel (ex. /ekuiseo/ sur la vitrine).
+    const url = `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, '')}${path}`
     try {
       if (typeof navigator.share === 'function') {
         await navigator.share({ title, text, url })

@@ -39,7 +39,8 @@ const root = createRoot(document.getElementById('root')!)
 const tree = (
   <ErrorBoundary>
     <TooltipProvider delayDuration={250}>
-      <BrowserRouter>
+      {/* Sous-chemin de publication (vitrine GitHub Pages) : le routeur doit le connaitre. */}
+      <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
         <App />
         <Toaster
           position="top-center"

@@ -4,8 +4,15 @@ import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'node:path'
 
+/*
+ * Sous-chemin de publication : "/" en production (le site est a la racine du
+ * domaine), "/ekuiseo/" pour la vitrine GitHub Pages. Toujours termine par "/".
+ */
+const BASE_PATH = (process.env.VITE_BASE_PATH ?? '/').replace(/\/?$/, '/')
+
 // https://vite.dev/config/
 export default defineConfig({
+  base: BASE_PATH,
   plugins: [
     react(),
     tailwindcss(),
@@ -19,28 +26,29 @@ export default defineConfig({
           "Trajets interurbains et navettes quotidiennes au Bénin. Acompte de 1 000 FCFA en mobile money, solde en espèces à bord.",
         lang: 'fr',
         dir: 'ltr',
-        start_url: '/',
-        scope: '/',
+        start_url: BASE_PATH,
+        scope: BASE_PATH,
         display: 'standalone',
         orientation: 'portrait',
         background_color: '#F6F6F3',
         theme_color: '#0E7C4A',
         categories: ['travel', 'navigation', 'lifestyle'],
+        // Chemins relatifs au manifeste : valables quel que soit le sous-chemin de publication.
         icons: [
-          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-          { src: '/icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
         shortcuts: [
-          { name: 'Rechercher un trajet', short_name: 'Rechercher', url: '/' },
-          { name: 'Publier un trajet', short_name: 'Publier', url: '/publish' },
-          { name: 'Mes réservations', short_name: 'Réservations', url: '/bookings' },
+          { name: 'Rechercher un trajet', short_name: 'Rechercher', url: BASE_PATH },
+          { name: 'Publier un trajet', short_name: 'Publier', url: `${BASE_PATH}publish` },
+          { name: 'Mes réservations', short_name: 'Réservations', url: `${BASE_PATH}bookings` },
         ],
       },
       workbox: {
         // Coque applicative precachee : l'app s'ouvre meme sans reseau.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
-        navigateFallback: '/index.html',
+        navigateFallback: `${BASE_PATH}index.html`,
         navigateFallbackDenylist: [/^\/api\//],
         cleanupOutdatedCaches: true,
         // maplibre-gl est volumineux et charge a la demande.

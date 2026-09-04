@@ -1,5 +1,6 @@
 import { QueryClient } from '@tanstack/react-query'
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister'
+import { DEMO_FALLBACK_ENABLED } from '@/api/resilient'
 
 /**
  * Configuration adaptee a une connectivite mobile irreguliere (contexte
@@ -11,7 +12,9 @@ import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persist
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: 3,
+      // En mode demonstration (aucun backend), reessayer trois fois ne ferait
+      // qu'imposer huit secondes de squelettes avant le jeu factice.
+      retry: DEMO_FALLBACK_ENABLED ? 0 : 3,
       retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 15_000),
       staleTime: 60_000,
       gcTime: 24 * 60 * 60 * 1000,

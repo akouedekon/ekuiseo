@@ -1,0 +1,69 @@
+name: Vitrine (GitHub Pages)
+
+# Publie le frontend en mode « vitrine » (sans backend : jeu de demonstration
+# et bandeau d'avertissement) sur https://akouedekon.github.io/ekuiseo/ a chaque
+# push sur main touchant le frontend. La production reelle reste le VPS
+# (docs/DEPLOIEMENT.md) : ce site sert a montrer l'interface, pas a reserver.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/deploy-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Construire la vitrine
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Recuperer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Installer les dependances
+        run: npm ci
+
+      - name: Construire (mode showcase, sous-chemin /ekuiseo/)
+        env:
+          VITE_BASE_PATH: /ekuiseo/
+        run: npm run build:showcase
+
+      - name: Preparer l'artefact Pages
+        uses: actions/configure-pages@v5
+
+      - name: Televerser l'artefact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/dist
+
+  deploy:
+    name: Publier
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deployer sur GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
