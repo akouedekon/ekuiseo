@@ -93,9 +93,14 @@ Au minimum, renseignez et **changez les valeurs par défaut** de :
   — au moins les clés de test pour commencer (voir le tableau de bord Kkiapay) ; sans
   `KKIAPAY_MODE=http` explicite, le backend simule un paiement toujours réussi sans
   jamais appeler Kkiapay (mode `stub`, voir `.env.example`)
-- `SMS_MODE=http` et `SMS_HTTP_URL`/`SMS_PROVIDER_KEY` — sans cela (mode `log` par
-  défaut), les codes OTP sont uniquement journalisés dans les logs du backend, ce qui
-  est **inacceptable en production** (voir `docs/CONFORMITE.md` et `docs/LANCEMENT.md`)
+- `SMS_MODE=http` et `SMS_PROVIDER=twilio` (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`,
+  `TWILIO_FROM`) ou `SMS_PROVIDER=africastalking` (`AT_USERNAME`, `AT_API_KEY`,
+  `AT_SENDER_ID`, `AT_SANDBOX`) — sans cela (mode `log` par défaut), les codes OTP sont
+  uniquement journalisés dans les logs du backend, ce qui est **inacceptable en
+  production** (voir `docs/CONFORMITE.md` et `docs/LANCEMENT.md`). Activation sur le
+  VPS : renseigner les variables dans `/opt/ekuiseo/.env` puis
+  `docker compose -f docker-compose.prod.yml -f docker-compose.vps.yml up -d backend` ;
+  le backend refuse de démarrer si la configuration du fournisseur est incomplète.
 
 `docker-compose.prod.yml` refuse de démarrer si `DB_PASSWORD`, `JWT_SECRET`, `DOMAIN` ou
 `ACME_EMAIL` sont absents (erreur explicite au lieu d'une valeur par défaut faible).

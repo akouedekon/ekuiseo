@@ -87,9 +87,21 @@ ekuiseo:
     # "log" (par defaut) : journalise le SMS au lieu de l'envoyer (dev/tests).
     # "http" : appelle un fournisseur SMS HTTP configurable ci-dessous.
     mode: ${SMS_MODE:log}
+    # Fournisseur en mode http : twilio, africastalking ou generic (voir SmsConfig).
+    provider: ${SMS_PROVIDER:generic}
     http:
+      # URL du fournisseur generique, ou URL de base de remplacement pour twilio/africastalking.
       url: ${SMS_HTTP_URL:}
       api-key: ${SMS_PROVIDER_KEY:}
+    twilio:
+      account-sid: ${TWILIO_ACCOUNT_SID:}
+      auth-token: ${TWILIO_AUTH_TOKEN:}
+      from: ${TWILIO_FROM:}
+    africastalking:
+      username: ${AT_USERNAME:}
+      api-key: ${AT_API_KEY:}
+      sender-id: ${AT_SENDER_ID:}
+      sandbox: ${AT_SANDBOX:false}
     otp:
       max-attempts: ${OTP_MAX_ATTEMPTS:5}
       rate-limit:
