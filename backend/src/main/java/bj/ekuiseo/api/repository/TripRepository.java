@@ -125,9 +125,9 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
             join users d on d.id = t.driver_id
             where t.status = 'PUBLISHED'
               and t.seats_available >= :seats
-              and (:tripType is null or t.trip_type = :tripType)
-              and (:dateFrom is null or t.departure_at >= :dateFrom)
-              and (:dateTo is null or t.departure_at < :dateTo)
+              and (cast(:tripType as varchar) is null or t.trip_type = cast(:tripType as varchar))
+              and (cast(:dateFrom as timestamptz) is null or t.departure_at >= cast(:dateFrom as timestamptz))
+              and (cast(:dateTo as timestamptz) is null or t.departure_at < cast(:dateTo as timestamptz))
               and ST_DWithin(t.origin_point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography, :radiusMeters)
               and ST_DWithin(t.dest_point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography, :radiusMeters)
             order by
@@ -140,9 +140,9 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
             select count(*) from trips t
             where t.status = 'PUBLISHED'
               and t.seats_available >= :seats
-              and (:tripType is null or t.trip_type = :tripType)
-              and (:dateFrom is null or t.departure_at >= :dateFrom)
-              and (:dateTo is null or t.departure_at < :dateTo)
+              and (cast(:tripType as varchar) is null or t.trip_type = cast(:tripType as varchar))
+              and (cast(:dateFrom as timestamptz) is null or t.departure_at >= cast(:dateFrom as timestamptz))
+              and (cast(:dateTo as timestamptz) is null or t.departure_at < cast(:dateTo as timestamptz))
               and ST_DWithin(t.origin_point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography, :radiusMeters)
               and ST_DWithin(t.dest_point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography, :radiusMeters)
             """,
