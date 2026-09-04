@@ -1,0 +1,116 @@
+spring:
+  application:
+    name: ekuiseo-api
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:ekuiseo}
+    username: ${DB_USER:ekuiseo}
+    password: ${DB_PASSWORD:ekuiseo}
+    hikari:
+      maximum-pool-size: 10
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+
+server:
+  port: ${SERVER_PORT:8080}
+  error:
+    include-message: always
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # health et info restent publics (voir SecurityConfig) ; le reste (metrics...)
+        # est reserve au back-office (ROLE_ADMIN).
+        include: health,info,metrics
+  endpoint:
+    health:
+      # "when-authorized" : un appelant anonyme ne voit que UP/DOWN, jamais le detail
+      # des composants (base de donnees, disque...), qui pourrait aider un attaquant.
+      show-details: when-authorized
+
+info:
+  app:
+    name: ekuiseo-api
+    description: API de la plateforme de covoiturage Ekuiseo (Benin)
+
+ekuiseo:
+  jwt:
+    # Doit faire au moins 32 octets (256 bits, requis par HS256) : JwtService refuse
+    # de demarrer sinon plutot que d'affaiblir silencieusement la cle (voir JwtService).
+    secret: ${JWT_SECRET:change-me-super-secret-key-please-override-in-prod-min-32-bytes}
+    access-token-ttl-minutes: ${JWT_ACCESS_TTL_MIN:60}
+    refresh-token-ttl-days: ${JWT_REFRESH_TTL_DAYS:30}
+  booking:
+    pending-payment-ttl-minutes: 20
+    # Acompte de base du mode MOMO_DEPOSIT (regle metier n.21), injecte dans FeePolicy.
+    # L'acompte reellement preleve est max(cette valeur, frais de service de la
+    # reservation) - voir FeePolicy#computeDepositAmount pour la justification.
+    deposit-base-fcfa: ${BOOKING_DEPOSIT_BASE_FCFA:1000}
+  fee:
+    # Parametre commercial, injecte dans FeePolicy (jamais code en dur, voir MoneyUtils/FeePolicy).
+    service-fee-rate: ${SERVICE_FEE_RATE:0.08}
+    rounding-step: ${FEE_ROUNDING_STEP:5}
+  kkiapay:
+    # "stub" (par defaut) : aucun paiement reel, simule un succes systematique (dev/tests).
+    # "http" : appelle reellement l'API Kkiapay (necessite les 3 cles ci-dessous).
+    mode: ${KKIAPAY_MODE:stub}
+    public-key: ${KKIAPAY_PUBLIC_KEY:}
+    private-key: ${KKIAPAY_PRIVATE_KEY:}
+    secret: ${KKIAPAY_SECRET:}
+    # Secret hash configure dans le tableau de bord Kkiapay (menu Webhook), distinct des
+    # cles API ci-dessus : sert a verifier l'en-tete X-Kkiapay-Secret des webhooks recus.
+    webhook-secret: ${KKIAPAY_WEBHOOK_SECRET:}
+    sandbox: ${KKIAPAY_SANDBOX:true}
+  sms:
+    # "log" (par defaut) : journalise le SMS au lieu de l'envoyer (dev/tests).
+    # "http" : appelle un fournisseur SMS HTTP configurable ci-dessous.
+    mode: ${SMS_MODE:log}
+    http:
+      url: ${SMS_HTTP_URL:}
+      api-key: ${SMS_PROVIDER_KEY:}
+    otp:
+      max-attempts: ${OTP_MAX_ATTEMPTS:5}
+      rate-limit:
+        max-requests: ${OTP_RATE_LIMIT_MAX_REQUESTS:3}
+        window-minutes: ${OTP_RATE_LIMIT_WINDOW_MINUTES:10}
+  search-alert:
+    radius-km: ${SEARCH_ALERT_RADIUS_KM:10}
+  search-events:
+    # Duree de conservation des traces de recherche (table search_events, migration V9),
+    # purgees chaque nuit par SearchEventRetentionScheduler. Duree declaree dans
+    # docs/CONFORMITE.md (section 3.2) : la modifier ici impose de l'y mettre a jour.
+    retention-days: ${SEARCH_EVENTS_RETENTION_DAYS:180}
+  payout:
+    minimum-threshold-fcfa: ${PAYOUT_MIN_THRESHOLD_FCFA:2000}
+  subscription:
+    price-fcfa: ${SUBSCRIPTION_PRICE_FCFA:2000}
+  rate-limit:
+    auth:
+      max-requests: ${RATE_LIMIT_AUTH_MAX:20}
+      window-seconds: ${RATE_LIMIT_AUTH_WINDOW_SECONDS:60}
+    webhook:
+      max-requests: ${RATE_LIMIT_WEBHOOK_MAX:120}
+      window-seconds: ${RATE_LIMIT_WEBHOOK_WINDOW_SECONDS:60}
+
+logging:
+  level:
+    bj.ekuiseo.api: INFO

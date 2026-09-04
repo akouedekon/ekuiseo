@@ -1,0 +1,222 @@
+# ============================================================
+# Ekuiseo — environnement de PRODUCTION
+# ============================================================
+# Usage sur le VPS : cp .env.example .env puis completer, puis
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Architecture :
+#   Internet --443/80--> caddy --/api/*--> backend --> postgis
+#                              --/*    --> frontend (nginx, fichiers statiques)
+#
+# - postgis   : jamais expose a l'hote ni au reseau "edge" (reseau "internal" only).
+# - backend   : sur les deux reseaux (parle a postgis, repond a caddy).
+# - frontend  : sert le build statique (nginx), aucun acces base de donnees.
+# - caddy     : seul point d'entree public, TLS automatique (Let's Encrypt).
+#
+# Voir Caddyfile pour le routage et les en-tetes de securite, et docs/DEPLOIEMENT.md
+# pour la procedure complete de mise en production sur un VPS neuf.
+# ============================================================
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  postgis:
+    image: postgis/postgis:16-3.4
+    container_name: ekuiseo-postgis
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-ekuiseo}
+      POSTGRES_USER: ${DB_USER:-ekuiseo}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?la variable DB_PASSWORD doit etre definie dans .env en production}
+    volumes:
+      - ekuiseo_postgis_data:/var/lib/postgresql/data
+    # Pas de "ports:" ici : la base n'est jamais exposee, ni a l'hote, ni au reseau
+    # "edge" (elle n'est meme pas attachee a ce reseau). Utiliser scripts/backup.sh
+    # (docker compose exec) ou un tunnel SSH ponctuel pour l'inspecter.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-ekuiseo} -d ${DB_NAME:-ekuiseo}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 768M
+        reservations:
+          memory: 256M
+    logging: *default-logging
+    networks:
+      - internal
+
+  backend:
+    build:
+      context: ./backend
+    image: ekuiseo-backend:latest
+    container_name: ekuiseo-backend
+    restart: unless-stopped
+    depends_on:
+      postgis:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgis
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-ekuiseo}
+      DB_USER: ${DB_USER:-ekuiseo}
+      DB_PASSWORD: ${DB_PASSWORD:?la variable DB_PASSWORD doit etre definie dans .env en production}
+      JWT_SECRET: ${JWT_SECRET:?la variable JWT_SECRET doit etre definie dans .env en production (>= 32 caracteres aleatoires)}
+      JWT_ACCESS_TTL_MIN: ${JWT_ACCESS_TTL_MIN:-60}
+      JWT_REFRESH_TTL_DAYS: ${JWT_REFRESH_TTL_DAYS:-30}
+      # "stub" (defaut applicatif) simule un paiement TOUJOURS reussi sans appeler
+      # Kkiapay : a ne JAMAIS laisser en production. Mettre explicitement "http" ici
+      # une fois les 3 cles ci-dessous renseignees (voir docs/LANCEMENT.md).
+      KKIAPAY_MODE: ${KKIAPAY_MODE:-stub}
+      KKIAPAY_PUBLIC_KEY: ${KKIAPAY_PUBLIC_KEY:-}
+      KKIAPAY_PRIVATE_KEY: ${KKIAPAY_PRIVATE_KEY:-}
+      KKIAPAY_SECRET: ${KKIAPAY_SECRET:-}
+      KKIAPAY_WEBHOOK_SECRET: ${KKIAPAY_WEBHOOK_SECRET:-}
+      KKIAPAY_SANDBOX: ${KKIAPAY_SANDBOX:-false}
+      SMS_MODE: ${SMS_MODE:-log}
+      SMS_HTTP_URL: ${SMS_HTTP_URL:-}
+      SMS_PROVIDER_KEY: ${SMS_PROVIDER_KEY:-}
+      OTP_MAX_ATTEMPTS: ${OTP_MAX_ATTEMPTS:-5}
+      OTP_RATE_LIMIT_MAX_REQUESTS: ${OTP_RATE_LIMIT_MAX_REQUESTS:-3}
+      OTP_RATE_LIMIT_WINDOW_MINUTES: ${OTP_RATE_LIMIT_WINDOW_MINUTES:-10}
+      SERVICE_FEE_RATE: ${SERVICE_FEE_RATE:-0.08}
+      FEE_ROUNDING_STEP: ${FEE_ROUNDING_STEP:-5}
+      BOOKING_DEPOSIT_BASE_FCFA: ${BOOKING_DEPOSIT_BASE_FCFA:-1000}
+      SEARCH_ALERT_RADIUS_KM: ${SEARCH_ALERT_RADIUS_KM:-10}
+      PAYOUT_MIN_THRESHOLD_FCFA: ${PAYOUT_MIN_THRESHOLD_FCFA:-2000}
+      SUBSCRIPTION_PRICE_FCFA: ${SUBSCRIPTION_PRICE_FCFA:-2000}
+      RATE_LIMIT_AUTH_MAX: ${RATE_LIMIT_AUTH_MAX:-20}
+      RATE_LIMIT_AUTH_WINDOW_SECONDS: ${RATE_LIMIT_AUTH_WINDOW_SECONDS:-60}
+      RATE_LIMIT_WEBHOOK_MAX: ${RATE_LIMIT_WEBHOOK_MAX:-120}
+      RATE_LIMIT_WEBHOOK_WINDOW_SECONDS: ${RATE_LIMIT_WEBHOOK_WINDOW_SECONDS:-60}
+      SERVER_PORT: 8080
+      # Plafonne le tas JVM a 75% de la memoire allouee au conteneur (deploy.resources
+      # ci-dessous) : la JVM 21 est "container-aware" et lit cette variable
+      # automatiquement au demarrage, sans modifier l'ENTRYPOINT du Dockerfile.
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"
+    # Pas de "ports:" publie : seul Caddy (reseau edge) parle au backend.
+    expose:
+      - "8080"
+    healthcheck:
+      test:
+        - "CMD"
+        - "bash"
+        - "-c"
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/8080 &&
+          printf 'GET /actuator/health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          timeout 3 cat <&3 | grep -q '"status":"UP"'
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 1024M
+        reservations:
+          memory: 384M
+    logging: *default-logging
+    networks:
+      - internal
+      - edge
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-}
+        # frontend/Dockerfile declare bien `ARG`/`ENV` pour les trois : sans cela,
+        # Vite ne verrait jamais ces valeurs au build (le frontend garderait son
+        # comportement par defaut - bascule demo DESACTIVEE, carte schematique).
+        VITE_DEMO_FALLBACK: ${VITE_DEMO_FALLBACK:-false}
+        VITE_MAP_STYLE_URL: ${VITE_MAP_STYLE_URL:-}
+    image: ekuiseo-frontend:latest
+    container_name: ekuiseo-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    expose:
+      - "80"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
+        reservations:
+          memory: 32M
+    logging: *default-logging
+    networks:
+      - edge
+
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: ekuiseo-caddy
+    restart: unless-stopped
+    depends_on:
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    environment:
+      DOMAIN: ${DOMAIN:?la variable DOMAIN doit etre definie dans .env (nom de domaine pointant vers ce VPS)}
+      ACME_EMAIL: ${ACME_EMAIL:?la variable ACME_EMAIL doit etre definie dans .env (courriel pour les alertes Let's Encrypt)}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3 (QUIC)
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ekuiseo_caddy_data:/data
+      - ekuiseo_caddy_config:/config
+    healthcheck:
+      # L'API d'administration de Caddy (localhost:2019) repond toujours, meme si le
+      # binaire n'a pas encore obtenu de certificat : suffisant pour verifier que le
+      # processus est vivant. wget est fourni par busybox dans l'image alpine.
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:2019/config/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          memory: 64M
+    logging: *default-logging
+    networks:
+      - edge
+
+networks:
+  # postgis vit uniquement ici : ni caddy ni frontend n'y ont acces.
+  internal:
+    driver: bridge
+    internal: true
+  # backend, frontend et caddy : le seul reseau avec une sortie internet (necessaire
+  # pour que caddy obtienne les certificats Let's Encrypt et que le backend appelle
+  # l'API Kkiapay / le fournisseur SMS).
+  edge:
+    driver: bridge
+
+volumes:
+  ekuiseo_postgis_data:
+  ekuiseo_caddy_data:
+  ekuiseo_caddy_config:

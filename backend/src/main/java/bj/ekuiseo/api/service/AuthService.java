@@ -1,0 +1,146 @@
+package bj.ekuiseo.api.service;
+
+import bj.ekuiseo.api.common.exception.BadRequestException;
+import bj.ekuiseo.api.common.exception.ConflictException;
+import bj.ekuiseo.api.common.exception.NotFoundException;
+import bj.ekuiseo.api.common.exception.UnauthorizedException;
+import bj.ekuiseo.api.domain.OtpCode;
+import bj.ekuiseo.api.domain.User;
+import bj.ekuiseo.api.domain.enums.UserStatus;
+import bj.ekuiseo.api.dto.auth.AuthResponse;
+import bj.ekuiseo.api.dto.auth.LoginRequest;
+import bj.ekuiseo.api.dto.auth.OtpRequestRequest;
+import bj.ekuiseo.api.dto.auth.OtpVerifyRequest;
+import bj.ekuiseo.api.dto.auth.RefreshRequest;
+import bj.ekuiseo.api.dto.auth.RegisterRequest;
+import bj.ekuiseo.api.mapper.UserMapper;
+import bj.ekuiseo.api.repository.OtpCodeRepository;
+import bj.ekuiseo.api.repository.UserRepository;
+import bj.ekuiseo.api.security.JwtService;
+import io.jsonwebtoken.JwtException;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.security.SecureRandom;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+
+@Service
+public class AuthService {
+
+    private final UserRepository userRepository;
+    private final OtpCodeRepository otpCodeRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
+    private final SmsService smsService;
+    private final UserMapper userMapper;
+    private final int otpMaxAttempts;
+    private final SecureRandom random = new SecureRandom();
+
+    public AuthService(UserRepository userRepository, OtpCodeRepository otpCodeRepository,
+                        PasswordEncoder passwordEncoder, JwtService jwtService, SmsService smsService,
+                        UserMapper userMapper,
+                        @Value("${ekuiseo.sms.otp.max-attempts:5}") int otpMaxAttempts) {
+        this.userRepository = userRepository;
+        this.otpCodeRepository = otpCodeRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.jwtService = jwtService;
+        this.smsService = smsService;
+        this.userMapper = userMapper;
+        this.otpMaxAttempts = otpMaxAttempts;
+    }
+
+    @Transactional
+    public AuthResponse register(RegisterRequest req) {
+        if (userRepository.existsByPhone(req.phone())) {
+            throw new ConflictException("Un compte existe deja avec ce numero de telephone");
+        }
+        User user = User.builder()
+                .phone(req.phone())
+                .firstName(req.firstName())
+                .lastName(req.lastName())
+                .email(req.email())
+                .passwordHash(passwordEncoder.encode(req.password()))
+                .status(UserStatus.ACTIVE)
+                .build();
+        user = userRepository.save(user);
+        return tokensFor(user);
+    }
+
+    @Transactional
+    public void requestOtp(OtpRequestRequest req) {
+        String code = String.format("%06d", random.nextInt(1_000_000));
+        OtpCode otp = OtpCode.builder()
+                .phone(req.phone())
+                .codeHash(passwordEncoder.encode(code))
+                .purpose("VERIFY_PHONE")
+                .expiresAt(Instant.now().plus(5, ChronoUnit.MINUTES))
+                .build();
+        otpCodeRepository.save(otp);
+        smsService.sendOtp(req.phone(), code);
+    }
+
+    @Transactional
+    public AuthResponse verifyOtp(OtpVerifyRequest req) {
+        OtpCode otp = otpCodeRepository
+                .findFirstByPhoneAndConsumedAtIsNullAndExpiresAtAfterOrderByCreatedAtDesc(req.phone(), Instant.now())
+                .orElseThrow(() -> new BadRequestException("Aucun code valide pour ce numero, redemandez un OTP"));
+        if (otp.getAttempts() >= otpMaxAttempts) {
+            // Code grille par trop de tentatives incorrectes (regle metier n.8) : on l'invalide
+            // definitivement plutot que de laisser expirer normalement, meme s'il reste valide
+            // dans sa fenetre de 5 minutes.
+            otp.setConsumedAt(Instant.now());
+            otpCodeRepository.save(otp);
+            throw new BadRequestException("Nombre maximal de tentatives atteint pour ce code, redemandez un OTP");
+        }
+        if (!passwordEncoder.matches(req.code(), otp.getCodeHash())) {
+            otp.setAttempts(otp.getAttempts() + 1);
+            otpCodeRepository.save(otp);
+            throw new BadRequestException("Code OTP incorrect");
+        }
+        otp.setConsumedAt(Instant.now());
+        otpCodeRepository.save(otp);
+
+        User user = userRepository.findByPhone(req.phone())
+                .orElseThrow(() -> new NotFoundException("Aucun compte associe a ce numero, inscrivez-vous d'abord"));
+        user.setPhoneVerified(true);
+        userRepository.save(user);
+        return tokensFor(user);
+    }
+
+    @Transactional(readOnly = true)
+    public AuthResponse login(LoginRequest req) {
+        User user = userRepository.findByPhone(req.phone())
+                .orElseThrow(() -> new UnauthorizedException("Identifiants invalides"));
+        if (!passwordEncoder.matches(req.password(), user.getPasswordHash())) {
+            throw new UnauthorizedException("Identifiants invalides");
+        }
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            throw new UnauthorizedException("Compte suspendu");
+        }
+        return tokensFor(user);
+    }
+
+    @Transactional(readOnly = true)
+    public AuthResponse refresh(RefreshRequest req) {
+        try {
+            if (!jwtService.isRefreshToken(req.refreshToken())) {
+                throw new UnauthorizedException("Jeton de rafraichissement invalide");
+            }
+            var userId = jwtService.extractUserId(req.refreshToken());
+            User user = userRepository.findById(userId)
+                    .orElseThrow(() -> new UnauthorizedException("Utilisateur introuvable"));
+            return tokensFor(user);
+        } catch (JwtException ex) {
+            throw new UnauthorizedException("Jeton de rafraichissement invalide ou expire");
+        }
+    }
+
+    private AuthResponse tokensFor(User user) {
+        String access = jwtService.generateAccessToken(user.getId());
+        String refresh = jwtService.generateRefreshToken(user.getId());
+        return new AuthResponse(access, refresh, userMapper.toResponse(user));
+    }
+}

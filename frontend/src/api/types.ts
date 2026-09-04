@@ -1,0 +1,222 @@
+// Types miroirs des DTO exposes par l'API backend (bj.ekuiseo.api).
+// Les montants sont en FCFA (XOF), toujours des entiers.
+
+export type TripType = 'INTERURBAIN' | 'QUOTIDIEN'
+export type TripStatus = 'DRAFT' | 'PUBLISHED' | 'FULL' | 'ONGOING' | 'COMPLETED' | 'CANCELLED'
+export type BookingStatus =
+  | 'PENDING_PAYMENT'
+  | 'CONFIRMED'
+  | 'CANCELLED_BY_PASSENGER'
+  | 'CANCELLED_BY_DRIVER'
+  | 'COMPLETED'
+  | 'NO_SHOW'
+// Alignes sur bj.ekuiseo.api.domain.enums.PaymentMethod : MOMO_DEPOSIT (acompte,
+// defaut), MOMO_FULL (paiement integral en ligne), CASH (rien en ligne).
+export type PaymentMethod = 'MOMO_DEPOSIT' | 'MOMO_FULL' | 'CASH'
+export type ComfortLevel = 'BASIC' | 'COMFORT' | 'PREMIUM'
+export type ReviewRole = 'DRIVER' | 'PASSENGER'
+// Alignes sur bj.ekuiseo.api.domain.enums.NotificationType (backend). Les 3
+// dernieres valeurs manquaient ici : SEARCH_ALERT_MATCH et SUBSCRIPTION_ACTIVATED
+// sont deja emises en production (SearchAlertMatchService, PaymentService), ce qui
+// faisait planter la page Notifications (Record<NotificationType, ...> non total)
+// des qu'une telle notification arrivait. REPORT_RECEIVED n'est pour l'instant
+// jamais emise cote serveur, mais reprise ici par completude.
+export type NotificationType =
+  | 'BOOKING_CONFIRMED'
+  | 'BOOKING_CANCELLED'
+  | 'PAYMENT_SUCCEEDED'
+  | 'PAYMENT_FAILED'
+  | 'NEW_MESSAGE'
+  | 'TRIP_REMINDER'
+  | 'NEW_REVIEW'
+  | 'SEARCH_ALERT_MATCH'
+  | 'SUBSCRIPTION_ACTIVATED'
+  | 'REPORT_RECEIVED'
+
+export interface UserResponse {
+  id: string
+  phone: string
+  email: string | null
+  firstName: string
+  lastName: string
+  photoUrl: string | null
+  bio: string | null
+  ratingAvg: number
+  ratingCount: number
+  phoneVerified: boolean
+  identityVerified: boolean
+}
+
+export interface AuthResponse {
+  accessToken: string
+  refreshToken: string
+  user: UserResponse
+}
+
+export interface VehicleResponse {
+  id: string
+  brand: string
+  model: string
+  color: string | null
+  plate: string
+  seats: number
+  comfortLevel: ComfortLevel
+  photoUrl: string | null
+  verified: boolean
+}
+
+export interface VehicleRequest {
+  brand: string
+  model: string
+  color?: string
+  plate: string
+  seats: number
+  comfortLevel: ComfortLevel
+  photoUrl?: string
+}
+
+export interface DriverSummary {
+  id: string
+  firstName: string
+  lastName: string
+  photoUrl: string | null
+  ratingAvg: number
+  ratingCount: number
+}
+
+export interface VehicleSummary {
+  id: string
+  brand: string
+  model: string
+  color: string | null
+  comfortLevel: ComfortLevel
+}
+
+export interface TripResponse {
+  id: string
+  driver: DriverSummary
+  vehicle: VehicleSummary
+  tripType: TripType
+  originLabel: string
+  originLat: number
+  originLng: number
+  destLabel: string
+  destLat: number
+  destLng: number
+  departureAt: string
+  seatsTotal: number
+  seatsAvailable: number
+  pricePerSeat: number
+  instantBooking: boolean
+  luggagePolicy: string | null
+  description: string | null
+  status: TripStatus
+  recurrenceRule: string | null
+  createdAt: string
+}
+
+export interface StopRequest {
+  label: string
+  lat: number
+  lng: number
+  plannedAt?: string
+  priceFromOrigin: number
+}
+
+export interface CreateTripRequest {
+  vehicleId: string
+  tripType: TripType
+  originLabel: string
+  originLat: number
+  originLng: number
+  destLabel: string
+  destLat: number
+  destLng: number
+  departureAt: string
+  seatsTotal: number
+  pricePerSeat: number
+  instantBooking: boolean
+  luggagePolicy?: string
+  description?: string
+  recurrenceRule?: string
+  stops?: StopRequest[]
+}
+
+export interface BookingResponse {
+  id: string
+  tripId: string
+  passengerId: string
+  seats: number
+  amount: number
+  serviceFee: number
+  status: BookingStatus
+  paymentMethod: PaymentMethod
+  createdAt: string
+}
+
+export interface CreateBookingRequest {
+  seats: number
+  pickupStopId?: string
+  dropoffStopId?: string
+  paymentMethod: PaymentMethod
+}
+
+export interface ReviewResponse {
+  id: string
+  tripId: string
+  authorId: string
+  targetId: string
+  role: ReviewRole
+  rating: number
+  comment: string | null
+  createdAt: string
+}
+
+export interface CreateReviewRequest {
+  targetId: string
+  role: ReviewRole
+  rating: number
+  comment?: string
+}
+
+export interface MessageResponse {
+  id: string
+  conversationId: string
+  senderId: string
+  body: string
+  readAt: string | null
+  createdAt: string
+}
+
+export interface NotificationResponse {
+  id: string
+  type: NotificationType
+  payload: Record<string, unknown> | null
+  readAt: string | null
+  createdAt: string
+}
+
+export interface InitiatePaymentResponse {
+  paymentId: string
+  transactionRef: string
+  amount: number
+  kkiapayPublicKey: string
+  sandbox: boolean
+}
+
+export interface Page<T> {
+  content: T[]
+  totalElements: number
+  totalPages: number
+  number: number
+  size: number
+}
+
+/** Reponse d'erreur RFC 7807 (application/problem+json) renvoyee par l'API. */
+export interface ProblemDetail {
+  type?: string
+  title?: string
+  status: number
+  detail?: string
+  instance?: string
+}

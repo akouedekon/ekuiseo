@@ -1,0 +1,50 @@
+# ============================================================
+# Ekuiseo — .gitignore racine
+# ============================================================
+
+# --- Secrets : ne jamais committer de vraies valeurs -------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# --- Java / Maven (backend) --------------------------------------------
+backend/target/
+backend/**/*.class
+backend/.mvn/
+*.jar
+!**/lib/*.jar
+
+# --- Node / Vite (frontend) --------------------------------------------
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Docker ---------------------------------------------------------------
+# (rien de specifique a ignorer ici : les Dockerfiles et docker-compose*.yml
+# doivent etre versionnes ; les volumes nommes vivent dans Docker, pas dans le
+# depot)
+
+# --- Sauvegardes de base de donnees -------------------------------------
+backups/
+*.dump
+*.sql.gz
+
+# --- Editeurs / OS -------------------------------------------------------
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.swp
+*.swo
+*~
+
+# --- Divers ---------------------------------------------------------------
+*.log

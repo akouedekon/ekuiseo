@@ -1,0 +1,81 @@
+# ============================================================
+# Ekuiseo — configuration Caddy (reverse proxy + TLS automatique)
+# ============================================================
+# DOMAIN et ACME_EMAIL sont injectes comme variables d'environnement du conteneur
+# caddy (voir docker-compose.prod.yml et .env) ; Caddy les substitue via {$VAR}.
+#
+# Caddy obtient et renouvelle automatiquement un certificat Let's Encrypt pour
+# {$DOMAIN} au premier demarrage (le port 80 doit etre joignable depuis internet
+# pour le challenge HTTP-01, et le port 443 pour TLS-ALPN-01). Voir
+# docs/DEPLOIEMENT.md pour les prerequis DNS/pare-feu.
+# ============================================================
+
+{
+	email {$ACME_EMAIL}
+	# Decommenter pour tester la delivrance de certificat sans consommer le quota
+	# (strict) de Let's Encrypt pendant une mise au point DNS/pare-feu :
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# --- En-tetes de securite ---------------------------------------------
+	header {
+		# HSTS : force HTTPS pour ce domaine pendant 1 an, y compris sous-domaines.
+		# A ne decommenter/laisser actif que si TOUS les sous-domaines eventuels
+		# supportent aussi HTTPS.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "SAMEORIGIN"
+		Permissions-Policy "geolocation=(self), camera=(), microphone=(), payment=(self)"
+
+		# CSP realiste pour une SPA React + MapLibre GL (tuiles de carte) + widget de
+		# paiement Kkiapay. A resserrer des que les domaines exacts des tuiles cartographiques
+		# choisies (MapTiler, OpenStreetMap, ...) sont fixes : remplacer les "https:"
+		# generiques de img-src/connect-src par les hotes precis.
+		Content-Security-Policy "default-src 'self'; script-src 'self' https://cdn.kkiapay.me; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https:; worker-src 'self' blob:; frame-src https://*.kkiapay.me; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests"
+
+		# Retire l'en-tete qui revele la version de Caddy.
+		-Server
+	}
+
+	# --- API backend ---------------------------------------------------------
+	handle /api/* {
+		reverse_proxy backend:8080 {
+			header_up X-Real-IP {remote_host}
+			health_uri /actuator/health
+			health_interval 15s
+			health_timeout 5s
+		}
+	}
+
+	# Documentation OpenAPI / Swagger (springdoc) — utile en exploitation, a retirer
+	# ou proteger par IP/mot de passe si l'API ne doit pas etre auto-documentee en public.
+	handle /swagger-ui* {
+		reverse_proxy backend:8080
+	}
+	handle /v3/api-docs* {
+		reverse_proxy backend:8080
+	}
+
+	# --- Front (SPA statique) --------------------------------------------------
+	# Le repli sur index.html pour les routes cote client est deja gere par
+	# frontend/nginx.conf (try_files $uri $uri/ /index.html) ; Caddy se contente de
+	# relayer vers ce service.
+	handle {
+		reverse_proxy frontend:80
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}
+
+# Redirection explicite du "www." vers le domaine nu (retirer ce bloc si vous
+# preferez l'inverse, ou si aucun enregistrement DNS www n'existe).
+www.{$DOMAIN} {
+	redir https://{$DOMAIN}{uri} permanent
+}

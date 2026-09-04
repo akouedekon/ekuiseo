@@ -1,0 +1,150 @@
+# ============================================================
+# Ekuiseo — environnement de DEVELOPPEMENT
+# ============================================================
+# Usage : cp .env.example .env puis `docker compose up --build`
+#
+# - postgis   : base PostgreSQL + PostGIS, port publie pour un client SQL local
+# - backend   : API Spring Boot construite depuis backend/Dockerfile (build complet,
+#               pas de hot-reload Java — relancer `docker compose up --build backend`
+#               apres une modification du code)
+# - frontend  : serveur de developpement Vite avec rechargement a chaud, code source
+#               monte en volume (pas de build ici : c'est frontend/Dockerfile,
+#               orient production/nginx, qui s'en charge — voir docker-compose.prod.yml)
+# - adminer   : interface web pour inspecter la base (http://localhost:8081)
+#
+# Pour la production, voir docker-compose.prod.yml + Caddyfile.
+# ============================================================
+
+services:
+  postgis:
+    image: postgis/postgis:16-3.4
+    container_name: ekuiseo-postgis
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-ekuiseo}
+      POSTGRES_USER: ${DB_USER:-ekuiseo}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-ekuiseo_dev_change_me}
+    ports:
+      # Expose sur l'hote uniquement en dev, pour se connecter avec un client SQL local.
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - ekuiseo_postgis_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-ekuiseo} -d ${DB_NAME:-ekuiseo}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - ekuiseo
+
+  backend:
+    build:
+      context: ./backend
+    container_name: ekuiseo-backend
+    restart: unless-stopped
+    depends_on:
+      postgis:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgis
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-ekuiseo}
+      DB_USER: ${DB_USER:-ekuiseo}
+      DB_PASSWORD: ${DB_PASSWORD:-ekuiseo_dev_change_me}
+      JWT_SECRET: ${JWT_SECRET:-change-me-super-secret-key-please-override-in-prod-min-32-bytes}
+      JWT_ACCESS_TTL_MIN: ${JWT_ACCESS_TTL_MIN:-60}
+      JWT_REFRESH_TTL_DAYS: ${JWT_REFRESH_TTL_DAYS:-30}
+      KKIAPAY_MODE: ${KKIAPAY_MODE:-stub}
+      KKIAPAY_PUBLIC_KEY: ${KKIAPAY_PUBLIC_KEY:-}
+      KKIAPAY_PRIVATE_KEY: ${KKIAPAY_PRIVATE_KEY:-}
+      KKIAPAY_SECRET: ${KKIAPAY_SECRET:-}
+      KKIAPAY_WEBHOOK_SECRET: ${KKIAPAY_WEBHOOK_SECRET:-}
+      KKIAPAY_SANDBOX: ${KKIAPAY_SANDBOX:-true}
+      SMS_MODE: ${SMS_MODE:-log}
+      SMS_HTTP_URL: ${SMS_HTTP_URL:-}
+      SMS_PROVIDER_KEY: ${SMS_PROVIDER_KEY:-}
+      OTP_MAX_ATTEMPTS: ${OTP_MAX_ATTEMPTS:-5}
+      OTP_RATE_LIMIT_MAX_REQUESTS: ${OTP_RATE_LIMIT_MAX_REQUESTS:-3}
+      OTP_RATE_LIMIT_WINDOW_MINUTES: ${OTP_RATE_LIMIT_WINDOW_MINUTES:-10}
+      SERVICE_FEE_RATE: ${SERVICE_FEE_RATE:-0.08}
+      FEE_ROUNDING_STEP: ${FEE_ROUNDING_STEP:-5}
+      BOOKING_DEPOSIT_BASE_FCFA: ${BOOKING_DEPOSIT_BASE_FCFA:-1000}
+      SEARCH_ALERT_RADIUS_KM: ${SEARCH_ALERT_RADIUS_KM:-10}
+      PAYOUT_MIN_THRESHOLD_FCFA: ${PAYOUT_MIN_THRESHOLD_FCFA:-2000}
+      SUBSCRIPTION_PRICE_FCFA: ${SUBSCRIPTION_PRICE_FCFA:-2000}
+      RATE_LIMIT_AUTH_MAX: ${RATE_LIMIT_AUTH_MAX:-20}
+      RATE_LIMIT_AUTH_WINDOW_SECONDS: ${RATE_LIMIT_AUTH_WINDOW_SECONDS:-60}
+      RATE_LIMIT_WEBHOOK_MAX: ${RATE_LIMIT_WEBHOOK_MAX:-120}
+      RATE_LIMIT_WEBHOOK_WINDOW_SECONDS: ${RATE_LIMIT_WEBHOOK_WINDOW_SECONDS:-60}
+      SERVER_PORT: 8080
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    healthcheck:
+      # Pas de curl/wget dans l'image eclipse-temurin-jre utilisee par backend/Dockerfile :
+      # on ouvre une connexion TCP brute en bash et on lit la reponse HTTP de
+      # /actuator/health (expose par spring-boot-starter-actuator, deja present dans le
+      # pom.xml). Necessite juste bash, present dans l'image (base Ubuntu jammy).
+      test:
+        - "CMD"
+        - "bash"
+        - "-c"
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/8080 &&
+          printf 'GET /actuator/health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          timeout 3 cat <&3 | grep -q '"status":"UP"'
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - ekuiseo
+
+  frontend:
+    image: node:22-slim
+    container_name: ekuiseo-frontend
+    restart: unless-stopped
+    working_dir: /app
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8080}
+      # Repli sur donnees factices si l'API est injoignable : pratique par defaut en
+      # dev, mais DOIT valoir "false" en production (voir .env.example).
+      VITE_DEMO_FALLBACK: ${VITE_DEMO_FALLBACK:-true}
+    volumes:
+      - ./frontend:/app
+      # Volume anonyme pour que node_modules installe dans le conteneur ne soit pas
+      # ecrase par le montage du code source de l'hote (et pour eviter des soucis de
+      # binaires natifs compiles pour un autre OS que celui de l'hote).
+      - ekuiseo_frontend_node_modules:/app/node_modules
+    command: >-
+      sh -c "npm ci && npm run dev -- --host 0.0.0.0 --port 5173"
+    ports:
+      - "5173:5173"
+    networks:
+      - ekuiseo
+
+  adminer:
+    image: adminer:4.8.1
+    container_name: ekuiseo-adminer
+    restart: unless-stopped
+    depends_on:
+      postgis:
+        condition: service_healthy
+    environment:
+      ADMINER_DEFAULT_SERVER: postgis
+      ADMINER_DESIGN: pepa-linha
+    ports:
+      - "8081:8080"
+    networks:
+      - ekuiseo
+
+networks:
+  ekuiseo:
+    driver: bridge
+
+volumes:
+  ekuiseo_postgis_data:
+  ekuiseo_frontend_node_modules:

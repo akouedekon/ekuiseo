@@ -1,0 +1,341 @@
+@import "tailwindcss";
+
+/*
+ * Ekuiseo — systeme de design.
+ * Inspiration : signalisation routiere beninoise + bannieres appliquees d'Abomey.
+ * Toutes les couleurs vivent ici, en variables CSS. Aucun hexadecimal ailleurs.
+ */
+
+/* Le mode sombre est pilote par la classe .dark posee sur <html> (voir lib/theme.ts),
+   ce qui permet un choix explicite de l'utilisateur en plus de la preference systeme. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: light;
+
+  /* --- Surfaces & encres (mode clair, valeurs de la charte) --- */
+  --paper: #fffdf7;
+  --surface: #ffffff;
+  --surface-calm: #f0ebdd;
+  --surface-sunk: #f7f4ea;
+  --ink: #151a21;
+  --ink-2: #4a4638;
+  --muted: #7a7464; /* seuil de contraste 4,5:1 — ne jamais eclaircir */
+  --rule: #e7e1d2;
+  --rule-strong: #d5cdb8;
+
+  /* --- Couleurs de signalisation --- */
+  --indigo: #2e3fa8;
+  --indigo-deep: #1e2a73;
+  --indigo-soft: #e6e9f7;
+  --indigo-contrast: #ffffff;
+
+  --vermillon: #d4452b;
+  --vermillon-soft: #fbe7e3;
+  --vermillon-contrast: #ffffff;
+
+  --ocre: #e0a020;
+  --ocre-soft: #fbf0d8;
+  --ocre-contrast: #2a1f06;
+  --ocre-ink: #7d5806; /* ocre lisible en texte sur fond clair (>= 4,5:1) */
+
+  --vert: #1e8a5c;
+  --vert-soft: #e0f2ea;
+  --vert-contrast: #ffffff;
+
+  /* --- Ombres : discretes, jamais diffuses --- */
+  --shadow-1: 0 1px 2px rgb(21 26 33 / 0.05), 0 1px 1px rgb(21 26 33 / 0.04);
+  --shadow-2: 0 2px 6px rgb(21 26 33 / 0.07), 0 1px 2px rgb(21 26 33 / 0.05);
+  --shadow-3: 0 12px 32px -8px rgb(21 26 33 / 0.18), 0 2px 8px rgb(21 26 33 / 0.06);
+  --shadow-sheet: 0 -8px 40px -12px rgb(21 26 33 / 0.28);
+
+  /* --- Rayons --- */
+  --radius-chip: 4px;
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-panel: 16px;
+}
+
+:root.dark {
+  color-scheme: dark;
+
+  --paper: #101419;
+  --surface: #171c24;
+  --surface-calm: #1e242e;
+  --surface-sunk: #0b0e12;
+  --ink: #f3f0e7;
+  --ink-2: #cdc7b6;
+  --muted: #9a9382;
+  --rule: #2a313b;
+  --rule-strong: #3b434f;
+
+  --indigo: #8494ee;
+  --indigo-deep: #a6b2f5;
+  --indigo-soft: #1d2440;
+  --indigo-contrast: #0e1220;
+
+  --vermillon: #f4715a;
+  --vermillon-soft: #351a16;
+  --vermillon-contrast: #1a0906;
+
+  --ocre: #edb544;
+  --ocre-soft: #33270e;
+  --ocre-contrast: #241a04;
+  --ocre-ink: #f0c469;
+
+  --vert: #3fbe86;
+  --vert-soft: #10291f;
+  --vert-contrast: #04150d;
+
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-2: 0 2px 8px rgb(0 0 0 / 0.45);
+  --shadow-3: 0 14px 36px -10px rgb(0 0 0 / 0.7);
+  --shadow-sheet: 0 -8px 40px -12px rgb(0 0 0 / 0.75);
+}
+
+/* Pont vers les utilitaires Tailwind : bg-surface, text-muted, border-rule, etc. */
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-surface-calm: var(--surface-calm);
+  --color-surface-sunk: var(--surface-sunk);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
+
+  --color-indigo-brand: var(--indigo);
+  --color-indigo-deep: var(--indigo-deep);
+  --color-indigo-soft: var(--indigo-soft);
+  --color-on-indigo: var(--indigo-contrast);
+
+  --color-vermillon: var(--vermillon);
+  --color-vermillon-soft: var(--vermillon-soft);
+  --color-on-vermillon: var(--vermillon-contrast);
+
+  --color-ocre: var(--ocre);
+  --color-ocre-soft: var(--ocre-soft);
+  --color-ocre-ink: var(--ocre-ink);
+  --color-on-ocre: var(--ocre-contrast);
+
+  --color-vert: var(--vert);
+  --color-vert-soft: var(--vert-soft);
+  --color-on-vert: var(--vert-contrast);
+
+  --font-display: "Archivo", "Archivo Fallback", "Helvetica Neue", Arial, sans-serif;
+  --font-sans: "Instrument Sans", "Instrument Sans Fallback", "Segoe UI", Roboto, system-ui, sans-serif;
+
+  --radius-chip: 4px;
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-panel: 16px;
+
+  --shadow-e1: var(--shadow-1);
+  --shadow-e2: var(--shadow-2);
+  --shadow-e3: var(--shadow-3);
+  --shadow-sheet: var(--shadow-sheet);
+}
+
+@layer base {
+  * {
+    border-color: var(--rule);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overscroll-behavior-y: none;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+  }
+
+  /* Les gros titres serrent davantage, comme sur les maquettes. */
+  h1 {
+    letter-spacing: -0.03em;
+  }
+
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Focus visible unique et lisible sur les deux themes. */
+  :focus-visible {
+    outline: 2px solid var(--indigo);
+    outline-offset: 2px;
+    border-radius: 3px;
+  }
+
+  ::selection {
+    background: var(--indigo-soft);
+    color: var(--ink);
+  }
+
+  /* Barres de defilement discretes (listes de filtres, colonnes desktop). */
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--rule-strong) transparent;
+  }
+  .scroll-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scroll-thin::-webkit-scrollbar-thumb {
+    background: var(--rule-strong);
+    border-radius: 999px;
+  }
+}
+
+@layer utilities {
+  /* Chiffres alignes : prix, heures, comptes a rebours, tableaux admin. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+
+  .font-display {
+    font-family: var(--font-display);
+  }
+
+  /* Titrage type panneau de signalisation. */
+  .headline {
+    font-family: var(--font-display);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.05;
+  }
+
+  /* Bandeau applique facon banniere d'Abomey : bandes fines et regulieres. */
+  .banner-rule {
+    background-image: repeating-linear-gradient(
+      90deg,
+      var(--indigo) 0 14px,
+      var(--ocre) 14px 22px,
+      var(--vermillon) 22px 30px,
+      transparent 30px 44px
+    );
+  }
+
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Squelettes de chargement : balayage lent, jamais clignotant. */
+  .shimmer {
+    position: relative;
+    overflow: hidden;
+    background: var(--surface-calm);
+  }
+  .shimmer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.35), transparent);
+    animation: ek-shimmer 1.6s infinite;
+  }
+  :root.dark .shimmer::after {
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.06), transparent);
+  }
+}
+
+@keyframes ek-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Retour haptique visuel : bref enfoncement a l'appui. */
+@keyframes ek-press {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(0.97);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Compte a rebours d'acompte qui arrive a echeance. */
+@keyframes ek-pulse-warn {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+
+/* --- Animations Radix (overlay / contenu), pilotees par data-state --- */
+@keyframes ek-fade-in { from { opacity: 0 } to { opacity: 1 } }
+@keyframes ek-fade-out { from { opacity: 1 } to { opacity: 0 } }
+@keyframes ek-zoom-in { from { opacity: 0; transform: translate(-50%, -48%) scale(0.97) } to { opacity: 1; transform: translate(-50%, -50%) scale(1) } }
+@keyframes ek-zoom-out { from { opacity: 1; transform: translate(-50%, -50%) scale(1) } to { opacity: 0; transform: translate(-50%, -48%) scale(0.98) } }
+@keyframes ek-pop-in { from { opacity: 0; transform: translateY(-4px) scale(0.98) } to { opacity: 1; transform: translateY(0) scale(1) } }
+
+.ek-anim-fade[data-state="open"] { animation: ek-fade-in 0.2s ease-out }
+.ek-anim-fade[data-state="closed"] { animation: ek-fade-out 0.15s ease-in }
+.ek-anim-zoom[data-state="open"] { animation: ek-zoom-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) }
+.ek-anim-zoom[data-state="closed"] { animation: ek-zoom-out 0.15s ease-in }
+.ek-anim-pop[data-state="open"] { animation: ek-pop-in 0.16s cubic-bezier(0.22, 1, 0.36, 1) }
+.ek-anim-pop[data-state="closed"] { animation: ek-fade-out 0.12s ease-in }
+
+/* Accordeon Radix : hauteur animee via la variable exposee par le composant. */
+@keyframes ek-acc-down { from { height: 0 } to { height: var(--radix-accordion-content-height) } }
+@keyframes ek-acc-up { from { height: var(--radix-accordion-content-height) } to { height: 0 } }
+.ek-acc[data-state="open"] { animation: ek-acc-down 0.22s cubic-bezier(0.22, 1, 0.36, 1) }
+.ek-acc[data-state="closed"] { animation: ek-acc-up 0.18s cubic-bezier(0.65, 0, 0.35, 1) }
+
+/* MapLibre : neutralise le style par defaut pour rester dans la charte. */
+.maplibregl-map {
+  font-family: var(--font-sans) !important;
+}
+.maplibregl-ctrl-attrib {
+  font-size: 10px !important;
+  background: color-mix(in srgb, var(--surface) 85%, transparent) !important;
+}
+.maplibregl-ctrl-attrib a {
+  color: var(--muted) !important;
+}
+
+/* Respect strict de prefers-reduced-motion : aucune animation n'est porteuse
+   d'information, elles peuvent donc toutes etre neutralisees. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .shimmer::after {
+    display: none;
+  }
+}

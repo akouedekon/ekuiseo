@@ -1,0 +1,144 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Evite d'accumuler des runs concurrents obsoletes sur la meme branche/PR.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (Maven)
+    runs-on: ubuntu-latest
+    services:
+      # Utilise pour les eventuels tests d'integration qui se connectent via une URL
+      # JDBC fixe plutot que via Testcontainers (qui gere son propre conteneur et
+      # n'a pas besoin de ce service). Les identifiants correspondent aux valeurs par
+      # defaut de backend/src/main/resources/application.yml.
+      postgis:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: ekuiseo
+          POSTGRES_USER: ekuiseo
+          POSTGRES_PASSWORD: ekuiseo_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ekuiseo -d ekuiseo"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_NAME: ekuiseo
+      DB_USER: ekuiseo
+      DB_PASSWORD: ekuiseo_ci
+      JWT_SECRET: ci-only-secret-key-not-for-production-use-min-32-chars
+    steps:
+      - name: Recuperer le code
+        uses: actions/checkout@v4
+
+      - name: Installer le JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+
+      - name: Compiler et tester (mvn verify)
+        working-directory: backend
+        run: mvn -B verify
+
+      - name: Publier les rapports de tests
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-surefire-reports
+          path: backend/target/surefire-reports/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  frontend:
+    name: Frontend (npm)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Recuperer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Installer les dependances (npm ci)
+        run: npm ci
+
+      - name: Lint (oxlint)
+        run: npm run lint
+
+      - name: Verification des types + build de production
+        run: npm run build
+        env:
+          # Valeur factice suffisante pour valider le build ; la vraie valeur est
+          # injectee au build de l'image Docker (voir frontend/Dockerfile, ARG VITE_API_URL).
+          VITE_API_URL: https://ci-build-placeholder.invalid
+
+      - name: Publier le build (dist/)
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+          retention-days: 7
+
+  docker-images:
+    name: Construction des images Docker
+    # Seulement sur la branche principale : valide que les Dockerfiles produisent bien
+    # des images utilisables (le sandbox de generation de ce depot n'a pas d'acces a
+    # Docker Hub / Maven Central, donc ce job n'a JAMAIS ete execute avec succes avant
+    # publication — verifier son premier run avec attention).
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Recuperer le code
+        uses: actions/checkout@v4
+
+      - name: Configurer Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Construire l'image backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: false
+          tags: ekuiseo-backend:ci
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: Construire l'image frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: false
+          tags: ekuiseo-frontend:ci
+          build-args: |
+            VITE_API_URL=
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+      # Pour publier vers un registre (ex: GHCR) avant deploiement, ajouter ici une
+      # etape docker/login-action puis passer push: true et un tag
+      # ghcr.io/<org>/ekuiseo-backend:${{ github.sha }} — non fait par defaut pour ne
+      # pas presupposer d'un registre ni de secrets deja configures.
