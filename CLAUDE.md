@@ -113,14 +113,22 @@ chaîne de déploiement, jeu de démonstration, documentation d'exploitation.
 
 ## État de vérification
 
-**Le backend compile et sa suite de tests passe** (`mvn test` : 79 tests, 0 échec, 4 ignorés
-= tests d'intégration Testcontainers). Deux corrections mécaniques ont suffi (voir
-`backend/README.md` §9). Ce qui reste non rejoué : les tests d'intégration (`@Disabled`,
-image `postgis/postgis` à télécharger) et donc les **requêtes SQL natives** contre un vrai
-PostGIS — celles de la liquidité (V9) en premier, au premier démarrage avec
-`docker compose up`.
+**Backend** : `mvn test` = 95 tests, 0 échec, 4 ignorés (Testcontainers). **Frontend** :
+`npm run lint`, `npm test` (Vitest, 27 tests : client HTTP et rafraîchissement de jeton,
+erreurs, règles de paiement, validation) et `npm run build` passent ; les trois tournent en CI.
 
-Le frontend compile : `npm run build` et `npm run lint` passent.
+**Vérifié en production le 2026-09-05** (https://ekuiseo.com, `docs/RAPPORT-FONCTIONNEL.md`) :
+inscription et connexion OTP, expiration de session, permissions USER/ADMIN (401/403 RFC 7807),
+recherche paginée, réservation avec acompte Kkiapay sandbox et reprise, espèces, messagerie,
+notifications, compte (véhicules, mobile money, identité, réglages, revenus, abonnement payé),
+publication avec arrêts géolocalisés, modification et annulation de trajet (remboursement
+sandbox), avis, signalement, back-office complet (signalements, vérifications, lots de
+reversement, suspension motivée, journal d'audit, export CSV), responsive 375 → 1920.
+Comptes de test en production : `+22997000322` (conducteur), `+22997000321` (passager).
+
+Il n'existe **plus aucun mode démonstration** : `api/demo.ts` et `api/resilient.ts` ont été
+supprimés, chaque hook appelle l'API et chaque écran affiche un état d'erreur avec réessai.
+Audit de départ dans `docs/AUDIT-FONCTIONNEL.md`.
 
 ## Commandes
 
