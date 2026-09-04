@@ -206,6 +206,8 @@ export function BookingPage() {
         sandbox: payment.sandbox,
         phone,
         name: me.data ? `${me.data.data.firstName} ${me.data.data.lastName}`.trim() : undefined,
+        // Le widget exige un e-mail (recu Kkiapay) : pre-rempli quand le profil en a un.
+        email: me.data?.data.email ?? undefined,
         data: payment.widgetData ?? (bookingId ? { bookingId } : undefined),
         onClose: () => setWidgetOpen(false),
       })

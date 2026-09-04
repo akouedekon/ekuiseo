@@ -194,6 +194,12 @@ utilisateurs** : voir l'avertissement dans `scripts/seed-demo.sh`.
 - [ ] Une inscription + connexion de bout en bout fonctionne (avec un vrai numéro,
       si `SMS_PROVIDER_KEY` est configuré).
 - [ ] Un paiement Kkiapay en mode sandbox aboutit et confirme bien une réservation.
+      Le sandbox n'accepte que ses numéros de test : `97000000` / `61000000` (MTN, succès),
+      `95000000` / `68000000` (Moov, succès), `97000001` (erreur), `97000002` (solde
+      insuffisant), `97000003` (refus). Tout autre numéro est rejeté par le widget
+      (« Le numéro n'est pas valide »). Vérifié le 2026-09-04 sur ekuiseo.com : widget
+      ouvert, 1 000 F + 19 F de frais débités, réservation confirmée via
+      `POST /api/v1/payments/{id}/confirm` (`raw_payload.source = widget-confirm`).
 - [ ] Une sauvegarde manuelle réussit : `./scripts/backup.sh` (voir
       `docs/EXPLOITATION.md`).
 - [ ] Une tâche planifiée (cron) exécute `scripts/backup.sh` quotidiennement (voir

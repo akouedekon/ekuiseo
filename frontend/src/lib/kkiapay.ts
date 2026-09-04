@@ -89,6 +89,8 @@ export interface OpenKkiapayInput {
   sandbox: boolean
   phone?: string
   name?: string
+  /** Exige par le widget (envoi du recu) ; laisse vide, il le demande a l'utilisateur. */
+  email?: string
   /** Donnees de correlation (bookingId...) echoees dans stateData du webhook. */
   data?: Record<string, string>
   /** Appele si l'utilisateur ferme la fenetre sans conclure (quand le widget le signale). */
@@ -144,6 +146,7 @@ export async function openKkiapay(input: OpenKkiapayInput): Promise<KkiapaySucce
       sandbox: input.sandbox,
       phone: toKkiapayPhone(input.phone),
       name: input.name,
+      email: input.email,
       data: input.data ? JSON.stringify(input.data) : undefined,
       theme: '#0e7c4a',
       position: 'center',
