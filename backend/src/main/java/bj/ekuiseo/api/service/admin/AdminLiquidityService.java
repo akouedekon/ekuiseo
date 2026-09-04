@@ -14,6 +14,7 @@ import bj.ekuiseo.api.dto.admin.AdminLiquidityResponse.WeekSeats;
 import bj.ekuiseo.api.repository.BookingRepository;
 import bj.ekuiseo.api.repository.SearchEventRepository;
 import bj.ekuiseo.api.repository.TripRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -62,6 +63,8 @@ public class AdminLiquidityService {
     private final BookingRepository bookingRepository;
     private final Clock clock;
 
+    /** Constructeur retenu par Spring (l autre, avec horloge, ne sert qu aux tests). */
+    @Autowired
     public AdminLiquidityService(SearchEventRepository searchEventRepository, TripRepository tripRepository,
                                  BookingRepository bookingRepository) {
         this(searchEventRepository, tripRepository, bookingRepository, Clock.systemUTC());
