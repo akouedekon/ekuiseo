@@ -71,9 +71,10 @@ function describe(notification: NotificationResponse): string {
     case 'BOOKING_CONFIRMED': {
       const origin = str('origin')
       const destination = str('destination')
+      // Recue par le passager (sa place) comme par le conducteur (une place vendue) : formulation neutre.
       return origin && destination
-        ? `Votre place ${origin} → ${destination} est confirmée.`
-        : 'Votre réservation est confirmée.'
+        ? `La réservation ${origin} → ${destination} est confirmée.`
+        : 'Une réservation vient d’être confirmée sur votre trajet ou pour votre place.'
     }
     case 'BOOKING_CANCELLED':
       return str('by') === 'driver'

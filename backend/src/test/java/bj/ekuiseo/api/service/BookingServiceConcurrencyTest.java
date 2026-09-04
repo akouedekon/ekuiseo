@@ -103,7 +103,7 @@ class BookingServiceConcurrencyTest {
             }
         });
 
-        BookingService bookingService = new BookingService(bookingRepository, tripRepository, userRepository,
+        BookingService bookingService = new BookingService(bookingRepository, tripRepository, mock(bj.ekuiseo.api.repository.TripStopRepository.class), userRepository,
                 driverSubscriptionRepository, messageRepository, bookingMapper, new CancellationPolicy(), new DriverCancellationPolicy(),
                 notificationService, paymentService, auditService, feePolicy, 20);
 

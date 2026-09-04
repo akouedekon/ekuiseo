@@ -7,6 +7,7 @@ import bj.ekuiseo.api.common.exception.ForbiddenException;
 import bj.ekuiseo.api.common.exception.NotFoundException;
 import bj.ekuiseo.api.domain.Booking;
 import bj.ekuiseo.api.domain.Trip;
+import bj.ekuiseo.api.domain.TripStop;
 import bj.ekuiseo.api.domain.User;
 import bj.ekuiseo.api.domain.enums.BookingStatus;
 import bj.ekuiseo.api.domain.enums.NotificationType;
@@ -23,6 +24,7 @@ import bj.ekuiseo.api.repository.BookingRepository;
 import bj.ekuiseo.api.repository.DriverSubscriptionRepository;
 import bj.ekuiseo.api.repository.MessageRepository;
 import bj.ekuiseo.api.repository.TripRepository;
+import bj.ekuiseo.api.repository.TripStopRepository;
 import bj.ekuiseo.api.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,6 +55,7 @@ public class BookingService {
 
     private final BookingRepository bookingRepository;
     private final TripRepository tripRepository;
+    private final TripStopRepository tripStopRepository;
     private final UserRepository userRepository;
     private final DriverSubscriptionRepository driverSubscriptionRepository;
     private final MessageRepository messageRepository;
@@ -66,7 +69,7 @@ public class BookingService {
     private final int pendingPaymentTtlMinutes;
 
     public BookingService(BookingRepository bookingRepository, TripRepository tripRepository,
-                           UserRepository userRepository, DriverSubscriptionRepository driverSubscriptionRepository,
+                           TripStopRepository tripStopRepository, UserRepository userRepository, DriverSubscriptionRepository driverSubscriptionRepository,
                            MessageRepository messageRepository, BookingMapper bookingMapper,
                            CancellationPolicy cancellationPolicy, DriverCancellationPolicy driverCancellationPolicy,
                            NotificationService notificationService, PaymentService paymentService,
@@ -74,6 +77,7 @@ public class BookingService {
                            @Value("${ekuiseo.booking.pending-payment-ttl-minutes:20}") int pendingPaymentTtlMinutes) {
         this.bookingRepository = bookingRepository;
         this.tripRepository = tripRepository;
+        this.tripStopRepository = tripStopRepository;
         this.userRepository = userRepository;
         this.driverSubscriptionRepository = driverSubscriptionRepository;
         this.messageRepository = messageRepository;
@@ -123,7 +127,7 @@ public class BookingService {
         // Regle metier n.11 : commission ramenee a 0% si le conducteur est abonne.
         boolean commissionWaived = driverSubscriptionRepository.hasActiveSubscription(trip.getDriver().getId(), Instant.now());
         PaymentMethod method = resolvePaymentMethod(req.paymentMode());
-        BookingAmounts amounts = computeAmounts(trip.getPricePerSeat(), req.seats(), commissionWaived, method);
+        BookingAmounts amounts = computeAmounts(resolveUnitPrice(trip, req.dropoffStopId()), req.seats(), commissionWaived, method);
         boolean isCash = method == PaymentMethod.CASH;
 
         Booking booking = Booking.builder()
@@ -187,7 +191,7 @@ public class BookingService {
 
         boolean commissionWaived = driverSubscriptionRepository.hasActiveSubscription(trip.getDriver().getId(), Instant.now());
         PaymentMethod method = resolvePaymentMethod(req.paymentMode());
-        BookingAmounts amounts = computeAmounts(trip.getPricePerSeat(), req.seats(), commissionWaived, method);
+        BookingAmounts amounts = computeAmounts(resolveUnitPrice(trip, req.dropoffStopId()), req.seats(), commissionWaived, method);
         boolean isCash = method == PaymentMethod.CASH;
         // Aucune reservation n'existe encore : pas de createdAt reel pour ancrer l'echeance
         // de l'acompte, Instant.now() sert d'estimation "si vous reservez maintenant" -
@@ -196,6 +200,22 @@ public class BookingService {
         return new PaymentPlanResponse(amounts.amount(), amounts.depositAmount(), amounts.balanceDueOnBoard(),
                 amounts.serviceFee(), method, "PENDING", depositDueAt,
                 (int) CancellationPolicy.FREE_CANCELLATION_WINDOW.toHours());
+    }
+
+    /**
+     * Prix unitaire de la reservation : le tarif du troncon jusqu'a l'arret de descente
+     * quand il est precise (tarif par troncon, voir TripStop#priceFromOrigin), sinon le
+     * prix du trajet complet. Un arret qui n'appartient pas au trajet est refuse.
+     */
+    private long resolveUnitPrice(Trip trip, UUID dropoffStopId) {
+        if (dropoffStopId == null) {
+            return trip.getPricePerSeat();
+        }
+        return tripStopRepository.findByTripIdOrderByPosition(trip.getId()).stream()
+                .filter(stop -> stop.getId().equals(dropoffStopId))
+                .findFirst()
+                .map(TripStop::getPriceFromOrigin)
+                .orElseThrow(() -> new BadRequestException("Arret de descente inconnu pour ce trajet"));
     }
 
     /** {@code MOMO_DEPOSIT} si absent (regle metier n.21) - voir CreateBookingRequest/BookingQuoteRequest. */
