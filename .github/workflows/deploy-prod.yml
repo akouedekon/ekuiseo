@@ -1,0 +1,69 @@
+name: Production (VPS)
+
+# Deploiement automatique sur le VPS a chaque push sur main, UNIQUEMENT si le
+# workflow CI (compilation + tests backend, build frontend) s'est termine avec
+# succes sur ce meme commit. Le serveur reconstruit les images et redemarre la
+# pile derriere son nginx (scripts/deploy-vps.sh, idempotent).
+#
+# Secrets / variables du depot (definis via `gh secret set` / `gh variable set`) :
+#   DEPLOY_SSH_KEY      cle privee ed25519 dediee (secret)
+#   DEPLOY_HOST         adresse du VPS (variable)
+#   DEPLOY_USER         utilisateur SSH (variable)
+#   DEPLOY_KNOWN_HOSTS  empreinte ssh-ed25519 du serveur (variable) : evite le
+#                       "trust on first use" a chaque execution.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deployer sur le VPS
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://ekuiseo.com
+    steps:
+      - name: Preparer l'acces SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Mettre a jour et redemarrer la pile
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o ConnectTimeout=20 \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "set -e; cd /opt/ekuiseo; git fetch --quiet origin main; \
+             git reset --hard --quiet '$TARGET_SHA'; \
+             EKUISEO_BRANCH=main bash scripts/deploy-vps.sh"
+
+      - name: Verifier la production
+        run: |
+          for i in $(seq 1 12); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' https://ekuiseo.com/actuator/health || true)
+            if [ "$code" = "200" ]; then echo "Production OK (HTTP $code)"; exit 0; fi
+            sleep 10
+          done
+          echo "La production ne repond pas correctement" >&2
+          exit 1

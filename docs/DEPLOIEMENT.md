@@ -259,3 +259,19 @@ Internet --443--> nginx (hôte, TLS via certbot) --127.0.0.1:8090--> caddy (cont
 
 4. **Mises à jour** — relancer `bash scripts/deploy-vps.sh` : `git pull` puis reconstruction
    des images, sans interruption de l'autre application.
+
+## 14. Déploiement automatique à chaque push
+
+`.github/workflows/deploy-prod.yml` se déclenche à la fin du workflow **CI** sur `main`,
+uniquement s'il a réussi (tests backend contre PostGIS, build du frontend). Il se connecte
+au VPS avec une clé SSH dédiée (secret `DEPLOY_SSH_KEY`, variables `DEPLOY_HOST`,
+`DEPLOY_USER`, `DEPLOY_KNOWN_HOSTS`), cale `/opt/ekuiseo` sur le commit testé, lance
+`scripts/deploy-vps.sh` puis vérifie `https://ekuiseo.com/actuator/health`.
+
+- Un commit qui casse les tests n'est jamais déployé.
+- Le déploiement peut aussi être lancé à la main : onglet *Actions* → *Production (VPS)* →
+  *Run workflow*.
+- Les secrets applicatifs (`.env` du serveur : base, JWT, Kkiapay, SMS) ne transitent
+  jamais par GitHub ; ils restent sur le VPS.
+- Pour révoquer l'accès : retirer la ligne `github-actions-ekuiseo-deploy` de
+  `~deploy/.ssh/authorized_keys` sur le serveur et supprimer le secret `DEPLOY_SSH_KEY`.
