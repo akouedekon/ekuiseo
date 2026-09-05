@@ -97,8 +97,9 @@ Au minimum, renseignez et **changez les valeurs par défaut** de :
   `MAIL_FROM` — **c est le canal des codes de connexion** : ils partent à l adresse e-mail du
   compte (obligatoire à l inscription). Tout relais SMTP authentifié convient : Brevo
   (gratuit, 300 e-mails/jour, sans dossier d entreprise : `smtp-relay.brevo.com:587`,
-  identifiant + clé SMTP depuis « SMTP & API »), ou Gmail avec un mot de passe
-  d application (`smtp.gmail.com:587`). Sans cela (mode `log` par défaut), les codes sont
+  identifiant + clé SMTP depuis « SMTP & API »), Gmail avec un mot de passe
+  d application (`smtp.gmail.com:587`), ou la boîte Hostinger du domaine
+  (`smtp.hostinger.com`, port 465 : `MAIL_SMTP_SSL=true`, `MAIL_SMTP_STARTTLS=false`). Sans cela (mode `log` par défaut), les codes sont
   seulement journalisés (`docker logs ekuiseo-backend | grep MAIL-STUB`). Vérifier après
   activation : `docker logs ekuiseo-backend | grep -i mail` ne doit montrer aucune erreur
   d authentification, et une demande de code doit arriver dans la boîte (dossier Spam compris).

@@ -68,6 +68,7 @@ services:
       MAIL_PASSWORD: ${MAIL_PASSWORD:-}
       MAIL_FROM: ${MAIL_FROM:-}
       MAIL_SMTP_STARTTLS: ${MAIL_SMTP_STARTTLS:-true}
+      MAIL_SMTP_SSL: ${MAIL_SMTP_SSL:-false}
       OTP_CHANNEL: ${OTP_CHANNEL:-email}
       OTP_SMS_FALLBACK: ${OTP_SMS_FALLBACK:-false}
       SMS_MODE: ${SMS_MODE:-log}

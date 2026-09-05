@@ -25,6 +25,8 @@ spring:
     properties:
       mail.smtp.auth: ${MAIL_SMTP_AUTH:true}
       mail.smtp.starttls.enable: ${MAIL_SMTP_STARTTLS:true}
+      # Port 465 (Hostinger, OVH...) : TLS implicite -> MAIL_SMTP_SSL=true et MAIL_SMTP_STARTTLS=false.
+      mail.smtp.ssl.enable: ${MAIL_SMTP_SSL:false}
       mail.smtp.connectiontimeout: 10000
       mail.smtp.timeout: 10000
       mail.smtp.writetimeout: 10000
