@@ -93,7 +93,9 @@ Au minimum, renseignez et **changez les valeurs par défaut** de :
   — au moins les clés de test pour commencer (voir le tableau de bord Kkiapay) ; sans
   `KKIAPAY_MODE=http` explicite, le backend simule un paiement toujours réussi sans
   jamais appeler Kkiapay (mode `stub`, voir `.env.example`)
-- `SMS_MODE=http` et `SMS_PROVIDER=twilio` (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`,
+- `SMS_MODE=http` et `SMS_PROVIDER=smspartner` (`SMSPARTNER_API_KEY`, `SMSPARTNER_SENDER`,
+  inscription libre-service sans dossier d'entreprise, SMS offerts, paiement carte ou PayPal),
+  ou `SMS_PROVIDER=twilio` (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`,
   `TWILIO_FROM`) ou `SMS_PROVIDER=africastalking` (`AT_USERNAME`, `AT_API_KEY`,
   `AT_SENDER_ID`, `AT_SANDBOX`) — sans cela (mode `log` par défaut), les codes OTP sont
   uniquement journalisés dans les logs du backend, ce qui est **inacceptable en

@@ -215,7 +215,7 @@ Toutes ont une valeur par défaut sûre pour le développement (voir `applicatio
 
 | Variable | Défaut dev | Rôle |
 |---|---|---|
-| `SMS_MODE` / `SMS_PROVIDER` | `log` / `generic` | `http` + `twilio` (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`) ou `africastalking` (`AT_USERNAME`, `AT_API_KEY`, `AT_SENDER_ID`, `AT_SANDBOX`) pour envoyer de vrais SMS ; `generic` = URL + cle (`SMS_HTTP_URL`, `SMS_PROVIDER_KEY`). Voir `service/sms/SmsConfig`. |
+| `SMS_MODE` / `SMS_PROVIDER` | `log` / `generic` | `http` + `smspartner` (`SMSPARTNER_API_KEY`, `SMSPARTNER_SENDER`, `SMSPARTNER_SANDBOX`), `twilio` (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`) ou `africastalking` (`AT_USERNAME`, `AT_API_KEY`, `AT_SENDER_ID`, `AT_SANDBOX`) pour envoyer de vrais SMS ; `generic` = URL + cle (`SMS_HTTP_URL`, `SMS_PROVIDER_KEY`). Voir `service/sms/SmsConfig`. |
 | `KKIAPAY_MODE` | `stub` | `stub` = aucun paiement réel (dev/tests) ; `http` = appels réels à l'API Kkiapay |
 | `KKIAPAY_PUBLIC_KEY` / `KKIAPAY_PRIVATE_KEY` / `KKIAPAY_SECRET` | vide | requis si `KKIAPAY_MODE=http` |
 | `KKIAPAY_WEBHOOK_SECRET` | vide | secret hash du tableau de bord Kkiapay (menu Webhook), vérifié via l'en-tête `X-Kkiapay-Secret` |

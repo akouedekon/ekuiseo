@@ -90,6 +90,39 @@ class SmsGatewaysTest {
     }
 
     @Test
+    void smsPartner_postsJson_andAcceptsSuccessTrue() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("https://api.smspartner.fr/v1/send"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"apiKey\":\"sp_key\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"phoneNumbers\":\"+2290196870371\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"sender\":\"Ekuiseo\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"sandbox\":1")))
+                .andRespond(withSuccess("{\"success\":true,\"code\":200,\"message_id\":\"abc\",\"nb_sms\":1,"
+                        + "\"cost\":\"0.155\",\"currency\":\"EUR\"}", MediaType.APPLICATION_JSON));
+
+        new SmsPartnerSmsGateway(builder, "", "sp_key", "Ekuiseo", true).send(PHONE, "Code 123456");
+        server.verify();
+    }
+
+    @Test
+    void smsPartner_successFalse_isDeliveryFailure() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("https://api.smspartner.fr/v1/send"))
+                .andRespond(withSuccess("{\"success\":false,\"code\":10,\"message\":\"Cle API incorrecte\"}",
+                        MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> new SmsPartnerSmsGateway(builder, "", "sp_key", null, false).send(PHONE, "x"))
+                .isInstanceOf(SmsDeliveryException.class)
+                .hasMessageContaining("code 10");
+        assertThatThrownBy(() -> new SmsPartnerSmsGateway(RestClient.builder(), "", "sp_key", "Ekuiseo Bénin", false))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
     void incompleteConfiguration_failsFast() {
         assertThatThrownBy(() -> new TwilioSmsGateway(RestClient.builder(), "", "", "", ""))
                 .isInstanceOf(IllegalStateException.class);

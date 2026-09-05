@@ -97,6 +97,10 @@ ekuiseo:
       account-sid: ${TWILIO_ACCOUNT_SID:}
       auth-token: ${TWILIO_AUTH_TOKEN:}
       from: ${TWILIO_FROM:}
+    smspartner:
+      api-key: ${SMSPARTNER_API_KEY:}
+      sender: ${SMSPARTNER_SENDER:}
+      sandbox: ${SMSPARTNER_SANDBOX:false}
     africastalking:
       username: ${AT_USERNAME:}
       api-key: ${AT_API_KEY:}

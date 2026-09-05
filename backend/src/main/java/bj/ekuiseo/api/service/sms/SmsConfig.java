@@ -31,16 +31,21 @@ public class SmsConfig {
                                   @Value("${ekuiseo.sms.africastalking.username:}") String atUsername,
                                   @Value("${ekuiseo.sms.africastalking.api-key:}") String atApiKey,
                                   @Value("${ekuiseo.sms.africastalking.sender-id:}") String atSenderId,
-                                  @Value("${ekuiseo.sms.africastalking.sandbox:false}") boolean atSandbox) {
+                                  @Value("${ekuiseo.sms.africastalking.sandbox:false}") boolean atSandbox,
+                                  @Value("${ekuiseo.sms.smspartner.api-key:}") String smsPartnerKey,
+                                  @Value("${ekuiseo.sms.smspartner.sender:}") String smsPartnerSender,
+                                  @Value("${ekuiseo.sms.smspartner.sandbox:false}") boolean smsPartnerSandbox) {
         return switch (mode.toLowerCase()) {
             case "log" -> new LoggingSmsGateway();
             case "http" -> switch (provider.toLowerCase()) {
+                case "smspartner", "sms-partner" ->
+                        new SmsPartnerSmsGateway(restClientBuilder, httpUrl, smsPartnerKey, smsPartnerSender, smsPartnerSandbox);
                 case "twilio" -> new TwilioSmsGateway(restClientBuilder, httpUrl, twilioSid, twilioToken, twilioFrom);
                 case "africastalking", "africas-talking", "at" ->
                         new AfricasTalkingSmsGateway(restClientBuilder, httpUrl, atUsername, atApiKey, atSenderId, atSandbox);
                 case "generic" -> new HttpSmsGateway(httpUrl, apiKey);
                 default -> throw new IllegalStateException("ekuiseo.sms.provider invalide : '" + provider
-                        + "' (valeurs acceptees : twilio, africastalking, generic)");
+                        + "' (valeurs acceptees : smspartner, twilio, africastalking, generic)");
             };
             default -> throw new IllegalStateException(
                     "ekuiseo.sms.mode invalide : '" + mode + "' (valeurs acceptees : log, http)");
