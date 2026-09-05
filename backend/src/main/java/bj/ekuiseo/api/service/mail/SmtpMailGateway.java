@@ -1,5 +1,6 @@
 package bj.ekuiseo.api.service.mail;
 
+import bj.ekuiseo.api.common.Masking;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.mail.MailException;
@@ -41,7 +42,7 @@ public class SmtpMailGateway implements MailGateway {
         try {
             mailSender.send(message);
         } catch (MailException ex) {
-            log.error("Echec d'envoi de l'e-mail a {} ({})", to, subject, ex);
+            log.error("Echec d'envoi de l'e-mail a {} ({})", Masking.email(to), Masking.codes(subject), ex);
             throw new MailDeliveryException("Impossible d'envoyer l'e-mail", ex);
         }
     }

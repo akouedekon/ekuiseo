@@ -34,16 +34,17 @@ public class SmsConfig {
                                   @Value("${ekuiseo.sms.africastalking.sandbox:false}") boolean atSandbox,
                                   @Value("${ekuiseo.sms.smspartner.api-key:}") String smsPartnerKey,
                                   @Value("${ekuiseo.sms.smspartner.sender:}") String smsPartnerSender,
-                                  @Value("${ekuiseo.sms.smspartner.sandbox:false}") boolean smsPartnerSandbox) {
+                                  @Value("${ekuiseo.sms.smspartner.sandbox:false}") boolean smsPartnerSandbox,
+                                  @Value("${ekuiseo.otp.log-plain-codes:false}") boolean logPlainCodes) {
         return switch (mode.toLowerCase()) {
-            case "log" -> new LoggingSmsGateway();
+            case "log" -> new LoggingSmsGateway(logPlainCodes);
             case "http" -> switch (provider.toLowerCase()) {
                 case "smspartner", "sms-partner" ->
                         new SmsPartnerSmsGateway(restClientBuilder, httpUrl, smsPartnerKey, smsPartnerSender, smsPartnerSandbox);
                 case "twilio" -> new TwilioSmsGateway(restClientBuilder, httpUrl, twilioSid, twilioToken, twilioFrom);
                 case "africastalking", "africas-talking", "at" ->
                         new AfricasTalkingSmsGateway(restClientBuilder, httpUrl, atUsername, atApiKey, atSenderId, atSandbox);
-                case "generic" -> new HttpSmsGateway(httpUrl, apiKey);
+                case "generic" -> new HttpSmsGateway(restClientBuilder, httpUrl, apiKey);
                 default -> throw new IllegalStateException("ekuiseo.sms.provider invalide : '" + provider
                         + "' (valeurs acceptees : smspartner, twilio, africastalking, generic)");
             };

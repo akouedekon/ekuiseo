@@ -37,7 +37,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (header != null && header.startsWith("Bearer ")) {
             String token = header.substring(7);
             try {
-                UUID userId = jwtService.extractUserId(token);
+                // Refuse un refresh token presente comme jeton d acces (JwtException -> anonyme).
+                UUID userId = jwtService.extractUserIdFromAccessToken(token);
                 if (SecurityContextHolder.getContext().getAuthentication() == null) {
                     // Un compte suspendu perd l'acces immediatement, sans attendre l'expiration du jeton.
                     Optional<User> user = userRepository.findById(userId)

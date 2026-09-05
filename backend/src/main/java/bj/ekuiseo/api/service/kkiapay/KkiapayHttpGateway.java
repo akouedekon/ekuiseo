@@ -21,7 +21,8 @@ public class KkiapayHttpGateway implements KkiapayGateway {
 
     private final RestClient restClient;
 
-    public KkiapayHttpGateway(String publicKey, String privateKey, String secretKey, boolean sandbox) {
+    public KkiapayHttpGateway(RestClient.Builder restClientBuilder, String publicKey, String privateKey,
+                              String secretKey, boolean sandbox) {
         if (publicKey == null || publicKey.isBlank() || privateKey == null || privateKey.isBlank()
                 || secretKey == null || secretKey.isBlank()) {
             throw new IllegalStateException(
@@ -29,7 +30,9 @@ public class KkiapayHttpGateway implements KkiapayGateway {
                             + "Renseignez ces trois variables ou repassez en mode=stub pour le developpement.");
         }
         String baseUrl = sandbox ? "https://api-sandbox.kkiapay.me" : "https://api.kkiapay.me";
-        this.restClient = RestClient.builder()
+        // Le Builder auto-configure porte les delais de HttpClientConfig : sans eux, un
+        // agregateur lent immobiliserait une connexion Hikari par appel (transactions).
+        this.restClient = restClientBuilder
                 .baseUrl(baseUrl)
                 .defaultHeader("x-api-key", publicKey)
                 .defaultHeader("x-private-key", privateKey)

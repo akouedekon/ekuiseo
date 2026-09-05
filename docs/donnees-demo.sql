@@ -13,8 +13,11 @@
 -- attente) — de quoi peupler les ecrans du back-office (migrations V2/V5/V6).
 --
 -- Conventions :
---   - Mot de passe de TOUS les comptes de demonstration : Demo1234!
---     (hash bcrypt precalcule ci-dessous, verifiable par BCryptPasswordEncoder)
+--   - Aucun compte ne se connecte par mot de passe : la connexion passe par le code
+--     envoye a l e-mail (OTP). Le hash bcrypt present dans password_hash (colonne
+--     NOT NULL) est un simple remplissage ; l ancien parcours /auth/login a ete retire.
+--   - Aucun compte ADMIN dans le jeu : la promotion se fait en base, a la main
+--     (docs/DEPLOIEMENT.md §9). scripts/seed-demo.sh refuse une instance de production.
 --   - Identifiants UUID lisibles par prefixe : a...=users, b...=vehicles,
 --     c...=trips, d...=bookings, e...=payments, f...=reviews,
 --     11...=conversations, 12...=messages.
@@ -309,11 +312,14 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================
--- 8. COMPTE ADMINISTRATEUR (back-office, migration V2 : users.role)
+-- 8. COMPTE MODERATEUR DE DEMONSTRATION (sans role ADMIN)
 -- ============================================================
+-- Le jeu n embarque plus de compte ADMIN a identifiants publics (constat F029 de
+-- l audit) : pour ouvrir le back-office sur une base de demonstration, promouvoir ce
+-- compte a la main (UPDATE users SET role = 'ADMIN' WHERE phone = '+2290190000000').
 INSERT INTO users (id, phone, email, first_name, last_name, password_hash, bio, birth_date, phone_verified, identity_verified, status, role)
 VALUES
-  ('a0000000-0000-0000-0000-000000000031', '+22990000000', 'admin@ekuiseo.bj', 'Fabrice', 'Houngbedji', '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Compte back-office (moderation, verifications, reversements).', '1988-01-01', TRUE, TRUE, 'ACTIVE', 'ADMIN')
+  ('a0000000-0000-0000-0000-000000000031', '+2290190000000', 'admin@ekuiseo.bj', 'Fabrice', 'Houngbedji', '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Compte de demonstration du back-office (a promouvoir ADMIN a la main).', '1988-01-01', TRUE, TRUE, 'ACTIVE', 'USER')
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================

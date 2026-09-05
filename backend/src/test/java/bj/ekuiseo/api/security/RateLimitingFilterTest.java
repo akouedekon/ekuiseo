@@ -94,6 +94,51 @@ class RateLimitingFilterTest {
         assertThat(webhookRes.getStatus()).isEqualTo(200);
     }
 
+    @Test
+    void realIpHeader_isPreferredOverRemoteAddr() throws Exception {
+        // Topologie de production : nginx (hote) pose X-Real-IP depuis $remote_addr, puis Caddy
+        // et le backend voient tous la meme adresse distante (constats F008/F428).
+        RateLimitingFilter filter = new RateLimitingFilter(1, 60, 120, 60);
+        FilterChain chain = mock(FilterChain.class);
+
+        MockHttpServletRequest a = authRequest("172.18.0.2");
+        a.addHeader("X-Real-IP", "41.85.10.1");
+        MockHttpServletResponse ra = new MockHttpServletResponse();
+        filter.doFilterInternal(a, ra, chain);
+        assertThat(ra.getStatus()).isEqualTo(200);
+
+        // Meme adresse distante (le proxy), autre client reel : quota independant.
+        MockHttpServletRequest b = authRequest("172.18.0.2");
+        b.addHeader("X-Real-IP", "41.85.10.2");
+        MockHttpServletResponse rb = new MockHttpServletResponse();
+        filter.doFilterInternal(b, rb, chain);
+        assertThat(rb.getStatus()).isEqualTo(200);
+
+        // Meme client reel : quota epuise.
+        MockHttpServletRequest c = authRequest("172.18.0.2");
+        c.addHeader("X-Real-IP", "41.85.10.1");
+        MockHttpServletResponse rc = new MockHttpServletResponse();
+        filter.doFilterInternal(c, rc, chain);
+        assertThat(rc.getStatus()).isEqualTo(429);
+    }
+
+    @Test
+    void forgedForwardedFor_cannotEscapeTheQuota() {
+        // Le client controle le PREMIER element de X-Forwarded-For ($proxy_add_x_forwarded_for) :
+        // seul le dernier, ajoute par le proxy de confiance, fait foi.
+        MockHttpServletRequest forged = authRequest("172.18.0.2");
+        forged.addHeader("X-Forwarded-For", "1.2.3.4, 41.85.10.9");
+        assertThat(RateLimitingFilter.clientIp(forged)).isEqualTo("41.85.10.9");
+
+        MockHttpServletRequest listInRealIp = authRequest("172.18.0.2");
+        listInRealIp.addHeader("X-Real-IP", "1.2.3.4, 41.85.10.9");
+        listInRealIp.addHeader("X-Forwarded-For", "1.2.3.4, 41.85.10.9");
+        assertThat(RateLimitingFilter.clientIp(listInRealIp)).isEqualTo("41.85.10.9");
+
+        MockHttpServletRequest direct = authRequest("41.85.10.7");
+        assertThat(RateLimitingFilter.clientIp(direct)).isEqualTo("41.85.10.7");
+    }
+
     private MockHttpServletRequest authRequest(String remoteAddr) {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/auth/otp/request");
         request.setRemoteAddr(remoteAddr);

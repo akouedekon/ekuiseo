@@ -60,9 +60,13 @@ jobs:
 
       - name: Verifier la production
         run: |
+          # Sonde reelle de l'API (JSON via Caddy), pas le SPA : un index.html en 200 ne prouve rien.
           for i in $(seq 1 12); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' https://ekuiseo.com/actuator/health || true)
-            if [ "$code" = "200" ]; then echo "Production OK (HTTP $code)"; exit 0; fi
+            health=$(curl -s -o /dev/null -w '%{http_code} %{content_type}' https://ekuiseo.com/actuator/health || true)
+            api=$(curl -s -o /dev/null -w '%{http_code} %{content_type}' https://ekuiseo.com/api/v1/trips/popular || true)
+            case "$health|$api" in
+              "200 application/"*"|200 application/json"*) echo "Production OK ($health ; $api)"; exit 0 ;;
+            esac
             sleep 10
           done
           echo "La production ne repond pas correctement" >&2

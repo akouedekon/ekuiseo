@@ -9,17 +9,26 @@
 # dimanche. Applique ensuite une retention :
 #   - 7 derniers jours glissants dans backups/daily/
 #   - 4 dernieres semaines dans backups/weekly/
+# puis, si BACKUP_REMOTE est defini, envoie le dump HORS SITE avec rclone (un dump
+# qui reste sur le disque du VPS ne protege ni d'une panne disque, ni d'une
+# compromission, ni d'une erreur de manipulation sur l'hote).
 #
 # Variables d'environnement requises (definies dans .env a la racine du depot) :
 #   DB_NAME, DB_USER, DB_PASSWORD
 #
 # Variables optionnelles :
-#   COMPOSE_FILE   fichier docker-compose a utiliser (defaut : docker-compose.prod.yml
-#                  si present, sinon docker-compose.yml)
-#   BACKUP_DIR     dossier de destination des sauvegardes (defaut : ./backups)
+#   COMPOSE_FILE     fichier docker-compose a utiliser (defaut : docker-compose.prod.yml
+#                    si present, sinon docker-compose.yml)
+#   BACKUP_DIR       dossier de destination des sauvegardes (defaut : ./backups)
+#   BACKUP_REMOTE    destination rclone hors site, ex. "b2:ekuiseo-backups" ou
+#                    "s3:ekuiseo-backups/prod" (rclone config a faire une fois sur
+#                    l'hote, voir docs/EXPLOITATION.md). Si defini, un echec d'envoi
+#                    fait echouer le script (et donc remonte dans le journal cron).
+#   BACKUP_REMOTE_KEEP_DAYS  retention cote distant (defaut : 30 jours)
 #
-# A planifier via cron, par exemple tous les jours a 3h locales :
-#   0 3 * * * cd /opt/ekuiseo && ./scripts/backup.sh >> /var/log/ekuiseo-backup.log 2>&1
+# Le cron est installe par scripts/deploy-vps.sh (/etc/cron.d/ekuiseo-backup, 03:15) ;
+# le fichier backups/last-success contient l'horodatage de la derniere reussite
+# (surveille par docs/EXPLOITATION.md).
 # ============================================================
 set -euo pipefail
 
@@ -51,6 +60,8 @@ else
 fi
 COMPOSE_FILE="${COMPOSE_FILE:-$DEFAULT_COMPOSE_FILE}"
 BACKUP_DIR="${BACKUP_DIR:-$ROOT_DIR/backups}"
+BACKUP_REMOTE="${BACKUP_REMOTE:-}"
+BACKUP_REMOTE_KEEP_DAYS="${BACKUP_REMOTE_KEEP_DAYS:-30}"
 
 command -v docker >/dev/null 2>&1 || die "docker n'est pas installe ou pas dans le PATH."
 
@@ -84,8 +95,14 @@ if [[ "$DUMP_SIZE" -lt 1000 ]]; then
   die "la sauvegarde produite ne fait que ${DUMP_SIZE} octets : trop petite pour etre valide, elle est rejetee. Verifiez que la base contient bien des donnees et que pg_dump n'a pas echoue silencieusement."
 fi
 
+# Le dump doit etre lisible par pg_restore (en-tete custom valide) avant d'etre conserve.
+if ! docker compose -f "$COMPOSE_FILE" exec -T postgis pg_restore --list /dev/stdin < "$TMP_PATH" >/dev/null 2>&1; then
+  rm -f "$TMP_PATH"
+  die "pg_restore ne parvient pas a lire la sauvegarde produite : fichier rejete."
+fi
+
 mv "$TMP_PATH" "$DEST_PATH"
-log "Sauvegarde ecrite avec succes ($DUMP_SIZE octets)."
+log "Sauvegarde ecrite avec succes ($DUMP_SIZE octets, catalogue pg_restore valide)."
 
 # Copie hebdomadaire le dimanche (date +%u = 7 pour dimanche).
 if [[ "$(date +%u)" == "7" ]]; then
@@ -109,4 +126,20 @@ if [[ "${#WEEKLY_FILES[@]}" -gt 4 ]]; then
   done
 fi
 
+# --- Copie hors site (rclone) -------------------------------------------------
+if [[ -n "$BACKUP_REMOTE" ]]; then
+  command -v rclone >/dev/null 2>&1 || die "BACKUP_REMOTE est defini mais rclone est introuvable (apt install rclone, puis rclone config)."
+  log "Envoi hors site vers $BACKUP_REMOTE ..."
+  if ! rclone copyto "$DEST_PATH" "$BACKUP_REMOTE/daily/$FILENAME" --retries 3 --low-level-retries 5; then
+    die "l'envoi hors site vers $BACKUP_REMOTE a echoue : la sauvegarde n'existe QUE sur ce serveur."
+  fi
+  # Retention distante : on garde BACKUP_REMOTE_KEEP_DAYS jours ; un echec ici n'est pas bloquant.
+  rclone delete "$BACKUP_REMOTE/daily" --min-age "${BACKUP_REMOTE_KEEP_DAYS}d" 2>/dev/null \
+    || log "AVERTISSEMENT : retention distante non appliquee (rclone delete a echoue)."
+  log "Copie hors site terminee."
+else
+  log "AVERTISSEMENT : BACKUP_REMOTE non defini, la sauvegarde reste sur le disque de ce serveur uniquement (voir docs/EXPLOITATION.md)."
+fi
+
+date '+%Y-%m-%dT%H:%M:%S%z' > "$BACKUP_DIR/last-success"
 log "Sauvegarde terminee : $DEST_PATH"

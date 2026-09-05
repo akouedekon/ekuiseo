@@ -167,8 +167,9 @@ réactivation, validation de vérification d'identité, etc., voir
 c'est volontaire) : le tout premier compte administrateur doit être créé directement en
 base.
 
-1. Inscrivez-vous normalement via l'application (`/api/v1/auth/register` puis
-   vérification OTP) avec le numéro de téléphone qui servira de compte back-office.
+1. Inscrivez-vous normalement via l'application (`/api/v1/auth/otp/register` puis
+   vérification du code reçu par e-mail) avec le numéro de téléphone qui servira de
+   compte back-office. Il n'existe plus de connexion par mot de passe.
 2. Passez ce compte en `ADMIN` par une commande SQL ciblée (jamais via l'API publique) :
    ```bash
    docker compose -f docker-compose.prod.yml exec postgis \
@@ -183,22 +184,27 @@ base.
 
 ## 10. Chargement des données de démonstration (optionnel)
 
-Pour une démo commerciale ou un environnement de recette :
+Uniquement pour un environnement de recette ou une démo commerciale, **jamais sur une
+instance de production** : `scripts/seed-demo.sh` refuse de s'exécuter dès que le
+fichier compose contient `prod` ou que `DOMAIN` est renseigné dans `.env`. Pour une
+recette assumée (base jetable), passez explicitement :
 
 ```bash
-COMPOSE_FILE=docker-compose.prod.yml ./scripts/seed-demo.sh
+EKUISEO_ALLOW_SEED_PROD=1 COMPOSE_FILE=docker-compose.prod.yml ./scripts/seed-demo.sh
 ```
 
-**Ne faites jamais cela sur une instance de production destinée à de vrais
-utilisateurs** : voir l'avertissement dans `scripts/seed-demo.sh`.
+Le jeu ne contient plus de compte `ADMIN` : promouvez un compte à la main (§9).
 
 ## 11. Vérifications post-déploiement
 
 - [ ] `https://<votre-domaine>/` affiche bien le frontend (cadenas HTTPS valide).
-- [ ] `https://<votre-domaine>/swagger-ui.html` (ou `/swagger-ui/index.html` selon la
-      version de springdoc) affiche la documentation de l'API.
-- [ ] `curl -s https://<votre-domaine>/api/v1/...` répond (adapter la route à un
-      endpoint public existant).
+- [ ] `curl -s https://<votre-domaine>/actuator/health` répond `{"status":"UP"}` en
+      `application/json` (c'est la sonde utilisée par `deploy-vps.sh`, par le workflow
+      GitHub Actions et par la surveillance externe).
+- [ ] `https://<votre-domaine>/swagger-ui.html` répond **404** : la documentation
+      d'API n'est pas publiée en production (`SPRINGDOC_ENABLED=false`, non relayée
+      par Caddy). En développement : `http://localhost:8080/swagger-ui.html`.
+- [ ] `curl -s https://<votre-domaine>/api/v1/trips/popular` répond en JSON.
 - [ ] Tous les services sont `healthy` :
       `docker compose -f docker-compose.prod.yml ps`
 - [ ] Le certificat est valide et se renouvellera (Caddy gère cela seul, rien à
@@ -217,8 +223,15 @@ utilisateurs** : voir l'avertissement dans `scripts/seed-demo.sh`.
       `POST /api/v1/payments/{id}/confirm` (`raw_payload.source = widget-confirm`).
 - [ ] Une sauvegarde manuelle réussit : `./scripts/backup.sh` (voir
       `docs/EXPLOITATION.md`).
-- [ ] Une tâche planifiée (cron) exécute `scripts/backup.sh` quotidiennement (voir
-      l'exemple de crontab dans ce script).
+- [ ] Le cron de sauvegarde est en place : `cat /etc/cron.d/ekuiseo-backup` (installé
+      par `scripts/deploy-vps.sh`, 03:15 chaque nuit) et `BACKUP_REMOTE` est renseigné
+      dans `.env` pour la copie hors site.
+- [ ] Une sonde externe (UptimeRobot, Better Stack ou équivalent, gratuit) interroge
+      `https://<votre-domaine>/actuator/health` toutes les 5 minutes avec alerte
+      e-mail : une panne doit être connue avant les utilisateurs.
+- [ ] `dig +short <votre-domaine> A @1.1.1.1` ne renvoie **que** l'adresse du serveur
+      (un enregistrement A résiduel vers un ancien hébergeur rend le site injoignable
+      pour une partie des visiteurs, incident du 2026-09-05).
 
 ## 12. Points d'attention connus avant une vraie mise en production
 

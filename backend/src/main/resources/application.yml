@@ -1,12 +1,17 @@
 spring:
   application:
     name: ekuiseo-api
+  lifecycle:
+    # Duree maximale laissee aux requetes en vol lors d un arret gracieux (server.shutdown).
+    timeout-per-shutdown-phase: 25s
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:ekuiseo}
     username: ${DB_USER:ekuiseo}
     password: ${DB_PASSWORD:ekuiseo}
     hikari:
       maximum-pool-size: 10
+      # Un appel qui attend une connexion plus de 10 s echoue au lieu de s empiler.
+      connection-timeout: ${DB_CONNECTION_TIMEOUT_MS:10000}
   jpa:
     hibernate:
       ddl-auto: validate
@@ -40,13 +45,21 @@ spring:
 
 server:
   port: ${SERVER_PORT:8080}
+  # Arret gracieux : Tomcat cesse d accepter et laisse finir les requetes en vol (une
+  # confirmation de paiement, par exemple) avant l arret ; docker-compose.prod.yml
+  # accorde 30 s (stop_grace_period) pour couvrir les 25 s ci-dessous.
+  shutdown: graceful
   error:
     include-message: always
 
 springdoc:
+  # Documentation OpenAPI : utile en developpement, desactivee en production par
+  # docker-compose.prod.yml (SPRINGDOC_ENABLED=false) pour ne pas publier la surface d API.
   swagger-ui:
+    enabled: ${SPRINGDOC_ENABLED:true}
     path: /swagger-ui.html
   api-docs:
+    enabled: ${SPRINGDOC_ENABLED:true}
     path: /v3/api-docs
 
 management:
@@ -76,7 +89,9 @@ ekuiseo:
   jwt:
     # Doit faire au moins 32 octets (256 bits, requis par HS256) : JwtService refuse
     # de demarrer sinon plutot que d'affaiblir silencieusement la cle (voir JwtService).
-    secret: ${JWT_SECRET:change-me-super-secret-key-please-override-in-prod-min-32-bytes}
+    # Aucune valeur de repli : une cle publique (celle de l ancien .env.example) ferait
+    # signer des jetons forgeables. JwtService refuse aussi toute valeur "change-me...".
+    secret: ${JWT_SECRET:}
     access-token-ttl-minutes: ${JWT_ACCESS_TTL_MIN:60}
     refresh-token-ttl-days: ${JWT_REFRESH_TTL_DAYS:30}
   booking:
@@ -141,6 +156,16 @@ ekuiseo:
     channel: ${OTP_CHANNEL:email}
     # En canal email, un compte sans adresse recoit le code par SMS si true, sinon 400.
     sms-fallback: ${OTP_SMS_FALLBACK:false}
+    # Journaliser les codes EN CLAIR en mode log (developpement local uniquement ; jamais
+    # pose par docker-compose.prod.yml : par defaut destinataires masques, codes etoiles).
+    log-plain-codes: ${OTP_LOG_PLAIN_CODES:false}
+  gateways:
+    # Derogation de recette : autoriser MAIL_MODE=log alors que KKIAPAY_MODE=http.
+    allow-log-with-real-payments: ${EKUISEO_ALLOW_LOG_GATEWAYS:false}
+  http:
+    # Delais de tous les clients HTTP sortants (Kkiapay, SMS), voir HttpClientConfig.
+    connect-timeout-ms: ${HTTP_CONNECT_TIMEOUT_MS:5000}
+    read-timeout-ms: ${HTTP_READ_TIMEOUT_MS:15000}
   search-alert:
     radius-km: ${SEARCH_ALERT_RADIUS_KM:10}
   search-events:

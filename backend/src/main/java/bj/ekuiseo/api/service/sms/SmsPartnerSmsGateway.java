@@ -1,5 +1,6 @@
 package bj.ekuiseo.api.service.sms;
 
+import bj.ekuiseo.api.common.Masking;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.slf4j.Logger;
@@ -71,20 +72,20 @@ public class SmsPartnerSmsGateway implements SmsGateway {
                     .retrieve()
                     .body(SendResponse.class);
         } catch (RestClientResponseException ex) {
-            log.error("SMS Partner a refuse l'envoi a {} : {} {}", phoneE164, ex.getStatusCode(), ex.getResponseBodyAsString());
+            log.error("SMS Partner a refuse l'envoi a {} : {} {}", Masking.phone(phoneE164), ex.getStatusCode(), ex.getResponseBodyAsString());
             throw new SmsDeliveryException("Impossible d'envoyer le SMS (SMS Partner " + ex.getStatusCode().value() + ")", ex);
         } catch (RestClientException ex) {
-            log.error("Echec reseau vers SMS Partner pour {}", phoneE164, ex);
+            log.error("Echec reseau vers SMS Partner pour {}", Masking.phone(phoneE164), ex);
             throw new SmsDeliveryException("Impossible de joindre SMS Partner", ex);
         }
         if (response == null || !Boolean.TRUE.equals(response.success())) {
             String detail = response == null ? "reponse vide"
                     : "code " + response.code() + (response.message() != null ? " : " + response.message() : "");
-            log.error("SMS Partner n'a pas accepte le SMS pour {} ({})", phoneE164, detail);
+            log.error("SMS Partner n'a pas accepte le SMS pour {} ({})", Masking.phone(phoneE164), detail);
             throw new SmsDeliveryException("SMS refuse par SMS Partner (" + detail + ")", null);
         }
         if (sandbox) {
-            log.info("SMS Partner (bac a sable) : SMS accepte pour {} sans livraison, message_id={}", phoneE164,
+            log.info("SMS Partner (bac a sable) : SMS accepte pour {} sans livraison, message_id={}", Masking.phone(phoneE164),
                     response.messageId());
         }
     }

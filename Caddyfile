@@ -51,12 +51,11 @@
 		}
 	}
 
-	# Documentation OpenAPI / Swagger (springdoc) — utile en exploitation, a retirer
-	# ou proteger par IP/mot de passe si l'API ne doit pas etre auto-documentee en public.
-	handle /swagger-ui* {
-		reverse_proxy backend:8080
-	}
-	handle /v3/api-docs* {
+	# Sonde de disponibilite (UP/DOWN seulement pour un appelant anonyme, voir
+	# SecurityConfig) : cible des verifications post-deploiement et de la surveillance
+	# externe. Le reste de /actuator/* n'est pas expose. Swagger / OpenAPI ne sont pas
+	# relayes non plus : en developpement, http://localhost:8080/swagger-ui.html.
+	handle /actuator/health {
 		reverse_proxy backend:8080
 	}
 

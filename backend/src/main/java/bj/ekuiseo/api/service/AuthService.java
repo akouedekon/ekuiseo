@@ -8,13 +8,11 @@ import bj.ekuiseo.api.domain.OtpCode;
 import bj.ekuiseo.api.domain.User;
 import bj.ekuiseo.api.domain.enums.UserStatus;
 import bj.ekuiseo.api.dto.auth.AuthResponse;
-import bj.ekuiseo.api.dto.auth.LoginRequest;
 import bj.ekuiseo.api.dto.auth.OtpRegisterRequest;
 import bj.ekuiseo.api.dto.auth.OtpRequestRequest;
 import bj.ekuiseo.api.dto.auth.OtpRequestResponse;
 import bj.ekuiseo.api.dto.auth.OtpVerifyRequest;
 import bj.ekuiseo.api.dto.auth.RefreshRequest;
-import bj.ekuiseo.api.dto.auth.RegisterRequest;
 import bj.ekuiseo.api.mapper.UserMapper;
 import bj.ekuiseo.api.repository.OtpCodeRepository;
 import bj.ekuiseo.api.repository.UserRepository;
@@ -28,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -55,23 +54,6 @@ public class AuthService {
         this.otpMaxAttempts = otpMaxAttempts;
     }
 
-    @Transactional
-    public AuthResponse register(RegisterRequest req) {
-        if (userRepository.existsByPhone(req.phone())) {
-            throw new ConflictException("Un compte existe deja avec ce numero de telephone");
-        }
-        User user = User.builder()
-                .phone(req.phone())
-                .firstName(req.firstName())
-                .lastName(req.lastName())
-                .email(req.email())
-                .passwordHash(passwordEncoder.encode(req.password()))
-                .status(UserStatus.ACTIVE)
-                .build();
-        user = userRepository.save(user);
-        return tokensFor(user);
-    }
-
     /**
      * Inscription par OTP (sans mot de passe) : cree le compte avec un mot de passe
      * aleatoire inutilisable, puis envoie le code a l adresse e-mail (obligatoire). Aucun
@@ -81,10 +63,26 @@ public class AuthService {
      */
     @Transactional
     public OtpRequestResponse registerWithOtp(OtpRegisterRequest req) {
-        if (userRepository.existsByPhone(req.phone())) {
-            throw new ConflictException("Un compte existe deja avec ce numero de telephone");
-        }
         String email = req.email().trim();
+        Optional<User> existing = userRepository.findByPhone(req.phone());
+        if (existing.isPresent()) {
+            User pending = existing.get();
+            if (pending.isEmailVerified() || pending.isPhoneVerified()) {
+                throw new ConflictException("Un compte existe deja avec ce numero de telephone");
+            }
+            // Compte cree mais jamais verifie : n importe qui a pu saisir ce numero. Plutot que
+            // de le bloquer definitivement (squat), on reprend l inscription avec les nouvelles
+            // informations ; seule la verification du code fera foi.
+            assertActive(pending);
+            if (userRepository.existsByEmailIgnoreCaseAndIdNot(email, pending.getId())) {
+                throw new ConflictException("Un compte existe deja avec cette adresse e-mail");
+            }
+            pending.setFirstName(req.firstName().trim());
+            pending.setLastName(req.lastName().trim());
+            pending.setEmail(email);
+            userRepository.save(pending);
+            return sendCode(pending);
+        }
         if (userRepository.existsByEmailIgnoreCase(email)) {
             throw new ConflictException("Un compte existe deja avec cette adresse e-mail");
         }
@@ -134,7 +132,10 @@ public class AuthService {
         return otpDelivery.deliver(user.getPhone(), user.getEmail(), code);
     }
 
-    @Transactional
+    // noRollbackFor : un code faux DOIT laisser en base l increment de attempts (et la
+    // consommation du code grille) ; sans cela le rollback annulait le compteur et la
+    // limite de 5 essais etait inoperante (constat F536 de l audit).
+    @Transactional(noRollbackFor = BadRequestException.class)
     public AuthResponse verifyOtp(OtpVerifyRequest req) {
         OtpCode otp = otpCodeRepository
                 .findFirstByPhoneAndConsumedAtIsNullAndExpiresAtAfterOrderByCreatedAtDesc(req.phone(), Instant.now())
@@ -172,19 +173,6 @@ public class AuthService {
         if (user.getStatus() != UserStatus.ACTIVE) {
             throw new UnauthorizedException("Compte suspendu");
         }
-    }
-
-    @Transactional(readOnly = true)
-    public AuthResponse login(LoginRequest req) {
-        User user = userRepository.findByPhone(req.phone())
-                .orElseThrow(() -> new UnauthorizedException("Identifiants invalides"));
-        if (!passwordEncoder.matches(req.password(), user.getPasswordHash())) {
-            throw new UnauthorizedException("Identifiants invalides");
-        }
-        if (user.getStatus() != UserStatus.ACTIVE) {
-            throw new UnauthorizedException("Compte suspendu");
-        }
-        return tokensFor(user);
     }
 
     @Transactional(readOnly = true)

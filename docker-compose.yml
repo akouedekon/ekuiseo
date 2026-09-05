@@ -52,7 +52,11 @@ services:
       DB_NAME: ${DB_NAME:-ekuiseo}
       DB_USER: ${DB_USER:-ekuiseo}
       DB_PASSWORD: ${DB_PASSWORD:-ekuiseo_dev_change_me}
-      JWT_SECRET: ${JWT_SECRET:-change-me-super-secret-key-please-override-in-prod-min-32-bytes}
+      # Cle de DEVELOPPEMENT uniquement : docker-compose.prod.yml exige la variable et
+      # JwtService refuse toute valeur commencant par "change-me".
+      JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-jwt-secret-0123456789-abcdefghijklmnop}
+      # En developpement, les codes de connexion sont lisibles dans les logs ; jamais en prod.
+      OTP_LOG_PLAIN_CODES: ${OTP_LOG_PLAIN_CODES:-true}
       JWT_ACCESS_TTL_MIN: ${JWT_ACCESS_TTL_MIN:-60}
       JWT_REFRESH_TTL_DAYS: ${JWT_REFRESH_TTL_DAYS:-30}
       KKIAPAY_MODE: ${KKIAPAY_MODE:-stub}

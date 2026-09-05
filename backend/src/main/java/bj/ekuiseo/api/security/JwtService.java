@@ -26,6 +26,13 @@ public class JwtService {
     public JwtService(@Value("${ekuiseo.jwt.secret}") String secret,
                        @Value("${ekuiseo.jwt.access-token-ttl-minutes}") long accessTtlMinutes,
                        @Value("${ekuiseo.jwt.refresh-token-ttl-days}") long refreshTtlDays) {
+        if (secret == null || secret.isBlank() || secret.startsWith("change-me")) {
+            // La valeur d exemple historique de .env.example est publique (depot GitHub) :
+            // une cle connue de tous signe des jetons forgeables. Aucun repli n est tolere.
+            throw new IllegalStateException(
+                    "ekuiseo.jwt.secret (JWT_SECRET) est absente ou vaut encore la valeur d exemple : "
+                            + "generez une cle forte, par exemple : openssl rand -base64 48");
+        }
         byte[] bytes = secret.getBytes(StandardCharsets.UTF_8);
         if (bytes.length < 32) {
             // HS256 exige une cle d'au moins 256 bits (32 octets). Completer silencieusement
@@ -74,5 +81,18 @@ public class JwtService {
 
     public boolean isRefreshToken(String token) {
         return "refresh".equals(parse(token).get("type", String.class));
+    }
+
+    /**
+     * Identifiant du porteur d un jeton d ACCES. Un jeton de rafraichissement (30 jours,
+     * non revocable) presente en Authorization: Bearer est refuse : les deux jetons
+     * partagent la cle de signature, seule la claim {@code type} les distingue.
+     */
+    public UUID extractUserIdFromAccessToken(String token) {
+        Claims claims = parse(token);
+        if (!"access".equals(claims.get("type", String.class))) {
+            throw new JwtException("Ce jeton n est pas un jeton d acces");
+        }
+        return UUID.fromString(claims.getSubject());
     }
 }

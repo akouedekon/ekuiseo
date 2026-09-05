@@ -1,5 +1,6 @@
 package bj.ekuiseo.api.service.sms;
 
+import bj.ekuiseo.api.common.Masking;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.slf4j.Logger;
@@ -68,19 +69,19 @@ public class AfricasTalkingSmsGateway implements SmsGateway {
                     .retrieve()
                     .body(SendResponse.class);
         } catch (RestClientResponseException ex) {
-            log.error("Africa's Talking a refuse l'envoi a {} : {} {}", phoneE164, ex.getStatusCode(),
+            log.error("Africa's Talking a refuse l'envoi a {} : {} {}", Masking.phone(phoneE164), ex.getStatusCode(),
                     ex.getResponseBodyAsString());
             throw new SmsDeliveryException("Impossible d'envoyer le SMS (Africa's Talking "
                     + ex.getStatusCode().value() + ")", ex);
         } catch (RestClientException ex) {
-            log.error("Echec reseau vers Africa's Talking pour {}", phoneE164, ex);
+            log.error("Echec reseau vers Africa's Talking pour {}", Masking.phone(phoneE164), ex);
             throw new SmsDeliveryException("Impossible de joindre Africa's Talking", ex);
         }
         Recipient recipient = response == null || response.data() == null || response.data().recipients() == null
                 || response.data().recipients().isEmpty() ? null : response.data().recipients().get(0);
         if (recipient == null || !"Success".equalsIgnoreCase(recipient.status())) {
             String status = recipient == null ? String.valueOf(response == null ? null : response.data()) : recipient.status();
-            log.error("Africa's Talking n'a pas accepte le SMS pour {} : {}", phoneE164, status);
+            log.error("Africa's Talking n'a pas accepte le SMS pour {} : {}", Masking.phone(phoneE164), status);
             throw new SmsDeliveryException("SMS refuse par Africa's Talking : " + status, null);
         }
     }

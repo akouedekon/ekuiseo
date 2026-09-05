@@ -1,5 +1,6 @@
 package bj.ekuiseo.api.service.sms;
 
+import bj.ekuiseo.api.common.Masking;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.client.RestClient;
@@ -25,7 +26,7 @@ public class HttpSmsGateway implements SmsGateway {
     private final RestClient restClient;
     private final String apiKey;
 
-    public HttpSmsGateway(String baseUrl, String apiKey) {
+    public HttpSmsGateway(RestClient.Builder restClientBuilder, String baseUrl, String apiKey) {
         if (baseUrl == null || baseUrl.isBlank() || apiKey == null || apiKey.isBlank()) {
             throw new IllegalStateException(
                     "ekuiseo.sms.mode=http requiert ekuiseo.sms.http.url (SMS_HTTP_URL) et "
@@ -33,7 +34,8 @@ public class HttpSmsGateway implements SmsGateway {
                             + "repassez en mode=log pour le developpement.");
         }
         this.apiKey = apiKey;
-        this.restClient = RestClient.builder().baseUrl(baseUrl).build();
+        // Le Builder auto-configure porte les delais de HttpClientConfig (5 s / 15 s).
+        this.restClient = restClientBuilder.baseUrl(baseUrl).build();
     }
 
     @Override
@@ -46,7 +48,7 @@ public class HttpSmsGateway implements SmsGateway {
                     .retrieve()
                     .toBodilessEntity();
         } catch (RestClientException ex) {
-            log.error("Echec d'envoi SMS a {} via le fournisseur HTTP configure", phoneE164, ex);
+            log.error("Echec d'envoi SMS a {} via le fournisseur HTTP configure", Masking.phone(phoneE164), ex);
             throw new SmsDeliveryException("Impossible d'envoyer le SMS", ex);
         }
     }

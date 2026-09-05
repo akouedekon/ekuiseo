@@ -61,6 +61,13 @@ fi
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 [[ -f "$ROOT_DIR/$COMPOSE_FILE" ]] || die "fichier compose introuvable : $ROOT_DIR/$COMPOSE_FILE"
 
+# Garde-fou : le jeu de demonstration (comptes publics, hash de mot de passe commun) ne
+# doit jamais atteindre une base de production. Une instance de production se reconnait
+# a son fichier compose ou a la presence de DOMAIN dans .env (constat F029 de l audit).
+if [[ "$COMPOSE_FILE" == *prod* || -n "${DOMAIN:-}" ]] && [[ "${EKUISEO_ALLOW_SEED_PROD:-}" != "1" ]]; then
+  die "refus de charger le jeu de demonstration sur une instance de production (COMPOSE_FILE=$COMPOSE_FILE, DOMAIN=${DOMAIN:-}). Pour une recette assumee : EKUISEO_ALLOW_SEED_PROD=1."
+fi
+
 command -v docker >/dev/null 2>&1 || die "docker n'est pas installe ou pas dans le PATH."
 
 if ! docker compose -f "$COMPOSE_FILE" ps postgis --status running >/dev/null 2>&1; then

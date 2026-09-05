@@ -16,6 +16,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     Optional<User> findByPhone(String phone);
     boolean existsByPhone(String phone);
     boolean existsByEmailIgnoreCase(String email);
+    boolean existsByEmailIgnoreCaseAndIdNot(String email, UUID id);
     Page<User> findByStatus(UserStatus status, Pageable pageable);
     long countByCreatedAtBetween(Instant from, Instant to);
 

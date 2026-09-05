@@ -1,5 +1,6 @@
 package bj.ekuiseo.api.service;
 
+import bj.ekuiseo.api.common.Masking;
 import bj.ekuiseo.api.common.exception.BadRequestException;
 import bj.ekuiseo.api.dto.auth.OtpRequestResponse;
 import bj.ekuiseo.api.service.mail.MailGateway;
@@ -67,16 +68,10 @@ public class OtpDeliveryService {
     }
 
     static String maskEmail(String email) {
-        int at = email.indexOf('@');
-        if (at <= 0) return "***";
-        String local = email.substring(0, at);
-        String domain = email.substring(at);
-        String visible = local.substring(0, Math.min(2, local.length()));
-        return visible + "***" + domain;
+        return Masking.email(email);
     }
 
     static String maskPhone(String phone) {
-        if (phone == null || phone.length() < 4) return "***";
-        return "*".repeat(phone.length() - 2) + phone.substring(phone.length() - 2);
+        return Masking.phone(phone);
     }
 }

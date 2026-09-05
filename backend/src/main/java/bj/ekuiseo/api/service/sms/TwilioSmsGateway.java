@@ -1,5 +1,6 @@
 package bj.ekuiseo.api.service.sms;
 
+import bj.ekuiseo.api.common.Masking;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -55,10 +56,10 @@ public class TwilioSmsGateway implements SmsGateway {
                     .retrieve()
                     .toBodilessEntity();
         } catch (RestClientResponseException ex) {
-            log.error("Twilio a refuse l'envoi a {} : {} {}", phoneE164, ex.getStatusCode(), ex.getResponseBodyAsString());
+            log.error("Twilio a refuse l'envoi a {} : {} {}", Masking.phone(phoneE164), ex.getStatusCode(), ex.getResponseBodyAsString());
             throw new SmsDeliveryException("Impossible d'envoyer le SMS (Twilio " + ex.getStatusCode().value() + ")", ex);
         } catch (RestClientException ex) {
-            log.error("Echec reseau vers Twilio pour {}", phoneE164, ex);
+            log.error("Echec reseau vers Twilio pour {}", Masking.phone(phoneE164), ex);
             throw new SmsDeliveryException("Impossible de joindre Twilio", ex);
         }
     }

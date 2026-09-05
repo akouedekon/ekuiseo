@@ -45,16 +45,41 @@ PORT="${EKUISEO_HTTP_PORT:-8090}"
 for var in DB_PASSWORD JWT_SECRET DOMAIN ACME_EMAIL; do
   [ -n "${!var:-}" ] || die "la variable $var est vide dans .env."
 done
+case "$JWT_SECRET" in
+  change-me*|dev-only*) die "JWT_SECRET vaut encore une valeur d'exemple : generez-en une (openssl rand -base64 48)." ;;
+esac
+[ "${#JWT_SECRET}" -ge 32 ] || die "JWT_SECRET fait moins de 32 caracteres."
+case "${CORS_ALLOWED_ORIGINS:-*}" in
+  *"*"*) log "AVERTISSEMENT : CORS_ALLOWED_ORIGINS contient * ; restreignez a https://$DOMAIN (docs/DEPLOIEMENT.md §6)." ;;
+esac
+
+# Sauvegarde quotidienne : cron installe de facon idempotente (03:15, heure du serveur),
+# journal dans /var/log/ekuiseo-backup.log ; copie hors site si BACKUP_REMOTE est defini
+# dans .env (voir scripts/backup.sh et docs/EXPLOITATION.md).
+CRON_FILE=/etc/cron.d/ekuiseo-backup
+CRON_LINE="15 3 * * * $USER cd $APP_DIR && COMPOSE_FILE=docker-compose.prod.yml ./scripts/backup.sh >> /var/log/ekuiseo-backup.log 2>&1"
+if ! sudo -n true 2>/dev/null; then
+  log "AVERTISSEMENT : sudo indisponible, cron de sauvegarde non installe ($CRON_FILE)."
+elif [ "$(sudo cat "$CRON_FILE" 2>/dev/null)" != "$CRON_LINE" ]; then
+  printf '%s\n' "$CRON_LINE" | sudo tee "$CRON_FILE" >/dev/null
+  sudo chmod 644 "$CRON_FILE"
+  sudo touch /var/log/ekuiseo-backup.log && sudo chown "$USER" /var/log/ekuiseo-backup.log
+  log "Cron de sauvegarde installe : $CRON_FILE"
+fi
 
 log "Construction et demarrage (Caddy sur 127.0.0.1:$PORT, derriere le nginx de l'hote)"
 docker compose -f docker-compose.prod.yml -f docker-compose.vps.yml up -d --build --remove-orphans
 
-log "Attente de l'API"
+log "Attente de l'API (sonde JSON /actuator/health via Caddy, puis un endpoint metier)"
 for i in $(seq 1 40); do
-  if curl -fsS "http://127.0.0.1:$PORT/api/v1/../actuator/health" >/dev/null 2>&1 \
-     || curl -fsS "http://127.0.0.1:$PORT/actuator/health" >/dev/null 2>&1 \
-     || curl -fsS -o /dev/null "http://127.0.0.1:$PORT/api/v1/trips/popular"; then
-    log "Ekuiseo repond sur http://127.0.0.1:$PORT (essai $i)."
+  health="$(curl -sS -o /dev/null -w '%{http_code} %{content_type}' "http://127.0.0.1:$PORT/actuator/health" 2>/dev/null || true)"
+  popular="$(curl -sS -o /dev/null -w '%{http_code} %{content_type}' "http://127.0.0.1:$PORT/api/v1/trips/popular" 2>/dev/null || true)"
+  case "$health|$popular" in
+    "200 application/"*"|200 application/json"*) ;;
+    *) sleep 5; continue ;;
+  esac
+  if true; then
+    log "Ekuiseo repond sur http://127.0.0.1:$PORT (essai $i) : $health ; $popular."
     docker compose -f docker-compose.prod.yml -f docker-compose.vps.yml ps
     exit 0
   fi

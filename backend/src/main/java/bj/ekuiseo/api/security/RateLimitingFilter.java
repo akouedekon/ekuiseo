@@ -114,10 +114,26 @@ public class RateLimitingFilter extends OncePerRequestFilter {
         }
     }
 
-    private String clientIp(HttpServletRequest request) {
+    /**
+     * Adresse du client derriere la chaine nginx (hote) -> Caddy -> backend.
+     * <ul>
+     *   <li>X-Real-IP d abord : pose par nginx depuis {@code $remote_addr} (ou par le
+     *       Caddyfile principal depuis {@code {remote_host}}), donc non forgeable par le
+     *       client ; ignore si elle contient une liste (valeur recopiee d un XFF).</li>
+     *   <li>Sinon le DERNIER element de X-Forwarded-For : c est celui ajoute par le proxy
+     *       de confiance ; le premier est controle par le client ($proxy_add_x_forwarded_for).</li>
+     *   <li>Sinon l adresse distante (acces direct, developpement).</li>
+     * </ul>
+     */
+    static String clientIp(HttpServletRequest request) {
+        String realIp = request.getHeader("X-Real-IP");
+        if (realIp != null && !realIp.isBlank() && !realIp.contains(",")) {
+            return realIp.trim();
+        }
         String xff = request.getHeader("X-Forwarded-For");
         if (xff != null && !xff.isBlank()) {
-            return xff.split(",")[0].trim();
+            String[] parts = xff.split(",");
+            return parts[parts.length - 1].trim();
         }
         return request.getRemoteAddr();
     }

@@ -128,6 +128,6 @@ class SmsGatewaysTest {
                 .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> new AfricasTalkingSmsGateway(RestClient.builder(), "", "", "", "", false))
                 .isInstanceOf(IllegalStateException.class);
-        assertThat(new LoggingSmsGateway()).isNotNull();
+        assertThat(new LoggingSmsGateway(false)).isNotNull();
     }
 }

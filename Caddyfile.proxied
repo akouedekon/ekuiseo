@@ -9,8 +9,8 @@
 # (voir deploy/nginx/ekuiseo.com.conf).
 #
 # Le routage et les en-tetes sont identiques au Caddyfile principal ; seuls
-# changent : l'adresse du site (:80, pas de domaine, pas d'ACME) et HSTS, qui
-# reste la responsabilite du proxy amont.
+# changent l'adresse du site (:80, pas de domaine, pas d'ACME). HSTS est pose
+# ici aussi : le nginx amont ne l'ajoute pas et l'en-tete le traverse tel quel.
 # ============================================================
 
 {
@@ -22,6 +22,8 @@
 	encode zstd gzip
 
 	header {
+		# HSTS : 1 an, sous-domaines compris (tous servis en HTTPS par le nginx amont).
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
 		X-Frame-Options "SAMEORIGIN"
@@ -32,20 +34,25 @@
 
 	handle /api/* {
 		reverse_proxy backend:8080 {
-			# L'IP reelle est transmise par le nginx amont (X-Forwarded-For).
-			header_up X-Real-IP {header.X-Forwarded-For}
+			# X-Real-IP est pose par le nginx amont depuis $remote_addr (non forgeable) et
+			# traverse Caddy tel quel : NE PAS le reecrire depuis X-Forwarded-For, dont le
+			# premier element est controle par le client (constats F008/F428 de l'audit).
+			# Le backend lit X-Real-IP en priorite (RateLimitingFilter#clientIp).
 			health_uri /actuator/health
 			health_interval 15s
 			health_timeout 5s
 		}
 	}
 
-	handle /swagger-ui* {
+	# Sonde de disponibilite (UP/DOWN seulement pour un appelant anonyme, voir
+	# SecurityConfig) : cible des verifications post-deploiement et de la surveillance
+	# externe. Le reste de /actuator/* n'est pas expose.
+	handle /actuator/health {
 		reverse_proxy backend:8080
 	}
-	handle /v3/api-docs* {
-		reverse_proxy backend:8080
-	}
+
+	# Swagger / OpenAPI ne sont plus relayes en production (SPRINGDOC_ENABLED=false
+	# cote backend) : la surface d'API n'est pas publique.
 
 	handle {
 		reverse_proxy frontend:80
