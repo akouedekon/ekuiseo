@@ -12,6 +12,8 @@ import java.util.UUID;
 public interface SearchAlertRepository extends JpaRepository<SearchAlert, UUID> {
 
     List<SearchAlert> findByUserIdOrderByCreatedAtDesc(UUID userId);
+    /** Anonymisation d un compte (UserService#anonymize). */
+    void deleteByUserId(UUID userId);
 
     /**
      * Alertes actives dont la fenetre de dates (si renseignee) couvre la date de

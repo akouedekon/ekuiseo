@@ -4,19 +4,25 @@ import bj.ekuiseo.api.common.PhoneNumbers;
 import bj.ekuiseo.api.common.exception.BadRequestException;
 import bj.ekuiseo.api.common.exception.ConflictException;
 import bj.ekuiseo.api.common.exception.NotFoundException;
+import bj.ekuiseo.api.domain.IdentityVerification;
 import bj.ekuiseo.api.domain.Trip;
 import bj.ekuiseo.api.domain.User;
 import bj.ekuiseo.api.domain.Vehicle;
+import bj.ekuiseo.api.domain.enums.IdentityVerificationStatus;
+import bj.ekuiseo.api.domain.enums.NotificationType;
 import bj.ekuiseo.api.domain.enums.TripStatus;
 import bj.ekuiseo.api.domain.enums.UserStatus;
 import bj.ekuiseo.api.dto.admin.AdminUserResponse;
 import bj.ekuiseo.api.repository.BookingRepository;
+import bj.ekuiseo.api.repository.IdentityVerificationRepository;
 import bj.ekuiseo.api.repository.TripRepository;
 import bj.ekuiseo.api.repository.UserRepository;
 import bj.ekuiseo.api.repository.VehicleRepository;
 import bj.ekuiseo.api.service.AuditService;
 import bj.ekuiseo.api.service.BookingService;
+import bj.ekuiseo.api.service.NotificationService;
 import bj.ekuiseo.api.service.RefreshTokenService;
+import bj.ekuiseo.api.service.UserService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -51,13 +57,20 @@ public class AdminUserService {
     private final AuditService auditService;
     private final RefreshTokenService refreshTokenService;
     private final BookingService bookingService;
+    private final IdentityVerificationRepository identityVerificationRepository;
+    private final NotificationService notificationService;
+    private final UserService userService;
 
     public AdminUserService(UserRepository userRepository, VehicleRepository vehicleRepository,
                              TripRepository tripRepository, BookingRepository bookingRepository,
                              AuditService auditService, RefreshTokenService refreshTokenService,
-                             BookingService bookingService) {
+                             BookingService bookingService, IdentityVerificationRepository identityVerificationRepository,
+                             NotificationService notificationService, UserService userService) {
         this.refreshTokenService = refreshTokenService;
         this.bookingService = bookingService;
+        this.identityVerificationRepository = identityVerificationRepository;
+        this.notificationService = notificationService;
+        this.userService = userService;
         this.userRepository = userRepository;
         this.vehicleRepository = vehicleRepository;
         this.tripRepository = tripRepository;
@@ -89,6 +102,9 @@ public class AdminUserService {
         if (user.getStatus() == UserStatus.SUSPENDED) {
             throw new ConflictException("Cet utilisateur est deja suspendu");
         }
+        if (user.getStatus() == UserStatus.DELETED) {
+            throw new ConflictException("Ce compte a ete supprime");
+        }
         user.setStatus(UserStatus.SUSPENDED);
         user.setSuspendedReason(reason);
         user.setSuspendedAt(Instant.now());
@@ -115,6 +131,8 @@ public class AdminUserService {
         auditService.log(adminId, "USER_SUSPENDED", "user", userId, Map.of("reason", reason,
                 "tripsCancelled", upcoming.size(), "templatesClosed", templates.size(),
                 "bookingsCancelled", bookingsCancelled));
+        // L interesse n a plus acces a l application : e-mail et SMS (selon preferences) portent le motif (constat F212).
+        notificationService.notifyCritical(user, NotificationType.ACCOUNT_SUSPENDED, Map.of("reason", reason));
         return toResponse(user);
     }
 
@@ -176,6 +194,41 @@ public class AdminUserService {
         return toResponse(user);
     }
 
+    /**
+     * Retrait du badge "identite verifiee" (constat F601), qu il vienne d un dossier
+     * approuve ou de {@link #verifyIdentity}. Le dossier eventuel passe REJECTED avec le
+     * motif, pour que l utilisateur puisse resoumettre ; il est prevenu (IDENTITY_REVOKED).
+     */
+    @Transactional
+    public AdminUserResponse revokeIdentity(UUID adminId, UUID userId, String reason) {
+        User user = findUser(userId);
+        boolean hadBadge = user.isIdentityVerified();
+        user.setIdentityVerified(false);
+        user = userRepository.save(user);
+        Map<String, Object> details = new java.util.LinkedHashMap<>();
+        details.put("reason", reason);
+        details.put("hadBadge", hadBadge);
+        IdentityVerification verification = identityVerificationRepository.findByUserId(userId).orElse(null);
+        if (verification != null && verification.getStatus() != IdentityVerificationStatus.REJECTED) {
+            details.put("previousVerificationStatus", verification.getStatus().name());
+            verification.setStatus(IdentityVerificationStatus.REJECTED);
+            verification.setReviewedAt(Instant.now());
+            verification.setReviewedBy(userRepository.findById(adminId).orElse(null));
+            verification.setRejectionReason(reason);
+            identityVerificationRepository.save(verification);
+        }
+        auditService.log(adminId, "USER_IDENTITY_REVOKED", "user", userId, details);
+        notificationService.notify(user, NotificationType.IDENTITY_REVOKED, Map.of("reason", reason));
+        return toResponse(user);
+    }
+
+    /** Anonymisation par l administration (constat F507), voir {@link UserService#anonymize}. */
+    @Transactional
+    public AdminUserResponse anonymize(UUID adminId, UUID userId, String reason) {
+        userService.anonymize(userId, adminId, reason);
+        return toResponse(findUser(userId));
+    }
+
     @Transactional
     public AdminUserResponse verifyIdentity(UUID adminId, UUID userId) {
         User user = findUser(userId);
@@ -203,6 +256,6 @@ public class AdminUserService {
         long bookingsMade = bookingRepository.countByPassengerId(u.getId());
         return new AdminUserResponse(u.getId(), u.getFirstName(), u.getLastName(), u.getPhone(), u.getEmail(),
                 u.getCreatedAt(), u.isIdentityVerified(), u.isPhoneVerified(), u.getStatus() == UserStatus.SUSPENDED,
-                tripsPublished, bookingsMade, u.getRatingAvg());
+                tripsPublished, bookingsMade, u.getRatingAvg(), u.getDeletedAt());
     }
 }

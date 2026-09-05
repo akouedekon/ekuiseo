@@ -14,6 +14,7 @@ import java.util.UUID;
  * @param target  la personne visee : l'utilisateur signale s'il y en a un, sinon le
  *                conducteur du trajet signale (un signalement porte toujours sur un
  *                utilisateur OU un trajet, jamais aucun des deux - voir Report).
+ * @param bookingId reservation qui lie le signalant a la cible (V14), null si aucune
  */
 public record AdminReportResponse(
         UUID id,
@@ -23,7 +24,8 @@ public record AdminReportResponse(
         Instant createdAt,
         PersonRef reporter,
         PersonRef target,
-        UUID tripId
+        UUID tripId,
+        UUID bookingId
 ) {
     public record PersonRef(UUID id, String firstName, String lastName) {
     }

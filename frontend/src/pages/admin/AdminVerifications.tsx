@@ -138,8 +138,25 @@ export function AdminVerifications() {
                         </Badge>
                       ) : null}
                     </div>
+                    {/* Onglets historiques : la decision et son motif, tels que l'utilisateur les a recus. */}
+                    {item.status === 'REJECTED' && item.rejectionReason ? (
+                      <p className="mt-2 rounded-[var(--radius-control)] bg-[var(--vermillon-soft)] px-3 py-2 text-[13px] text-[var(--vermillon)]">
+                        Motif transmis : {item.rejectionReason}
+                      </p>
+                    ) : null}
                   </div>
-                  <span className="shrink-0 text-[12px] text-muted">{formatFromNow(item.submittedAt)}</span>
+                  <span className="shrink-0 text-right text-[12px] text-muted">
+                    {item.status === 'PENDING' || item.reviewedAt == null ? (
+                      <>Déposé {formatFromNow(item.submittedAt)}</>
+                    ) : (
+                      <>
+                        <span className="block">
+                          {item.status === 'APPROVED' ? 'Validé' : 'Refusé'} {formatFromNow(item.reviewedAt)}
+                        </span>
+                        <span className="block">Déposé {formatFromNow(item.submittedAt)}</span>
+                      </>
+                    )}
+                  </span>
                 </div>
 
                 {item.status === 'PENDING' ? (

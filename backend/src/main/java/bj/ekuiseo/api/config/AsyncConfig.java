@@ -27,6 +27,27 @@ public class AsyncConfig {
 
     public static final String SEARCH_EVENT_EXECUTOR = "searchEventExecutor";
     public static final String REFUND_EXECUTOR = "refundExecutor";
+    public static final String NOTIFICATION_EXECUTOR = "notificationExecutor";
+
+    /**
+     * Envoi des notifications sortantes (e-mail, SMS) apres validation de la transaction
+     * metier (NotificationDispatcher). Une file pleine abandonne l envoi et le journalise :
+     * la notification in-app, elle, est deja en base.
+     */
+    @Bean(name = NOTIFICATION_EXECUTOR)
+    public Executor notificationExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setThreadNamePrefix("notifications-");
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(2);
+        executor.setQueueCapacity(1_000);
+        executor.setRejectedExecutionHandler((runnable, pool) ->
+                log.warn("Notification sortante abandonnee : file d envoi pleine ({} en attente)", pool.getQueue().size()));
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(10);
+        executor.initialize();
+        return executor;
+    }
 
     /** Execution des remboursements Kkiapay apres validation de la transaction metier (RefundService). */
     @Bean(name = REFUND_EXECUTOR)

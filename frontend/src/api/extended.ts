@@ -393,6 +393,10 @@ export interface AdminVerificationResponse {
   documentNumber: string
   submittedAt: string
   status: IdentityVerificationStatus
+  /** Date de la decision (validation ou refus) ; null tant que le dossier est en attente. */
+  reviewedAt: string | null
+  /** Motif transmis a l'utilisateur en cas de refus ; null sinon. */
+  rejectionReason: string | null
 }
 
 /** Valeurs de l'enum backend PayoutStatus ; la vue admin expose `PAID` pour `SETTLED`. */
@@ -552,6 +556,11 @@ export interface AdminUserResponse {
   identityVerified: boolean
   phoneVerified: boolean
   suspended: boolean
+  /**
+   * Compte anonymise (droit a l'effacement) : profil remplace, connexion impossible.
+   * Optionnel tant que le backend du lot 1.4 n'expose pas le champ : absent = compte vivant.
+   */
+  anonymizedAt?: string | null
   tripsPublished: number
   bookingsMade: number
   ratingAvg: number

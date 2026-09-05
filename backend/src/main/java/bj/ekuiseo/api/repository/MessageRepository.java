@@ -2,6 +2,7 @@ package bj.ekuiseo.api.repository;
 
 import bj.ekuiseo.api.domain.Message;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -14,6 +15,11 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     List<Message> findByConversationIdOrderByCreatedAtAsc(UUID conversationId);
 
     Optional<Message> findFirstByConversationIdOrderByCreatedAtDesc(UUID conversationId);
+
+    /** Anonymisation d un compte (UserService#anonymize) : le contenu des messages envoyes est efface, la ligne reste. */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update Message m set m.body = :body where m.sender.id = :senderId")
+    int redactBySender(@Param("senderId") UUID senderId, @Param("body") String body);
 
     /** Messages non lus dans une conversation, envoyes par l'AUTRE participant (jamais mes propres messages). */
     long countByConversationIdAndReadAtIsNullAndSenderIdNot(UUID conversationId, UUID senderId);

@@ -99,6 +99,29 @@ export function useConfirmEmailChange() {
   })
 }
 
+/* ------------------------------------------------------ Suppression du compte */
+
+/**
+ * POST /api/v1/me/delete/request (204) : envoie un code de confirmation a l'adresse du
+ * compte. 409 si un trajet publie ou une reservation est encore en cours.
+ */
+export function useRequestAccountDeletion() {
+  return useMutation({
+    mutationFn: () => apiClient.post<void>('/api/v1/me/delete/request'),
+  })
+}
+
+/**
+ * POST /api/v1/me/delete { code } (204) : anonymise le profil (nom, contacts, photo,
+ * comptes mobile money, alertes, notifications) et revoque les sessions. Reservations,
+ * paiements et avis sont conserves. L'appelant vide la session locale (resetSession).
+ */
+export function useConfirmAccountDeletion() {
+  return useMutation({
+    mutationFn: (code: string) => apiClient.post<void>('/api/v1/me/delete', { code }),
+  })
+}
+
 /* -------------------------------------------------------- Preferences */
 
 /** GET /api/v1/me/preferences */

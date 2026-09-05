@@ -59,14 +59,35 @@ export default defineConfig(({ mode }) => {
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         runtimeCaching: [
           {
-            // Lectures API : on sert le reseau d'abord, le cache en secours.
-            urlPattern: ({ url }) => url.pathname.startsWith('/api/v1/'),
+            /*
+             * Lectures API PUBLIQUES uniquement, reseau d'abord, cache en secours :
+             * recherche et detail de trajet, axes populaires, referentiel geo, profil
+             * public. Le cache Workbox est cle sur l'URL, sans l'en-tete Authorization :
+             * une reponse personnelle (/me, /bookings, /notifications, /admin,
+             * /payments, /conversations) servie a un autre compte sur un appareil
+             * partage serait une fuite. Elles ne passent donc jamais par ici, et une
+             * requete portant un jeton n'est jamais mise en cache (cacheWillUpdate).
+             * Ces fonctions sont serialisees dans sw.js : aucune reference externe.
+             */
+            urlPattern: ({ url, request }) =>
+              request.method === 'GET' &&
+              !request.headers.has('Authorization') &&
+              /^\/api\/v1\/(trips\/search|trips\/popular|trips\/[^/]+(\/stops)?|geo\/[^/]+|users\/[^/]+(\/reviews)?)\/?$/.test(
+                url.pathname,
+              ),
             handler: 'NetworkFirst',
             options: {
+              // Meme nom que API_CACHE_NAME dans src/lib/queryClient.ts (purge a la deconnexion).
               cacheName: 'ekuiseo-api',
               networkTimeoutSeconds: 6,
               expiration: { maxEntries: 120, maxAgeSeconds: 24 * 60 * 60 },
-              cacheableResponse: { statuses: [0, 200] },
+              cacheableResponse: { statuses: [200] },
+              plugins: [
+                {
+                  cacheWillUpdate: async ({ request, response }) =>
+                    request.headers.has('Authorization') ? null : response,
+                },
+              ],
             },
           },
           {

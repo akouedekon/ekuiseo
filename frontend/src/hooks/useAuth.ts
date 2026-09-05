@@ -1,7 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { useSyncExternalStore } from 'react'
-import { apiClient, authStore } from '@/api/client'
-import { clearPersistedCache } from '@/lib/queryClient'
+import { apiClient, authStore, type AuthChangeReason } from '@/api/client'
+import { clearApiCache, clearPersistedCache, queryClient, readCacheOwner, writeCacheOwner } from '@/lib/queryClient'
 import { toE164 } from '@/lib/validation'
 import type { AuthResponse, OtpRequestResponse, UserResponse } from '@/api/types'
 
@@ -18,8 +18,34 @@ export interface OtpRegisterInput {
   email: string
 }
 
-function persistAuth(queryClient: ReturnType<typeof useQueryClient>, data: AuthResponse) {
+/**
+ * Fin de session, quelle qu'en soit la cause : jetons, cache memoire, cache
+ * persiste (et son proprietaire) et cache runtime du service worker sont vides
+ * ensemble. C'est l'unique chemin : deconnexion volontaire, expiration detectee
+ * par le client HTTP, suppression du compte. Sur un appareil partage, rien du
+ * compte precedent ne doit survivre au suivant.
+ */
+export function resetSession(reason: AuthChangeReason = 'logout'): void {
+  authStore.clear(reason)
+  queryClient.clear()
+  clearPersistedCache()
+  void clearApiCache()
+}
+
+/**
+ * Ouverture de session. Si le cache appartenait a un autre compte (session
+ * precedente non fermee proprement), il est purge avant d'ecrire le nouveau
+ * profil : aucune donnee de l'ancien compte ne s'affiche en attendant le refetch.
+ */
+function persistAuth(data: AuthResponse) {
+  const previousOwner = readCacheOwner()
+  if (previousOwner !== null && previousOwner !== data.user.id) {
+    queryClient.clear()
+    clearPersistedCache()
+    void clearApiCache()
+  }
   authStore.setTokens(data.accessToken, data.refreshToken, 'login')
+  writeCacheOwner(data.user.id)
   queryClient.setQueryData<UserResponse>(['me'], data.user)
 }
 
@@ -81,7 +107,6 @@ export function useRegisterOtp() {
 
 /** POST /api/v1/auth/otp/verify : verifie le code et ouvre la session. */
 export function useVerifyOtp() {
-  const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (input: OtpVerifyInput) =>
       apiClient.post<AuthResponse>(
@@ -89,25 +114,22 @@ export function useVerifyOtp() {
         { ...input, phone: normalizePhone(input.phone) },
         { auth: false },
       ),
-    onSuccess: (data) => persistAuth(queryClient, data),
+    onSuccess: (data) => persistAuth(data),
   })
 }
 
 /**
  * Deconnexion : le refresh token est revoque cote serveur (POST /auth/logout, toute sa
- * chaine de rotation), puis jetons, cache memoire et cache persiste (donnees
- * personnelles) sont effaces immediatement. La revocation est lancee sans attendre :
- * hors ligne, la session locale disparait quand meme et le jeton expirera seul.
+ * chaine de rotation), puis la session locale est videe (resetSession). La revocation
+ * est lancee sans attendre : hors ligne, la session locale disparait quand meme et le
+ * jeton expirera seul.
  */
 export function useLogout() {
-  const queryClient = useQueryClient()
   return () => {
     const refreshToken = authStore.getRefreshToken()
     if (refreshToken) {
       void apiClient.post<void>('/api/v1/auth/logout', { refreshToken }, { auth: false }).catch(() => undefined)
     }
-    authStore.clear('logout')
-    queryClient.clear()
-    clearPersistedCache()
+    resetSession('logout')
   }
 }

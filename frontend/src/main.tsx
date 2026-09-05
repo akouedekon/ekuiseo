@@ -15,7 +15,7 @@ import '@fontsource/inter/latin-500.css'
 import '@fontsource/inter/latin-600.css'
 import '@fontsource/inter/latin-700.css'
 
-import { queryClient, createPersister } from '@/lib/queryClient'
+import { queryClient, createPersister, createPersistOptions } from '@/lib/queryClient'
 import { applyTheme, readStoredTheme } from '@/lib/theme'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import './index.css'
@@ -70,10 +70,8 @@ document.getElementById('boot')?.remove()
 root.render(
   <StrictMode>
     {persister ? (
-      <PersistQueryClientProvider
-        client={queryClient}
-        persistOptions={{ persister, maxAge: 24 * 60 * 60 * 1000, buster: 'v2' }}
-      >
+      // Seules les donnees publiques sont persistees, et le cache est cloisonne par compte (lib/queryClient.ts).
+      <PersistQueryClientProvider client={queryClient} persistOptions={createPersistOptions(persister)}>
         {tree}
       </PersistQueryClientProvider>
     ) : (

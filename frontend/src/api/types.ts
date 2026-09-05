@@ -34,6 +34,16 @@ export type NotificationType =
   | 'SEARCH_ALERT_MATCH'
   | 'SUBSCRIPTION_ACTIVATED'
   | 'REPORT_RECEIVED'
+  /** Horaire de depart deplace par le conducteur (annulation gratuite rouverte 24 h). */
+  | 'TRIP_UPDATED'
+  /** Le conducteur a signale l absence du passager : acompte retenu. */
+  | 'BOOKING_NO_SHOW'
+  /* Decisions de moderation, emises par le backend depuis le lot 1.4 (audit F212). */
+  | 'IDENTITY_APPROVED'
+  | 'IDENTITY_REJECTED'
+  | 'IDENTITY_REVOKED'
+  | 'ACCOUNT_SUSPENDED'
+  | 'REPORT_RESOLVED'
 
 export interface UserResponse {
   id: string

@@ -6,6 +6,7 @@ import bj.ekuiseo.api.common.exception.NotFoundException;
 import bj.ekuiseo.api.domain.Booking;
 import bj.ekuiseo.api.domain.DriverSubscription;
 import bj.ekuiseo.api.domain.Payment;
+import bj.ekuiseo.api.domain.Trip;
 import bj.ekuiseo.api.domain.enums.BookingStatus;
 import bj.ekuiseo.api.domain.enums.NotificationType;
 import bj.ekuiseo.api.domain.enums.PaymentChannel;
@@ -480,11 +481,26 @@ public class PaymentService {
             booking.setStatus(BookingStatus.CONFIRMED);
             booking.setExpiresAt(null);
             bookingRepository.save(booking);
-            notificationService.notifyCritical(booking.getPassenger(), NotificationType.PAYMENT_SUCCEEDED,
-                    Map.of("bookingId", booking.getId().toString()),
-                    "Ekuiseo : votre paiement a ete recu, votre reservation est confirmee.");
-            notificationService.notify(booking.getTrip().getDriver(), NotificationType.BOOKING_CONFIRMED,
-                    Map.of("bookingId", booking.getId().toString()));
+            // Recu d acompte (constat F107) : montant encaisse, solde a bord, reference Kkiapay.
+            Trip trip = booking.getTrip();
+            Map<String, Object> receipt = new java.util.HashMap<>();
+            receipt.put("bookingId", booking.getId().toString());
+            receipt.put("tripId", trip.getId().toString());
+            receipt.put("amountFcfa", payment.getAmount());
+            receipt.put("totalFcfa", booking.getAmount());
+            receipt.put("balanceDueOnBoardFcfa", booking.getBalanceDueOnBoard());
+            receipt.put("reference", payment.getProviderTxId() == null ? "" : payment.getProviderTxId());
+            receipt.put("route", trip.getOriginLabel() + " -> " + trip.getDestLabel());
+            receipt.put("departureAt", java.util.Objects.toString(trip.getDepartureAt(), ""));
+            notificationService.notifyCritical(booking.getPassenger(), NotificationType.PAYMENT_SUCCEEDED, receipt,
+                    "Ekuiseo : votre paiement a ete recu, votre reservation est confirmee."
+                            + (booking.getBalanceDueOnBoard() > 0
+                            ? " Solde a regler a bord : " + booking.getBalanceDueOnBoard() + " FCFA." : ""));
+            notificationService.notify(trip.getDriver(), NotificationType.BOOKING_CONFIRMED,
+                    NotificationTemplates.payload("bookingId", booking.getId().toString(), "tripId", trip.getId().toString(),
+                            "passengerName", booking.getPassenger().getFirstName(), "seats", booking.getSeats(),
+                            "route", trip.getOriginLabel() + " -> " + trip.getDestLabel(),
+                            "departureAt", java.util.Objects.toString(trip.getDepartureAt(), "")));
         } else {
             notificationService.notify(booking.getPassenger(), NotificationType.PAYMENT_FAILED,
                     Map.of("bookingId", booking.getId().toString()));

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/api/client'
+import { useIsAuthenticated } from '@/hooks/useAuth'
 import type { ConversationSummary } from '@/api/extended'
 import type { MessageResponse } from '@/api/types'
 
@@ -14,12 +15,20 @@ export function useMessages(bookingId: string | undefined) {
 }
 
 /** GET /api/v1/me/conversations : une conversation par reservation. */
-export function useConversations() {
+export function useConversations(enabled = true) {
   return useQuery<ConversationSummary[]>({
     queryKey: ['me', 'conversations'],
     queryFn: () => apiClient.get<ConversationSummary[]>('/api/v1/me/conversations'),
     refetchInterval: 30_000,
+    enabled,
   })
+}
+
+/** Messages non lus toutes conversations confondues (pastille de la navigation) ; 0 hors session. */
+export function useUnreadMessagesCount(): number {
+  const authenticated = useIsAuthenticated()
+  const { data } = useConversations(authenticated)
+  return data?.reduce((sum, conversation) => sum + conversation.unreadCount, 0) ?? 0
 }
 
 /**

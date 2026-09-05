@@ -28,6 +28,11 @@ public final class Masking {
         return "*".repeat(phone.length() - 2) + phone.substring(phone.length() - 2);
     }
 
+    /** Numero de piece d identite : seuls les deux derniers caracteres restent lisibles (meme regle que {@link #phone}). */
+    public static String documentNumber(String number) {
+        return phone(number);
+    }
+
     /** Remplace toute suite de 4 a 8 chiffres (un code de connexion) par des etoiles. */
     public static String codes(String text) {
         if (text == null) return null;

@@ -88,7 +88,7 @@ GitHub Actions, cible de déploiement : VPS Hostinger.
   Classement par distance de détour, écart horaire et note du conducteur.
 - Erreurs HTTP en **RFC 7807** (`ProblemDetail`).
 - Migrations Flyway **numérotées à la suite**. Ne jamais modifier une migration déjà
-  écrite — V1 à V13 existent (la prochaine est V14).
+  écrite — V1 à V14 existent (la prochaine est V15).
 - Le front ne recalcule jamais un montant pour une réservation existante : il lit le
   `paymentPlan` renvoyé par l'API. Les estimations locales sont autorisées **avant**
   création, et doivent être affichées comme telles.
@@ -102,7 +102,7 @@ GitHub Actions, cible de déploiement : VPS Hostinger.
 Complet et cohérent de bout en bout : API, interface, back-office d'administration,
 chaîne de déploiement, jeu de démonstration, documentation d'exploitation.
 
-- `backend/` — 13 migrations. Kkiapay (initiation, webhook signé et
+- `backend/` — 14 migrations. Kkiapay (initiation, webhook signé et
   idempotent, vérification serveur, remboursements), codes de connexion par e-mail (SMS en repli) avec limitation de débit,
   géocodage des villes béninoises en base, rôles et back-office, reversements, signalements,
   journal d'audit, alertes de recherche, abonnements, trace des recherches (`search_events`,
@@ -122,8 +122,8 @@ chaîne de déploiement, jeu de démonstration, documentation d'exploitation.
 
 ## État de vérification
 
-**Backend** : `mvn test` = 175 tests, 0 échec, 4 ignorés (Testcontainers). **Frontend** :
-`npm run lint`, `npm test` (Vitest, 31 tests : client HTTP et rafraîchissement de jeton,
+**Backend** : `mvn test` = 222 tests, 0 échec, 5 ignorés (Testcontainers). **Frontend** :
+`npm run lint`, `npm test` (Vitest, 67 tests : client HTTP et rafraîchissement de jeton,
 erreurs, règles de paiement, validation) et `npm run build` passent ; les trois tournent en CI.
 
 **Vérifié en production le 2026-09-05** (https://ekuiseo.com, `docs/RAPPORT-FONCTIONNEL.md`) :

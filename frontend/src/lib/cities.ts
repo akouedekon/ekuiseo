@@ -84,6 +84,25 @@ export function haversineKm(aLat: number, aLng: number, bLat: number, bLng: numb
   return 2 * R * Math.asin(Math.sqrt(h))
 }
 
+/** En deca, l'axe est urbain (Cotonou - Abomey-Calavi : 9,6 km) : rayon serre. */
+export const URBAN_AXIS_KM = 30
+export const URBAN_SEARCH_RADIUS_KM = 5
+export const INTERCITY_SEARCH_RADIUS_KM = 15
+
+/**
+ * Rayon de recherche envoye au serveur, adapte a la longueur de l'axe : 5 km en
+ * urbain, 15 km en interurbain, et jamais plus de la moitie de la distance
+ * origine-destination. Sans ce plafond, sur un axe court (Cotonou - Calavi), les
+ * deux points cherches tombent dans le rayon des deux points de chaque trajet et
+ * la recherche renvoie aussi les trajets en sens inverse (audit F408).
+ */
+export function searchRadiusKm(axisKm: number): number {
+  const base = axisKm < URBAN_AXIS_KM ? URBAN_SEARCH_RADIUS_KM : INTERCITY_SEARCH_RADIUS_KM
+  const capped = Math.min(base, axisKm / 2)
+  // Au dixieme de km inferieur (le plafond reste strict), et jamais nul : deux lieux confondus gardent un rayon minimal.
+  return Math.max(0.5, Math.floor(capped * 10) / 10)
+}
+
 /**
  * Prix conseille par place, indicatif : base kilometrique majoree de 15 %
  * pour la sinuosite reelle du reseau, arrondie au multiple de 500 FCFA.

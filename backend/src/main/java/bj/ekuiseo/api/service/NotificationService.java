@@ -12,12 +12,23 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * Routeur des notifications (constats F107/F212) : la notification in-app est toujours
+ * enregistree en base, dans la transaction de l appelant ; les canaux sortants (e-mail,
+ * SMS) sont confies a {@link NotificationDispatcher} apres validation de cette
+ * transaction et en asynchrone. Un passager ne doit jamais recevoir "votre reservation
+ * est confirmee" pour une transaction finalement annulee, et une passerelle en panne ne
+ * doit jamais faire echouer l operation metier.
+ */
 @Service
 public class NotificationService {
 
@@ -25,18 +36,41 @@ public class NotificationService {
 
     private final NotificationRepository notificationRepository;
     private final NotificationMapper notificationMapper;
-    private final SmsService smsService;
+    private final NotificationDispatcher dispatcher;
 
     public NotificationService(NotificationRepository notificationRepository, NotificationMapper notificationMapper,
-                                SmsService smsService) {
+                                NotificationDispatcher dispatcher) {
         this.notificationRepository = notificationRepository;
         this.notificationMapper = notificationMapper;
-        this.smsService = smsService;
+        this.dispatcher = dispatcher;
     }
 
-    /** Notification en base uniquement (in-app). Voir {@link #notifyCritical} pour les evenements qui doivent aussi partir par SMS. */
+    /** In-app en base, puis e-mail selon preferences. Voir {@link #notifyCritical} pour les evenements qui doivent aussi partir par SMS. */
     @Transactional
     public void notify(User user, NotificationType type, Map<String, Object> payload) {
+        saveInApp(user, type, payload);
+        scheduleDispatch(user.getId(), type, payload, false, null);
+    }
+
+    /**
+     * Notification critique (regle metier n.10 : reservation confirmee, trajet annule,
+     * rappel la veille... doivent atteindre le passager meme s il n ouvre pas l application) :
+     * in-app, e-mail et SMS selon preferences. Le texte SMS fourni par l appelant prime sur
+     * celui du gabarit ; null pour utiliser le gabarit.
+     */
+    @Transactional
+    public void notifyCritical(User user, NotificationType type, Map<String, Object> payload, String smsMessage) {
+        saveInApp(user, type, payload);
+        scheduleDispatch(user.getId(), type, payload, true, smsMessage);
+    }
+
+    /** Variante critique avec le texte SMS du gabarit ({@link NotificationTemplates}). */
+    @Transactional
+    public void notifyCritical(User user, NotificationType type, Map<String, Object> payload) {
+        notifyCritical(user, type, payload, null);
+    }
+
+    private void saveInApp(User user, NotificationType type, Map<String, Object> payload) {
         Notification notification = Notification.builder()
                 .user(user)
                 .type(type)
@@ -46,23 +80,30 @@ public class NotificationService {
     }
 
     /**
-     * Notification en base ET par SMS (regle metier n.10 : au minimum, reservation
-     * confirmee, trajet annule, rappel la veille doivent atteindre le passager meme
-     * s'il n'ouvre pas l'application). Le SMS est envoye au mieux-effort : un echec
-     * d'envoi SMS ne doit jamais faire echouer la transaction metier appelante (ex :
-     * confirmation de paiement), donc les exceptions du gateway SMS sont capturees
-     * et journalisees ici plutot que propagees.
+     * Envoi apres commit si une transaction est en cours (registerSynchronization /
+     * afterCommit), immediatement sinon. Le payload est copie : la Map de l appelant ne
+     * doit pas etre lue depuis un autre fil.
      */
-    @Transactional
-    public void notifyCritical(User user, NotificationType type, Map<String, Object> payload, String smsMessage) {
-        notify(user, type, payload);
-        if (user.getPhone() == null || user.getPhone().isBlank()) {
-            return;
-        }
-        try {
-            smsService.sendCritical(user.getPhone(), smsMessage);
-        } catch (RuntimeException ex) {
-            log.error("Echec d'envoi du SMS critique ({}) a l'utilisateur {}", type, user.getId(), ex);
+    private void scheduleDispatch(UUID userId, NotificationType type, Map<String, Object> payload,
+                                  boolean critical, String smsMessage) {
+        Map<String, Object> copy = payload == null ? Map.of() : new HashMap<>(payload);
+        Runnable send = () -> {
+            try {
+                dispatcher.dispatch(userId, type, copy, critical, smsMessage);
+            } catch (RuntimeException ex) {
+                // Executeur sature ou arrete : la notification in-app est en base, on ne remonte rien.
+                log.warn("Notification {} non planifiee pour l utilisateur {}", type, userId, ex);
+            }
+        };
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    send.run();
+                }
+            });
+        } else {
+            send.run();
         }
     }
 

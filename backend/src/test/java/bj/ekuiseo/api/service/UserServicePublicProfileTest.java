@@ -46,7 +46,13 @@ class UserServicePublicProfileTest {
     private final VehicleMapper vehicleMapper = mock(VehicleMapper.class);
 
     private final UserService service = new UserService(userRepository, vehicleRepository, tripRepository,
-            bookingRepository, messageRepository, userPreferencesRepository, userMapper, vehicleMapper);
+            bookingRepository, messageRepository, userPreferencesRepository,
+            mock(bj.ekuiseo.api.repository.PaymentAccountRepository.class),
+            mock(bj.ekuiseo.api.repository.SearchAlertRepository.class),
+            mock(bj.ekuiseo.api.repository.NotificationRepository.class),
+            mock(bj.ekuiseo.api.repository.IdentityVerificationRepository.class),
+            mock(bj.ekuiseo.api.repository.DriverPayoutRepository.class),
+            mock(RefreshTokenService.class), mock(AuditService.class), userMapper, vehicleMapper);
 
     private static BookingRepository.DriverReliabilityStats reliability(long completed, long noShow, long lateCancelled) {
         return new BookingRepository.DriverReliabilityStats() {

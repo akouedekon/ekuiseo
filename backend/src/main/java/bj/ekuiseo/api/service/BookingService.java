@@ -157,7 +157,10 @@ public class BookingService {
 
         if (isCash) {
             notificationService.notify(trip.getDriver(), NotificationType.BOOKING_CONFIRMED,
-                    Map.of("bookingId", booking.getId().toString()));
+                    NotificationTemplates.payload("bookingId", booking.getId().toString(), "tripId", trip.getId().toString(),
+                            "passengerName", booking.getPassenger().getFirstName(), "seats", booking.getSeats(),
+                            "route", trip.getOriginLabel() + " -> " + trip.getDestLabel(),
+                            "departureAt", java.util.Objects.toString(trip.getDepartureAt(), "")));
         }
         return bookingMapper.toResponse(booking);
     }
@@ -453,7 +456,9 @@ public class BookingService {
 
         Map<String, Object> payload = Map.of("bookingId", booking.getId().toString(), "tripId", trip.getId().toString(),
                 "refundAmountFcfa", outcome.refundAmount(), "retainedAmountFcfa", outcome.retainedAmount(),
-                "seats", booking.getSeats());
+                "seats", booking.getSeats(), "cancelledBy", "PASSENGER",
+                "route", trip.getOriginLabel() + " -> " + trip.getDestLabel(),
+                "departureAt", java.util.Objects.toString(trip.getDepartureAt(), ""));
         notificationService.notify(booking.getPassenger(), NotificationType.BOOKING_CANCELLED, payload);
         if (wasConfirmed) {
             String summary = "Ekuiseo : " + booking.getPassenger().getFirstName() + " a annule sa reservation ("
@@ -567,7 +572,10 @@ public class BookingService {
 
             notificationService.notifyCritical(booking.getPassenger(), NotificationType.BOOKING_CANCELLED,
                     Map.of("bookingId", booking.getId().toString(), "tripId", trip.getId().toString(),
-                            "refundAmountFcfa", booking.getDepositAmount()),
+                            "refundAmountFcfa", booking.getDepositAmount(),
+                            "cancelledBy", "SUSPENSION_CONDUCTEUR".equals(refundReason) ? "PLATFORM" : "DRIVER",
+                            "route", trip.getOriginLabel() + " -> " + trip.getDestLabel(),
+                            "departureAt", java.util.Objects.toString(trip.getDepartureAt(), "")),
                     "Ekuiseo : votre trajet " + trip.getOriginLabel() + " - " + trip.getDestLabel() + " du "
                             + formatLocal(trip.getDepartureAt()) + " a ete annule par le conducteur. "
                             + (booking.getDepositAmount() > 0 ? "Votre acompte vous sera rembourse integralement." : ""));
@@ -610,7 +618,9 @@ public class BookingService {
             if (wasConfirmed) {
                 notificationService.notify(trip.getDriver(), NotificationType.BOOKING_CANCELLED,
                         Map.of("bookingId", booking.getId().toString(), "tripId", trip.getId().toString(),
-                                "seats", booking.getSeats()));
+                                "seats", booking.getSeats(), "cancelledBy", "PASSENGER",
+                                "route", trip.getOriginLabel() + " -> " + trip.getDestLabel(),
+                                "departureAt", java.util.Objects.toString(trip.getDepartureAt(), "")));
             }
             cancelled++;
         }

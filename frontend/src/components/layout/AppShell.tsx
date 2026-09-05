@@ -29,7 +29,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { StatusBanners } from '@/components/layout/OfflineBanner'
 import { Logo } from '@/components/layout/Logo'
-import { useIsAuthenticated, useLogout, useMe } from '@/hooks/useAuth'
+import { resetSession, useIsAuthenticated, useLogout, useMe } from '@/hooks/useAuth'
+import { useUnreadMessagesCount } from '@/hooks/useMessages'
 import { useUnreadNotificationCount } from '@/hooks/useNotifications'
 import { useTheme } from '@/hooks/useTheme'
 import { cn } from '@/lib/cn'
@@ -71,13 +72,16 @@ export function AppShell() {
 
   /*
    * Expiration de session detectee par le client HTTP (jeton refuse au
-   * rafraichissement) : on previent et on renvoie vers la connexion en
-   * memorisant l'ecran courant, au lieu de laisser des ecrans en erreur.
+   * rafraichissement) : la session locale est videe comme a une deconnexion
+   * (cache memoire, cache persiste, cache du service worker), puis on previent
+   * et on renvoie vers la connexion en memorisant l'ecran courant, au lieu de
+   * laisser des ecrans en erreur avec les donnees de l'ancien compte.
    */
   useEffect(
     () =>
       authStore.subscribe((authenticated, reason) => {
         if (!authenticated && reason === 'expired') {
+          resetSession('expired')
           toast.warning('Votre session a expiré', { description: 'Reconnectez-vous pour continuer.' })
           const next = encodeURIComponent(window.location.pathname + window.location.search)
           navigate(`/login?next=${next}`, { replace: true })
@@ -86,6 +90,7 @@ export function AppShell() {
     [navigate],
   )
   const unread = useUnreadNotificationCount()
+  const unreadMessages = useUnreadMessagesCount()
   const { mode, setTheme } = useTheme()
   const reduce = useReducedMotion()
 
@@ -154,6 +159,9 @@ export function AppShell() {
                     ) : null}
                     <item.icon className="relative size-[18px]" aria-hidden />
                     <span className="relative hidden lg:inline">{item.label}</span>
+                    {item.to === '/messages' && authed && unreadMessages > 0 ? (
+                      <UnreadPill count={unreadMessages} className="relative -ml-0.5" />
+                    ) : null}
                   </>
                 )}
               </NavLink>
@@ -289,23 +297,63 @@ export function AppShell() {
         </AnimatePresence>
       </main>
 
-      <BottomNav />
+      <BottomNav unreadMessages={authed ? unreadMessages : 0} />
     </div>
   )
+}
+
+/** Pastille de non-lus, partagee entre les deux navigations. */
+function UnreadPill({ count, className }: { count: number; className?: string }) {
+  return (
+    <span
+      className={cn(
+        'tnum flex min-w-[17px] items-center justify-center rounded-full bg-danger px-1 text-[11px] font-bold leading-[17px] text-on-danger',
+        className,
+      )}
+      aria-hidden
+    >
+      {count > 9 ? '9+' : count}
+    </span>
+  )
+}
+
+interface BottomNavItem {
+  to: string
+  label: string
+  icon: typeof Search
+  primary?: boolean
+  /** Actif : chemin exact (`end`) ou tout chemin verifiant `match`. */
+  end?: boolean
+  match?: (pathname: string) => boolean
+  badge?: number
 }
 
 /**
  * Barre basse mobile : quatre destinations et, au centre, l'action « Publier »
  * en bouton plein sureleve. C'est l'action qui cree l'offre : elle merite
- * d'etre la plus visible de l'ecran.
+ * d'etre la plus visible de l'ecran. « Mes trajets » reunit reservations et
+ * trajets conduits (memes onglets) ; « Messages » est la seule porte d'entree
+ * mobile du conducteur vers ses passagers, avec le compte de non-lus.
  */
-function BottomNav() {
-  const items = [
+function BottomNav({ unreadMessages }: { unreadMessages: number }) {
+  const { pathname } = useLocation()
+  const items: BottomNavItem[] = [
     { to: '/', label: 'Rechercher', icon: Search, end: true },
-    { to: '/trips/mine', label: 'Mes trajets', icon: Car, end: false },
-    { to: '/publish', label: 'Publier', icon: Plus, end: false, primary: true },
-    { to: '/bookings', label: 'Réservations', icon: Ticket, end: false },
-    { to: '/me', label: 'Compte', icon: User, end: false },
+    {
+      to: '/bookings',
+      label: 'Mes trajets',
+      icon: Car,
+      match: (path) => (path.startsWith('/bookings') && !/^\/bookings\/[^/]+\/messages/.test(path)) || path.startsWith('/trips/mine'),
+    },
+    { to: '/publish', label: 'Publier', icon: Plus, primary: true },
+    {
+      to: '/messages',
+      label: 'Messages',
+      icon: MessageSquare,
+      match: (path) => path.startsWith('/messages') || /^\/bookings\/[^/]+\/messages/.test(path),
+      badge: unreadMessages,
+    },
+    { to: '/me', label: 'Compte', icon: User },
   ]
 
   return (
@@ -314,57 +362,55 @@ function BottomNav() {
       aria-label="Navigation principale"
     >
       <ul className="mx-auto flex max-w-lg items-end">
-        {items.map((item) => (
-          <li key={item.to} className="flex-1">
-            {item.primary ? (
-              <NavLink
-                to={item.to}
-                aria-label={item.label}
-                className="flex min-h-[60px] flex-col items-center justify-end gap-1 pb-1.5"
-              >
-                {({ isActive }) => (
-                  <>
-                    <span
-                      className={cn(
-                        '-mt-3 flex size-12 items-center justify-center rounded-full text-on-primary shadow-e3 ring-4 ring-bg transition-transform active:scale-95',
-                        isActive ? 'bg-primary-active' : 'bg-primary',
-                      )}
-                    >
-                      <item.icon className="size-6" strokeWidth={2.4} aria-hidden />
-                    </span>
-                    <span className="text-[11px] font-semibold leading-none text-primary-ink">{item.label}</span>
-                  </>
-                )}
-              </NavLink>
-            ) : (
-              <NavLink
-                to={item.to}
-                end={item.end}
-                className={({ isActive }) =>
-                  cn(
+        {items.map((item) => {
+          const active = item.match ? item.match(pathname) : item.end ? pathname === item.to : pathname.startsWith(item.to)
+          const badge = item.badge ?? 0
+          return (
+            <li key={item.to} className="flex-1">
+              {/* Link plutot que NavLink : l'etat actif est calcule ici (un onglet couvre plusieurs routes). */}
+              {item.primary ? (
+                <Link
+                  to={item.to}
+                  aria-label={item.label}
+                  aria-current={active ? 'page' : undefined}
+                  className="flex min-h-[60px] flex-col items-center justify-end gap-1 pb-1.5"
+                >
+                  <span
+                    className={cn(
+                      '-mt-3 flex size-12 items-center justify-center rounded-full text-on-primary shadow-e3 ring-4 ring-bg transition-transform active:scale-95',
+                      active ? 'bg-primary-active' : 'bg-primary',
+                    )}
+                  >
+                    <item.icon className="size-6" strokeWidth={2.4} aria-hidden />
+                  </span>
+                  <span className="text-[11px] font-semibold leading-none text-primary-ink">{item.label}</span>
+                </Link>
+              ) : (
+                <Link
+                  to={item.to}
+                  aria-current={active ? 'page' : undefined}
+                  aria-label={badge > 0 ? `${item.label}, ${badge} non lu${badge > 1 ? 's' : ''}` : undefined}
+                  className={cn(
                     'relative flex min-h-[60px] flex-col items-center justify-center gap-1 px-1 pt-2 pb-1.5 transition-colors',
-                    isActive ? 'text-primary-ink' : 'text-muted',
-                  )
-                }
-              >
-                {({ isActive }) => (
-                  <>
-                    <span
-                      className={cn(
-                        'relative flex h-7 w-12 items-center justify-center rounded-full transition-colors',
-                        isActive && 'bg-primary-soft',
-                      )}
-                    >
-                      <item.icon className="size-[22px]" strokeWidth={isActive ? 2.3 : 1.9} aria-hidden />
-                    </span>
-                    {/* 11 px tolere uniquement ici, conformement a la charte. */}
-                    <span className="text-[11px] font-medium leading-none">{item.label}</span>
-                  </>
-                )}
-              </NavLink>
-            )}
-          </li>
-        ))}
+                    active ? 'text-primary-ink' : 'text-muted',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'relative flex h-7 w-12 items-center justify-center rounded-full transition-colors',
+                      active && 'bg-primary-soft',
+                    )}
+                  >
+                    <item.icon className="size-[22px]" strokeWidth={active ? 2.3 : 1.9} aria-hidden />
+                    {badge > 0 ? <UnreadPill count={badge} className="absolute -right-1 -top-1.5 ring-2 ring-bg" /> : null}
+                  </span>
+                  {/* 11 px tolere uniquement ici, conformement a la charte. */}
+                  <span className="text-[11px] font-medium leading-none">{item.label}</span>
+                </Link>
+              )}
+            </li>
+          )
+        })}
       </ul>
     </nav>
   )

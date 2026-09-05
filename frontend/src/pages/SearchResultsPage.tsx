@@ -28,7 +28,7 @@ import { useIsAuthenticated } from '@/hooks/useAuth'
 import { useOnlineStatus, useStaleAge } from '@/hooks/useNetwork'
 import { useTripSearchPages, type TripSearchParams } from '@/hooks/useTrips'
 import { describeError } from '@/lib/errors'
-import { estimateDurationMinutes, haversineKm } from '@/lib/cities'
+import { estimateDurationMinutes, haversineKm, searchRadiusKm } from '@/lib/cities'
 import { formatDayShort, formatFcfa } from '@/lib/format'
 import { listContainer } from '@/lib/motion'
 import type { TripResponse, TripType } from '@/api/types'
@@ -89,7 +89,8 @@ export function SearchResultsPage() {
       date: searchParams.get('date') ?? undefined,
       seats: Number(searchParams.get('seats')) || 1,
       tripType: (searchParams.get('type') as TripType | null) ?? undefined,
-      radiusKm: 15,
+      // 5 km en urbain, 15 km en interurbain, jamais plus de la moitie de l'axe (sens de circulation).
+      radiusKm: searchRadiusKm(haversineKm(fromLat, fromLng, toLat, toLng)),
       size: 20,
     }
     return params

@@ -76,6 +76,9 @@ class TripSearchIntegrationTest {
     private static final double COTONOU_LNG = 2.3912;
     private static final double PORTO_NOVO_LAT = 6.4969;
     private static final double PORTO_NOVO_LNG = 2.6289;
+    // Abomey-Calavi (referentiel V3), a 9,6 km de Cotonou : l axe quotidien du modele economique.
+    private static final double CALAVI_LAT = 6.4489;
+    private static final double CALAVI_LNG = 2.3556;
 
     @BeforeEach
     void setUp() {
@@ -124,5 +127,44 @@ class TripSearchIntegrationTest {
                 20_000, 1, null, null, null, java.time.Instant.now(), PageRequest.of(0, 10));
 
         assertThat(results.getContent()).extracting(Trip::getId).containsExactly(matching.getId());
+    }
+
+    /**
+     * Constat F408 : Cotonou et Abomey-Calavi sont a moins de 10 km ; avec un rayon de
+     * 15 km (valeur envoyee par le front) les deux disques se recouvrent et, sans
+     * contrainte de sens, un trajet Calavi -> Cotonou repondrait a une recherche
+     * Cotonou -> Calavi. La requete exige desormais que chaque extremite du trajet soit
+     * plus proche de l extremite cherchee correspondante que de l autre.
+     */
+    @Test
+    void search_respectsDirection_onShortAxis() {
+        Trip toCalavi = tripRepository.save(Trip.builder()
+                .driver(driver).vehicle(vehicle)
+                .tripType(TripType.QUOTIDIEN)
+                .originLabel("Cotonou").originLat(COTONOU_LAT).originLng(COTONOU_LNG)
+                .destLabel("Abomey-Calavi").destLat(CALAVI_LAT).destLng(CALAVI_LNG)
+                .departureAt(Instant.now().plus(1, ChronoUnit.DAYS))
+                .seatsTotal(3).seatsAvailable(3).pricePerSeat(500)
+                .status(TripStatus.PUBLISHED)
+                .build());
+        Trip toCotonou = tripRepository.save(Trip.builder()
+                .driver(driver).vehicle(vehicle)
+                .tripType(TripType.QUOTIDIEN)
+                .originLabel("Abomey-Calavi").originLat(CALAVI_LAT).originLng(CALAVI_LNG)
+                .destLabel("Cotonou").destLat(COTONOU_LAT).destLng(COTONOU_LNG)
+                .departureAt(Instant.now().plus(1, ChronoUnit.DAYS))
+                .seatsTotal(3).seatsAvailable(3).pricePerSeat(500)
+                .status(TripStatus.PUBLISHED)
+                .build());
+
+        Page<Trip> cotonouToCalavi = tripRepository.search(
+                COTONOU_LAT, COTONOU_LNG, CALAVI_LAT, CALAVI_LNG,
+                15_000, 1, null, null, null, Instant.now(), PageRequest.of(0, 10));
+        Page<Trip> calaviToCotonou = tripRepository.search(
+                CALAVI_LAT, CALAVI_LNG, COTONOU_LAT, COTONOU_LNG,
+                15_000, 1, null, null, null, Instant.now(), PageRequest.of(0, 10));
+
+        assertThat(cotonouToCalavi.getContent()).extracting(Trip::getId).containsExactly(toCalavi.getId());
+        assertThat(calaviToCotonou.getContent()).extracting(Trip::getId).containsExactly(toCotonou.getId());
     }
 }

@@ -70,7 +70,9 @@ public class SearchAlertMatchService {
                     alert.getOriginLat(), alert.getOriginLng(), alert.getDestLat(), alert.getDestLng(), radiusMeters);
             if (!geoMatch.isEmpty()) {
                 notificationService.notify(alert.getUser(), NotificationType.SEARCH_ALERT_MATCH,
-                        Map.of("tripId", trip.getId().toString(), "alertId", alert.getId().toString()));
+                        Map.of("tripId", trip.getId().toString(), "alertId", alert.getId().toString(),
+                                "route", trip.getOriginLabel() + " -> " + trip.getDestLabel(),
+                                "departureAt", trip.getDepartureAt().toString()));
                 matches++;
             }
         }

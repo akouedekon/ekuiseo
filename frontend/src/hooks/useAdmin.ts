@@ -170,6 +170,34 @@ export function useUpdateUserContact() {
   })
 }
 
+/**
+ * POST /api/v1/admin/users/{id}/anonymize { reason } : droit a l'effacement exerce par
+ * l'administration. Profil remplace, contacts effaces, sessions revoquees ; reservations,
+ * paiements et avis conserves. Journalise. Refuse (409) si un trajet ou une reservation
+ * est en cours.
+ */
+export function useAnonymizeUser() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      apiClient.post<AdminUserResponse>(`/api/v1/admin/users/${id}/anonymize`, { reason }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'users'] }),
+  })
+}
+
+/** POST /api/v1/admin/users/{id}/revoke-identity { reason } : retire le badge d'identite verifiee, l'utilisateur est prevenu. */
+export function useRevokeIdentity() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      apiClient.post<AdminUserResponse>(`/api/v1/admin/users/${id}/revoke-identity`, { reason }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
+      queryClient.invalidateQueries({ queryKey: ['admin', 'verifications'] })
+    },
+  })
+}
+
 /* ------------------------------------------------------------ Paiements (remboursements) */
 
 /** GET /api/v1/admin/payments?status= (TODO = REFUND_PENDING + REFUND_MANUAL, la file de travail). */

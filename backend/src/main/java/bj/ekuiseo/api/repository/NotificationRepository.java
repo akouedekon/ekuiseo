@@ -12,6 +12,8 @@ import java.util.UUID;
 
 public interface NotificationRepository extends JpaRepository<Notification, UUID> {
     List<Notification> findByUserIdOrderByCreatedAtDesc(UUID userId);
+    /** Anonymisation d un compte (UserService#anonymize) : les payloads contiennent des donnees personnelles. */
+    void deleteByUserId(UUID userId);
 
     /** Marque en masse toutes les notifications non lues d'un utilisateur (POST /api/v1/notifications/read-all). */
     @Modifying(clearAutomatically = true, flushAutomatically = true)

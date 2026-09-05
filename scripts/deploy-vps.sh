@@ -67,8 +67,45 @@ elif [ "$(sudo cat "$CRON_FILE" 2>/dev/null)" != "$CRON_LINE" ]; then
   log "Cron de sauvegarde installe : $CRON_FILE"
 fi
 
-log "Construction et demarrage (Caddy sur 127.0.0.1:$PORT, derriere le nginx de l'hote)"
-docker compose -f docker-compose.prod.yml -f docker-compose.vps.yml up -d --build --remove-orphans
+# Exercice de restauration mensuel (constat F127) : la derniere sauvegarde est rejouee
+# dans une base jetable le 1er du mois a 04:00 ; resultat dans backups/last-drill.
+DRILL_FILE=/etc/cron.d/ekuiseo-restore-drill
+DRILL_LINE="0 4 1 * * $USER cd $APP_DIR && COMPOSE_FILE=docker-compose.prod.yml ./scripts/restore-drill.sh >> /var/log/ekuiseo-backup.log 2>&1"
+if sudo -n true 2>/dev/null && [ "$(sudo cat "$DRILL_FILE" 2>/dev/null)" != "$DRILL_LINE" ]; then
+  printf '%s
+' "$DRILL_LINE" | sudo tee "$DRILL_FILE" >/dev/null
+  sudo chmod 644 "$DRILL_FILE"
+  log "Cron d exercice de restauration installe : $DRILL_FILE"
+fi
+
+COMPOSE="docker compose -f docker-compose.prod.yml -f docker-compose.vps.yml"
+
+# Sauvegarde prealable (constat F436) : un deploiement qui migre le schema ne part jamais
+# sans dump frais. Echec = arret, sauf au tout premier deploiement (base absente).
+if docker ps --format '{{.Names}}' | grep -qx ekuiseo-postgis; then
+  log "Sauvegarde prealable de la base (scripts/backup.sh)"
+  COMPOSE_FILE=docker-compose.prod.yml ./scripts/backup.sh || die "sauvegarde prealable impossible : deploiement annule."
+fi
+
+# Retour arriere (constat F436) : les images courantes sont retaguees :previous avant le
+# build ; si la pile ne repond pas, on les remet en service sans reconstruire.
+for img in ekuiseo-backend ekuiseo-frontend; do
+  if docker image inspect ":latest" >/dev/null 2>&1; then
+    docker tag ":latest" ":previous"
+  fi
+done
+
+rollback() {
+  log "RETOUR ARRIERE : remise en service des images :previous"
+  docker image inspect ekuiseo-backend:previous >/dev/null 2>&1 || die "aucune image precedente : intervention manuelle (docs/EXPLOITATION.md)."
+  docker tag ekuiseo-backend:previous ekuiseo-backend:latest
+  docker tag ekuiseo-frontend:previous ekuiseo-frontend:latest
+   up -d --no-build --remove-orphans
+  die "le deploiement a echoue ; la version precedente a ete relancee (les migrations Flyway deja appliquees restent en place : regle expand/contract)."
+}
+
+log "Construction et demarrage (Caddy sur 127.0.0.1:, derriere le nginx de l'hote)"
+ up -d --build --remove-orphans || rollback
 
 # Caddyfile.proxied est monte en bind sur un FICHIER : quand git le remplace (nouvel
 # inode), le conteneur garde l'ancienne version et `caddy reload` relit... l'ancienne.
@@ -93,4 +130,5 @@ for i in $(seq 1 40); do
   fi
   sleep 5
 done
-die "l'API ne repond pas apres 200 s ; voir : docker compose -f docker-compose.prod.yml -f docker-compose.vps.yml logs --tail=100 backend caddy"
+log "l'API ne repond pas apres 200 s ; voir :  logs --tail=100 backend caddy"
+rollback

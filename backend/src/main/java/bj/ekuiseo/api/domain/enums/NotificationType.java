@@ -21,5 +21,15 @@ public enum NotificationType {
     /** Le conducteur a modifie l horaire ou le prix d un trajet reserve (annulation gratuite 24 h). */
     TRIP_UPDATED,
     /** Le conducteur a signale l absence du passager au depart. */
-    BOOKING_NO_SHOW
+    BOOKING_NO_SHOW,
+    /** Verification d identite validee par l administration (lot 1.4). */
+    IDENTITY_APPROVED,
+    /** Verification d identite refusee, avec motif. */
+    IDENTITY_REJECTED,
+    /** Badge d identite retire par l administration, avec motif. */
+    IDENTITY_REVOKED,
+    /** Compte suspendu par la moderation, avec motif. */
+    ACCOUNT_SUSPENDED,
+    /** Issue d un signalement, envoyee a son auteur. */
+    REPORT_RESOLVED
 }

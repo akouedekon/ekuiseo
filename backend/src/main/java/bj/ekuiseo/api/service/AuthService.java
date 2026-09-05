@@ -160,10 +160,13 @@ public class AuthService {
         }
     }
 
-    /** Un compte suspendu par la moderation ne peut ni recevoir de code ni ouvrir de session. */
+    /** Un compte suspendu par la moderation, ou supprime, ne peut ni recevoir de code ni ouvrir de session. */
     private void assertNotSuspended(User user) {
         if (user.getStatus() == UserStatus.SUSPENDED) {
             throw new UnauthorizedException("Compte suspendu");
+        }
+        if (user.getStatus() == UserStatus.DELETED) {
+            throw new UnauthorizedException("Compte supprime");
         }
     }
 

@@ -14,4 +14,6 @@ public interface PaymentAccountRepository extends JpaRepository<PaymentAccount, 
     List<PaymentAccount> findAllByOrderByCreatedAtDesc();
     List<PaymentAccount> findByVerifiedAtIsNotNullOrderByCreatedAtDesc();
     List<PaymentAccount> findByVerifiedAtIsNullOrderByCreatedAtDesc();
+    /** Anonymisation d un compte (UserService#anonymize). */
+    void deleteByUserId(UUID userId);
 }

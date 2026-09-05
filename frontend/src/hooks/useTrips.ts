@@ -27,12 +27,21 @@ function toQueryString(params: object): string {
   return usp.toString()
 }
 
+/**
+ * GET /api/v1/trips/search. L'endpoint est public, mais le jeton part s'il existe :
+ * c'est lui qui rattache la recherche a l'utilisateur dans `search_events`, sans quoi
+ * le taux recherche -> reservation du back-office vaut structurellement 0.
+ */
+export function searchTripsRequest(params: TripSearchParams, page?: number): Promise<Page<TripResponse>> {
+  const query = page === undefined ? params : { ...params, page }
+  return apiClient.get<Page<TripResponse>>(`/api/v1/trips/search?${toQueryString(query)}`)
+}
+
 /** GET /api/v1/trips/search (public, pagine cote serveur). */
 export function useTripSearch(params: TripSearchParams | null) {
   return useQuery<Page<TripResponse>>({
     queryKey: ['trips', 'search', params],
-    queryFn: () =>
-      apiClient.get<Page<TripResponse>>(`/api/v1/trips/search?${toQueryString(params ?? {})}`, { auth: false }),
+    queryFn: () => searchTripsRequest(params as TripSearchParams),
     enabled: !!params,
   })
 }
@@ -44,11 +53,7 @@ export function useTripSearch(params: TripSearchParams | null) {
 export function useTripSearchPages(params: TripSearchParams | null) {
   return useInfiniteQuery<Page<TripResponse>>({
     queryKey: ['trips', 'search', 'pages', params],
-    queryFn: ({ pageParam }) =>
-      apiClient.get<Page<TripResponse>>(
-        `/api/v1/trips/search?${toQueryString({ ...(params ?? {}), page: pageParam as number })}`,
-        { auth: false },
-      ),
+    queryFn: ({ pageParam }) => searchTripsRequest(params as TripSearchParams, pageParam as number),
     initialPageParam: 0,
     getNextPageParam: (last) => (last.number + 1 < last.totalPages ? last.number + 1 : undefined),
     enabled: !!params,

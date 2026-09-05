@@ -42,6 +42,8 @@ public class TripService {
 
     /** Rayon de recherche par defaut (km) si non precise par le client. */
     private static final double DEFAULT_RADIUS_KM = 5.0;
+    /** Plancher du rayon effectif (km) : en dessous, une adresse de quartier ne trouverait plus sa ville. */
+    static final double MIN_RADIUS_KM = 1.0;
 
     private final TripRepository tripRepository;
     private final TripStopRepository tripStopRepository;
@@ -247,6 +249,7 @@ public class TripService {
                 bookingRepository.save(booking);
                 notificationService.notifyCritical(booking.getPassenger(), NotificationType.TRIP_UPDATED,
                         Map.of("bookingId", booking.getId().toString(), "tripId", trip.getId().toString(),
+                                "route", trip.getOriginLabel() + " -> " + trip.getDestLabel(),
                                 "previousDepartureAt", previousDeparture.toString(),
                                 "departureAt", trip.getDepartureAt().toString(),
                                 "freeCancellationUntil", freeUntil.toString()),
@@ -392,7 +395,8 @@ public class TripService {
                                       double originLat, double originLng, double destLat, double destLng,
                                       LocalDate date, int seats, Double radiusKm, TripType tripType,
                                       Pageable pageable) {
-        double effectiveRadiusKm = radiusKm != null ? radiusKm : DEFAULT_RADIUS_KM;
+        double effectiveRadiusKm = effectiveRadiusKm(radiusKm != null ? radiusKm : DEFAULT_RADIUS_KM,
+                originLat, originLng, destLat, destLng);
         double radiusMeters = effectiveRadiusKm * 1000.0;
         // Jour civil du Benin (constat F415) ; les trajets deja partis sont exclus par la requete.
         Instant dateFrom = date != null ? date.atStartOfDay(Tz.BENIN).toInstant() : null;
@@ -406,6 +410,26 @@ public class TripService {
                     page.getTotalElements());
         }
         return page.map(tripMapper::toResponse);
+    }
+
+    /**
+     * Rayon effectif (constat F408) : jamais plus de la moitie de la distance entre les deux
+     * points cherches, sinon les deux disques se recouvrent et un trajet en sens inverse
+     * satisfait les deux ST_DWithin ; jamais moins de {@link #MIN_RADIUS_KM}.
+     */
+    static double effectiveRadiusKm(double requestedKm, double originLat, double originLng, double destLat, double destLng) {
+        double halfAxis = haversineKm(originLat, originLng, destLat, destLng) / 2.0;
+        return Math.max(MIN_RADIUS_KM, Math.min(requestedKm, halfAxis));
+    }
+
+    /** Distance orthodromique (km) entre deux points, rayon terrestre moyen 6 371 km. */
+    static double haversineKm(double lat1, double lng1, double lat2, double lng2) {
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLng = Math.toRadians(lng2 - lng1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        return 6371.0 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
     /** Axes les plus proposes en ce moment (GET /api/v1/trips/popular), public, borne a 12 resultats. */

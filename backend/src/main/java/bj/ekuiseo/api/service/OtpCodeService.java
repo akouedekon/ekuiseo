@@ -15,14 +15,16 @@ import java.time.temporal.ChronoUnit;
 /**
  * Codes a usage unique : emission (6 chiffres, haches, 5 minutes) et consommation avec
  * compteur d essais persistant. Partage par la connexion ({@code LOGIN}) et le
- * changement d e-mail ({@code CHANGE_EMAIL}) : un code emis pour un usage ne vaut
- * jamais pour un autre.
+ * changement d e-mail ({@code CHANGE_EMAIL}) et la suppression du compte
+ * ({@code DELETE_ACCOUNT}) : un code emis pour un usage ne vaut jamais pour un autre.
  */
 @Service
 public class OtpCodeService {
 
     public static final String PURPOSE_LOGIN = "LOGIN";
     public static final String PURPOSE_CHANGE_EMAIL = "CHANGE_EMAIL";
+    /** Confirmation de la suppression du compte (AccountDeletionService, constat F507). */
+    public static final String PURPOSE_DELETE_ACCOUNT = "DELETE_ACCOUNT";
 
     private final OtpCodeRepository otpCodeRepository;
     private final PasswordEncoder passwordEncoder;

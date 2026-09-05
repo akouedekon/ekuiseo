@@ -42,6 +42,10 @@ public class Report {
     @JoinColumn(name = "reported_trip_id")
     private Trip reportedTrip;
 
+    /** Reservation qui lie le signalant a la cible (V14, constat F548) ; null si aucun trajet commun n est requis. */
+    @Column(name = "booking_id")
+    private UUID bookingId;
+
     @Column(nullable = false, length = 50)
     private String reasonCode;
 

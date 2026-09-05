@@ -31,6 +31,22 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
 
     boolean existsByTripIdAndPassengerIdAndStatusIn(UUID tripId, UUID passengerId, List<BookingStatus> statuses);
 
+    /** Reservation du passager sur ce trajet dans l un des statuts donnes, la plus recente d abord (lien signalant/cible, constat F548). */
+    List<Booking> findByTripIdAndPassengerIdAndStatusInOrderByCreatedAtDesc(UUID tripId, UUID passengerId, List<BookingStatus> statuses);
+
+    /**
+     * Reservations qui lient deux utilisateurs dans un sens ou dans l autre (a passager d un
+     * trajet conduit par b, ou l inverse), les plus recentes d abord. Preuve d une
+     * interaction reelle avant un signalement NO_SHOW / HARASSMENT / ... (constat F548).
+     */
+    @Query("select b from Booking b join b.trip t where b.status in :statuses "
+            + "and ((b.passenger.id = :a and t.driver.id = :b) or (b.passenger.id = :b and t.driver.id = :a)) "
+            + "order by b.createdAt desc")
+    List<Booking> findSharedBookings(@Param("a") UUID a, @Param("b") UUID b, @Param("statuses") List<BookingStatus> statuses);
+
+    /** Reservations encore engageantes d un passager (anonymisation, constat F507). */
+    boolean existsByPassengerIdAndStatusIn(UUID passengerId, List<BookingStatus> statuses);
+
     /** Reservations en attente dont l echeance d acompte (expires_at, V12) est depassee. */
     /** Reservations confirmees de trajets partis depuis longtemps : a cloturer COMPLETED (TripLifecycleScheduler). */
     @Query("select b from Booking b join fetch b.trip t where b.status = :status and t.departureAt < :before "

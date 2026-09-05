@@ -5,6 +5,7 @@ import { ErrorState } from '@/components/ui/states'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PageContainer, PageHeader } from '@/components/layout/PageContainer'
 import { AccountHeaderCard } from '@/features/account/AccountHeaderCard'
+import { DeleteAccountSection } from '@/features/account/DeleteAccountSection'
 import { EarningsSection } from '@/features/account/EarningsSection'
 import { IdentitySection } from '@/features/account/IdentitySection'
 import { PaymentMethodsSection } from '@/features/account/PaymentMethodsSection'
@@ -104,6 +105,7 @@ export function MePage() {
               navigate('/', { replace: true })
             }}
           />
+          <DeleteAccountSection email={user.email} />
         </TabsContent>
       </Tabs>
     </PageContainer>

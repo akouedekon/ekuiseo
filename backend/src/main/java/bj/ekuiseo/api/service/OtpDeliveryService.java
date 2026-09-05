@@ -53,11 +53,20 @@ public class OtpDeliveryService {
 
     /** Envoie le code par le canal resolu et decrit la destination (masquee) au client. */
     public OtpRequestResponse deliver(String phone, String email, String code) {
+        return deliver(phone, email, code, "Votre code Ekuiseo : " + code,
+                "Votre code de verification Ekuiseo est : " + code);
+    }
+
+    /**
+     * Variante avec objet et phrase d introduction propres a l usage (ex : suppression du
+     * compte), pour que le destinataire sache ce qu il confirme. Le SMS reste generique.
+     */
+    public OtpRequestResponse deliver(String phone, String email, String code, String subject, String intro) {
         Channel channel = resolveChannel(email);
         rateLimiter.assertNotRateLimited(phone);
         if (channel == Channel.EMAIL) {
-            mailGateway.send(email.trim(), "Votre code Ekuiseo : " + code,
-                    "Bonjour,\n\nVotre code de verification Ekuiseo est : " + code + "\n\n"
+            mailGateway.send(email.trim(), subject,
+                    "Bonjour,\n\n" + intro + "\n\n"
                             + "Il expire dans 5 minutes. Ne le partagez avec personne : l'equipe Ekuiseo ne vous "
                             + "le demandera jamais.\n\nSi vous n'etes pas a l'origine de cette demande, ignorez ce message.\n\n"
                             + "Ekuiseo - covoiturage au Benin");

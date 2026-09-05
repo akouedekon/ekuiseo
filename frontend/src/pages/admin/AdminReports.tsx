@@ -217,8 +217,8 @@ export function AdminReports() {
         description={
           closing
             ? closing.status === 'RESOLVED'
-              ? 'Indiquez la mesure prise (avertissement, suspension, remboursement…). La note est conservée dans le dossier.'
-              : "Indiquez pourquoi le signalement n'appelle aucune mesure. La note est conservée dans le dossier."
+              ? "Indiquez la mesure prise (avertissement, suspension, remboursement…). La note est conservée dans le dossier ; l'auteur du signalement est informé de la clôture, sans le détail de la mesure."
+              : "Indiquez pourquoi le signalement n'appelle aucune mesure. La note est conservée dans le dossier ; l'auteur du signalement est informé du classement."
             : undefined
         }
         tone={closing?.status === 'DISMISSED' ? 'danger' : 'default'}

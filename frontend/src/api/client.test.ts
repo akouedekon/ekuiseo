@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiClient, ApiError, authStore, NetworkError } from './client'
+import { searchTripsRequest } from '@/hooks/useTrips'
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -81,5 +82,26 @@ describe('apiClient', () => {
   it('renvoie undefined sur 204', async () => {
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
     await expect(apiClient.delete('/api/v1/me/vehicles/1')).resolves.toBeUndefined()
+  })
+
+  it('envoie le jeton sur /trips/search quand une session est ouverte (attribution search_events)', async () => {
+    authStore.setTokens('access-search', 'refresh-search')
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { content: [], totalElements: 0, totalPages: 0, number: 0, size: 20 }))
+    const page = await searchTripsRequest({ originLat: 6.37, originLng: 2.39, destLat: 6.45, destLng: 2.36, radiusKm: 5 })
+    expect(page.totalElements).toBe(0)
+    const [url, init] = fetchMock.mock.calls[0]
+    const headers = init?.headers as Record<string, string> | undefined
+    expect(String(url)).toContain('/api/v1/trips/search?')
+    expect(String(url)).toContain('radiusKm=5')
+    expect(headers?.Authorization).toBe('Bearer access-search')
+  })
+
+  it('laisse /trips/search anonyme sans session', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { content: [], totalElements: 0, totalPages: 0, number: 0, size: 20 }))
+    await searchTripsRequest({ originLat: 6.37, originLng: 2.39, destLat: 6.45, destLng: 2.36 }, 1)
+    const [url, init] = fetchMock.mock.calls[0]
+    const headers = init?.headers as Record<string, string> | undefined
+    expect(String(url)).toContain('page=1')
+    expect(headers?.Authorization).toBeUndefined()
   })
 })

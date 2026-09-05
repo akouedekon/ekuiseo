@@ -4,6 +4,7 @@ import bj.ekuiseo.api.dto.conversation.ConversationSummary;
 import bj.ekuiseo.api.dto.trip.RecurringTripResponse;
 import bj.ekuiseo.api.dto.trip.TripResponse;
 import bj.ekuiseo.api.dto.auth.OtpRequestResponse;
+import bj.ekuiseo.api.dto.user.AccountDeleteConfirmRequest;
 import bj.ekuiseo.api.dto.user.EmailChangeConfirmRequest;
 import bj.ekuiseo.api.dto.user.EmailChangeRequest;
 import bj.ekuiseo.api.dto.user.UpdateMeRequest;
@@ -11,6 +12,7 @@ import bj.ekuiseo.api.dto.user.UserResponse;
 import bj.ekuiseo.api.dto.user.VehicleRequest;
 import bj.ekuiseo.api.dto.user.VehicleResponse;
 import bj.ekuiseo.api.security.CurrentUser;
+import bj.ekuiseo.api.service.AccountDeletionService;
 import bj.ekuiseo.api.service.BookingService;
 import bj.ekuiseo.api.service.EmailChangeService;
 import bj.ekuiseo.api.service.MessageService;
@@ -36,11 +38,14 @@ public class MeController {
     private final BookingService bookingService;
     private final MessageService messageService;
     private final EmailChangeService emailChangeService;
+    private final AccountDeletionService accountDeletionService;
     private final CurrentUser currentUser;
 
     public MeController(UserService userService, TripService tripService, BookingService bookingService,
-                         MessageService messageService, EmailChangeService emailChangeService, CurrentUser currentUser) {
+                         MessageService messageService, EmailChangeService emailChangeService,
+                         AccountDeletionService accountDeletionService, CurrentUser currentUser) {
         this.emailChangeService = emailChangeService;
+        this.accountDeletionService = accountDeletionService;
         this.userService = userService;
         this.tripService = tripService;
         this.bookingService = bookingService;
@@ -70,6 +75,20 @@ public class MeController {
     @PostMapping("/email/confirm")
     public UserResponse confirmEmailChange(@Valid @RequestBody EmailChangeConfirmRequest req) {
         return emailChangeService.confirm(currentUser.id(), req.code());
+    }
+
+    @Operation(summary = "Supprimer mon compte (etape 1)", description = "Verifie qu aucune obligation n est en cours (409 sinon : trajet a venir, navette active, reservation en cours, reversement du) et envoie un code a 6 chiffres. 429 au-dela de 3 demandes / 10 min.")
+    @PostMapping("/delete/request")
+    public ResponseEntity<Void> requestAccountDeletion() {
+        accountDeletionService.request(currentUser.id());
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Supprimer mon compte (etape 2)", description = "Le code recu anonymise le compte : donnees personnelles effacees, historique de reservations et paiements conserve sans identite, sessions revoquees. 400 si le code est faux, 409 si une obligation est apparue entre-temps.")
+    @PostMapping("/delete")
+    public ResponseEntity<Void> confirmAccountDeletion(@Valid @RequestBody AccountDeleteConfirmRequest req) {
+        accountDeletionService.confirm(currentUser.id(), req.code());
+        return ResponseEntity.noContent().build();
     }
 
     @Operation(summary = "Ajouter un vehicule")

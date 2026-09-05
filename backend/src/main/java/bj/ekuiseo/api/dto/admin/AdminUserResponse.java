@@ -27,6 +27,8 @@ public record AdminUserResponse(
         boolean suspended,
         long tripsPublished,
         long bookingsMade,
-        BigDecimal ratingAvg
+        BigDecimal ratingAvg,
+        /** Date d anonymisation (statut DELETED, V14) ; null pour un compte vivant. */
+        Instant anonymizedAt
 ) {
 }

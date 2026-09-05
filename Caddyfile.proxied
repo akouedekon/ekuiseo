@@ -34,6 +34,9 @@
 
 	handle /api/* {
 		reverse_proxy backend:8080 {
+			# Identifiant de correlation (constat F439) : repris dans le MDC du backend et
+			# renvoye au client en X-Request-Id pour rapprocher un ticket d une trace.
+			header_up X-Request-Id {http.request.uuid}
 			# X-Real-IP est pose par le nginx amont depuis $remote_addr (non forgeable) et
 			# traverse Caddy tel quel : NE PAS le reecrire depuis X-Forwarded-For, dont le
 			# premier element est controle par le client (constats F008/F428 de l'audit).

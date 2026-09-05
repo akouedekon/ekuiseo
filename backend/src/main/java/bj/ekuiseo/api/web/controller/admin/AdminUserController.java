@@ -1,5 +1,6 @@
 package bj.ekuiseo.api.web.controller.admin;
 
+import bj.ekuiseo.api.dto.admin.AdminReasonRequest;
 import bj.ekuiseo.api.dto.admin.AdminUserResponse;
 import bj.ekuiseo.api.dto.admin.SuspendUserRequest;
 import bj.ekuiseo.api.dto.admin.UpdateContactRequest;
@@ -49,6 +50,18 @@ public class AdminUserController {
     @PatchMapping("/{id}/contact")
     public AdminUserResponse updateContact(@PathVariable UUID id, @Valid @RequestBody UpdateContactRequest req) {
         return adminUserService.updateContact(currentUser.id(), id, req.email(), req.phone(), req.reason());
+    }
+
+    @Operation(summary = "Retirer le badge identite verifiee", description = "Motif obligatoire, journalise (USER_IDENTITY_REVOKED) ; le dossier eventuel passe REJECTED et l utilisateur est prevenu (IDENTITY_REVOKED).")
+    @PostMapping("/{id}/revoke-identity")
+    public AdminUserResponse revokeIdentity(@PathVariable UUID id, @Valid @RequestBody AdminReasonRequest req) {
+        return adminUserService.revokeIdentity(currentUser.id(), id, req.reason());
+    }
+
+    @Operation(summary = "Anonymiser un compte", description = "Droit a l effacement exerce par l administration : donnees personnelles effacees, historique financier conserve (voir UserService#anonymize). 409 si le compte a des obligations en cours (trajet a venir, reservation active, reversement en attente). Journalise (USER_ANONYMIZED).")
+    @PostMapping("/{id}/anonymize")
+    public AdminUserResponse anonymize(@PathVariable UUID id, @Valid @RequestBody AdminReasonRequest req) {
+        return adminUserService.anonymize(currentUser.id(), id, req.reason());
     }
 
     @Operation(summary = "Valider la verification d'identite", description = "Suppose qu'une verification manuelle hors-ligne a deja eu lieu (aucun sous-systeme de stockage de documents d'identite n'est implemente, voir README). Voir aussi /api/v1/admin/verifications pour la file de moderation dediee.")

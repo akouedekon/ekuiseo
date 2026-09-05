@@ -45,6 +45,7 @@
 	handle /api/* {
 		reverse_proxy backend:8080 {
 			header_up X-Real-IP {remote_host}
+			header_up X-Request-Id {http.request.uuid}
 			health_uri /actuator/health
 			health_interval 15s
 			health_timeout 5s

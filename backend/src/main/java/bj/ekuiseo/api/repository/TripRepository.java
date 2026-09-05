@@ -99,8 +99,9 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
     /** Modeles de navette actifs (recurrence), pour la generation des occurrences. */
     List<Trip> findByRecurrenceRuleIsNotNullAndParentTripIdIsNullAndStatus(bj.ekuiseo.api.domain.enums.TripStatus status);
 
-    /** Trajets publies qui partent dans la fenetre [from, to) et n'ont pas encore recu leur rappel (regle metier n.10). */
-    @Query("select t from Trip t where t.status = bj.ekuiseo.api.domain.enums.TripStatus.PUBLISHED "
+    /** Trajets a venir (PUBLISHED ou FULL, constat F108 : un trajet complet est celui qui a le plus de passagers a rappeler) qui partent dans la fenetre [from, to) et n ont pas encore recu leur rappel (regle metier n.10). */
+    @Query("select t from Trip t where t.status in (bj.ekuiseo.api.domain.enums.TripStatus.PUBLISHED, "
+            + "bj.ekuiseo.api.domain.enums.TripStatus.FULL) "
             + "and t.reminderSentAt is null and t.departureAt between :from and :to")
     List<Trip> findDueForReminder(@Param("from") Instant from, @Param("to") Instant to);
 
@@ -116,15 +117,20 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
 
     /**
      * Trajets PUBLISHED correspondant a une alerte de recherche (regle metier n.13) :
-     * origine ET destination a moins de radiusMeters de l'alerte, et date de depart
-     * dans la fenetre de l'alerte (bornes optionnelles). Utilisee par SearchAlertMatchService
-     * juste apres la publication d'un trajet.
+     * origine ET destination a moins de radiusMeters de l'alerte, dans le bon sens (meme
+     * contrainte que {@link #search}, constat F408), et date de depart dans la fenetre de
+     * l'alerte (bornes optionnelles). Utilisee par SearchAlertMatchService juste apres la
+     * publication d'un trajet.
      */
     @Query(value = """
             select t.* from trips t
             where t.id = :tripId
               and ST_DWithin(t.origin_point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography, :radiusMeters)
               and ST_DWithin(t.dest_point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography, :radiusMeters)
+              and ST_Distance(t.origin_point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography)
+                < ST_Distance(t.origin_point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography)
+              and ST_Distance(t.dest_point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography)
+                < ST_Distance(t.dest_point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography)
             """, nativeQuery = true)
     List<Trip> matchesAlertGeography(@Param("tripId") UUID tripId,
                                       @Param("originLat") double originLat, @Param("originLng") double originLng,
@@ -136,6 +142,10 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
      * radiusMeters des points recherches (ST_DWithin sur les colonnes geography gerees
      * par trigger), tries par pertinence = distance cumulee + ecart horaire - bonus note
      * conducteur. Filtre optionnel sur la date (jour civil UTC) et le type de trajet.
+     * Contrainte de sens (constat F408) : l origine du trajet doit etre plus proche de
+     * l origine cherchee que de la destination cherchee, et reciproquement, sans quoi un
+     * trajet Calavi -> Cotonou repondrait a une recherche Cotonou -> Calavi (axe de 10 km,
+     * rayon de 15 km cote front).
      */
     @Query(value = """
             select t.* from trips t
@@ -149,6 +159,10 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
               and (cast(:dateTo as timestamptz) is null or t.departure_at < cast(:dateTo as timestamptz))
               and ST_DWithin(t.origin_point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography, :radiusMeters)
               and ST_DWithin(t.dest_point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography, :radiusMeters)
+              and ST_Distance(t.origin_point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography)
+                < ST_Distance(t.origin_point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography)
+              and ST_Distance(t.dest_point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography)
+                < ST_Distance(t.dest_point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography)
             order by
               (ST_Distance(t.origin_point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography)
                + ST_Distance(t.dest_point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography))
@@ -167,6 +181,10 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
               and (cast(:dateTo as timestamptz) is null or t.departure_at < cast(:dateTo as timestamptz))
               and ST_DWithin(t.origin_point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography, :radiusMeters)
               and ST_DWithin(t.dest_point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography, :radiusMeters)
+              and ST_Distance(t.origin_point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography)
+                < ST_Distance(t.origin_point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography)
+              and ST_Distance(t.dest_point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography)
+                < ST_Distance(t.dest_point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography)
             """,
             nativeQuery = true)
     Page<Trip> search(@Param("originLat") double originLat,

@@ -1,12 +1,17 @@
 package bj.ekuiseo.api.service;
 
+import bj.ekuiseo.api.common.Masking;
 import bj.ekuiseo.api.common.exception.ConflictException;
 import bj.ekuiseo.api.common.exception.ForbiddenException;
 import bj.ekuiseo.api.common.exception.NotFoundException;
+import bj.ekuiseo.api.domain.DriverPayout;
 import bj.ekuiseo.api.domain.User;
 import bj.ekuiseo.api.domain.UserPreferences;
 import bj.ekuiseo.api.domain.Vehicle;
+import bj.ekuiseo.api.domain.enums.BookingStatus;
+import bj.ekuiseo.api.domain.enums.PayoutStatus;
 import bj.ekuiseo.api.domain.enums.TripStatus;
+import bj.ekuiseo.api.domain.enums.UserStatus;
 import bj.ekuiseo.api.dto.trip.VehicleSummary;
 import bj.ekuiseo.api.dto.user.PublicPreferencesResponse;
 import bj.ekuiseo.api.dto.user.PublicUserProfileResponse;
@@ -17,7 +22,12 @@ import bj.ekuiseo.api.dto.user.VehicleResponse;
 import bj.ekuiseo.api.mapper.UserMapper;
 import bj.ekuiseo.api.mapper.VehicleMapper;
 import bj.ekuiseo.api.repository.BookingRepository;
+import bj.ekuiseo.api.repository.DriverPayoutRepository;
+import bj.ekuiseo.api.repository.IdentityVerificationRepository;
 import bj.ekuiseo.api.repository.MessageRepository;
+import bj.ekuiseo.api.repository.NotificationRepository;
+import bj.ekuiseo.api.repository.PaymentAccountRepository;
+import bj.ekuiseo.api.repository.SearchAlertRepository;
 import bj.ekuiseo.api.repository.TripRepository;
 import bj.ekuiseo.api.repository.UserPreferencesRepository;
 import bj.ekuiseo.api.repository.UserRepository;
@@ -27,7 +37,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -43,21 +55,174 @@ public class UserService {
     private final BookingRepository bookingRepository;
     private final MessageRepository messageRepository;
     private final UserPreferencesRepository userPreferencesRepository;
+    private final PaymentAccountRepository paymentAccountRepository;
+    private final SearchAlertRepository searchAlertRepository;
+    private final NotificationRepository notificationRepository;
+    private final IdentityVerificationRepository identityVerificationRepository;
+    private final DriverPayoutRepository driverPayoutRepository;
+    private final RefreshTokenService refreshTokenService;
+    private final AuditService auditService;
     private final UserMapper userMapper;
     private final VehicleMapper vehicleMapper;
 
     public UserService(UserRepository userRepository, VehicleRepository vehicleRepository, TripRepository tripRepository,
                         BookingRepository bookingRepository, MessageRepository messageRepository,
                         UserPreferencesRepository userPreferencesRepository,
-                        UserMapper userMapper, VehicleMapper vehicleMapper) {
+                        PaymentAccountRepository paymentAccountRepository, SearchAlertRepository searchAlertRepository,
+                        NotificationRepository notificationRepository,
+                        IdentityVerificationRepository identityVerificationRepository,
+                        DriverPayoutRepository driverPayoutRepository, RefreshTokenService refreshTokenService,
+                        AuditService auditService, UserMapper userMapper, VehicleMapper vehicleMapper) {
         this.userRepository = userRepository;
         this.vehicleRepository = vehicleRepository;
         this.tripRepository = tripRepository;
         this.bookingRepository = bookingRepository;
         this.messageRepository = messageRepository;
         this.userPreferencesRepository = userPreferencesRepository;
+        this.paymentAccountRepository = paymentAccountRepository;
+        this.searchAlertRepository = searchAlertRepository;
+        this.notificationRepository = notificationRepository;
+        this.identityVerificationRepository = identityVerificationRepository;
+        this.driverPayoutRepository = driverPayoutRepository;
+        this.refreshTokenService = refreshTokenService;
+        this.auditService = auditService;
         this.userMapper = userMapper;
         this.vehicleMapper = vehicleMapper;
+    }
+
+    // ------------------------------------------------------------------
+    // Suppression de compte (constat F507) : anonymisation, pas suppression
+    // physique. Les reservations, paiements et avis restent (obligations
+    // comptables et litiges, docs/CONFORMITE.md 3.2), rattaches a un compte
+    // vide de toute donnee personnelle.
+    // ------------------------------------------------------------------
+
+    /** Prenom / nom affiches a la place de ceux d un compte supprime (avis, messages, historiques). */
+    public static final String DELETED_FIRST_NAME = "Utilisateur";
+    public static final String DELETED_LAST_NAME = "supprime";
+    static final String DELETED_MESSAGE_BODY = "[message supprime]";
+    static final String DELETED_PLATE = "********";
+    private static final List<TripStatus> UPCOMING_TRIP_STATUSES = List.of(TripStatus.PUBLISHED, TripStatus.FULL);
+    private static final List<BookingStatus> ACTIVE_BOOKING_STATUSES = List.of(BookingStatus.PENDING_PAYMENT, BookingStatus.CONFIRMED);
+    private static final List<PayoutStatus> OPEN_PAYOUT_STATUSES = List.of(PayoutStatus.PENDING, PayoutStatus.PROCESSING);
+
+    /**
+     * Verifie qu un compte peut etre anonymise sans laisser d engagement en plan : aucun
+     * trajet PUBLISHED/FULL a venir ni navette (TEMPLATE) active en tant que conducteur,
+     * aucune reservation PENDING_PAYMENT/CONFIRMED en tant que passager, aucun reversement
+     * PENDING/PROCESSING. 409 avec un detail explicite sinon. Appelee avant l envoi du code
+     * de confirmation (l utilisateur apprend l obstacle tout de suite) et a nouveau dans
+     * {@link #anonymize}.
+     */
+    @Transactional(readOnly = true)
+    public void assertCanBeAnonymized(UUID userId) {
+        User user = findUser(userId);
+        if (user.getStatus() == UserStatus.DELETED) {
+            throw new ConflictException("Ce compte a deja ete supprime");
+        }
+        Instant now = Instant.now();
+        if (!tripRepository.findByDriverIdAndStatusInAndDepartureAtAfter(userId, UPCOMING_TRIP_STATUSES, now).isEmpty()) {
+            throw new ConflictException("Impossible de supprimer le compte : vous avez un trajet a venir. "
+                    + "Annulez-le d abord depuis Mes trajets.");
+        }
+        if (tripRepository.countByDriverIdAndStatus(userId, TripStatus.TEMPLATE) > 0) {
+            throw new ConflictException("Impossible de supprimer le compte : vous avez une navette quotidienne active. "
+                    + "Arretez-la d abord depuis Mes trajets.");
+        }
+        if (bookingRepository.existsByPassengerIdAndStatusIn(userId, ACTIVE_BOOKING_STATUSES)) {
+            throw new ConflictException("Impossible de supprimer le compte : vous avez une reservation en cours. "
+                    + "Annulez-la d abord ou attendez la fin du trajet.");
+        }
+        if (driverPayoutRepository.existsByDriverIdAndStatusIn(userId, OPEN_PAYOUT_STATUSES)) {
+            throw new ConflictException("Impossible de supprimer le compte : un reversement vous est encore du. "
+                    + "Il sera verse avant la suppression ; reessayez ensuite.");
+        }
+    }
+
+    /**
+     * Anonymise le compte (droit a l effacement) : telephone remplace par un numero
+     * factice unique derive de l identifiant ({@code +999} + 12 chiffres, conforme a
+     * chk_users_phone_e164), e-mail efface, identite reduite a "Utilisateur supprime",
+     * photo/bio/motif de suspension/abonnement push effaces, mot de passe rendu
+     * inutilisable ; comptes mobile money, alertes, notifications, preferences et dossier
+     * d identite supprimes ; plaques des vehicules masquees (lignes conservees pour les
+     * trajets passes) ; destination des reversements soldes masquee ; corps des messages
+     * envoyes remplace ; reservations, paiements et avis conserves ; toutes les sessions
+     * revoquees. Statut DELETED, journalise USER_ANONYMIZED.
+     *
+     * @param actorId auteur de l action : l utilisateur lui-meme ou un administrateur
+     * @param reason  motif (obligatoire cote administration, libre cote utilisateur)
+     */
+    @Transactional
+    public void anonymize(UUID userId, UUID actorId, String reason) {
+        assertCanBeAnonymized(userId);
+        User user = findUser(userId);
+        Map<String, Object> audit = new LinkedHashMap<>();
+        audit.put("reason", reason == null ? "" : reason);
+        audit.put("self", userId.equals(actorId));
+        audit.put("previousStatus", user.getStatus().name());
+        audit.put("previousPhone", Masking.phone(user.getPhone()));
+        audit.put("previousEmail", Masking.email(user.getEmail()));
+
+        String anonymousPhone = anonymousPhone(userId);
+        if (userRepository.existsByPhoneAndIdNot(anonymousPhone, userId)) {
+            throw new ConflictException("Numero d anonymisation deja pris : reessayez");
+        }
+        user.setPhone(anonymousPhone);
+        user.setEmail(null);
+        user.setPendingEmail(null);
+        user.setPhoneVerified(false);
+        user.setEmailVerified(false);
+        user.setIdentityVerified(false);
+        user.setFirstName(DELETED_FIRST_NAME);
+        user.setLastName(DELETED_LAST_NAME);
+        user.setPasswordHash("deleted-" + UUID.randomUUID());
+        user.setPhotoUrl(null);
+        user.setBio(null);
+        user.setBirthDate(null);
+        user.setGenderPrefNote(null);
+        user.setSuspendedReason(null);
+        user.setPushSubscription(null);
+        user.setStatus(UserStatus.DELETED);
+        user.setDeletedAt(Instant.now());
+        userRepository.save(user);
+
+        paymentAccountRepository.deleteByUserId(userId);
+        searchAlertRepository.deleteByUserId(userId);
+        notificationRepository.deleteByUserId(userId);
+        userPreferencesRepository.findByUserId(userId).ifPresent(userPreferencesRepository::delete);
+        identityVerificationRepository.deleteByUserId(userId);
+
+        int vehicles = 0;
+        for (Vehicle vehicle : vehicleRepository.findByOwnerId(userId)) {
+            vehicle.setPlate(DELETED_PLATE);
+            vehicle.setPhotoUrl(null);
+            vehicleRepository.save(vehicle);
+            vehicles++;
+        }
+        int payouts = 0;
+        for (DriverPayout payout : driverPayoutRepository.findByDriverIdOrderByRequestedAtDesc(userId)) {
+            if (payout.getDestinationMsisdn() != null) {
+                payout.setDestinationMsisdn(Masking.phone(payout.getDestinationMsisdn()));
+                driverPayoutRepository.save(payout);
+                payouts++;
+            }
+        }
+        int messages = messageRepository.redactBySender(userId, DELETED_MESSAGE_BODY);
+        int sessions = refreshTokenService.revokeAll(userId);
+
+        audit.put("vehiclesMasked", vehicles);
+        audit.put("payoutsMasked", payouts);
+        audit.put("messagesRedacted", messages);
+        audit.put("sessionsRevoked", sessions);
+        auditService.log(actorId, "USER_ANONYMIZED", "user", userId, audit);
+    }
+
+    /** {@code +999} suivi de 12 chiffres derives de l identifiant : 15 chiffres, E.164 valide, unique par construction. */
+    static String anonymousPhone(UUID userId) {
+        long mixed = userId.getMostSignificantBits() ^ Long.rotateLeft(userId.getLeastSignificantBits(), 17);
+        long digits = Math.floorMod(mixed, 1_000_000_000_000L);
+        return "+999" + String.format("%012d", digits);
     }
 
     /**

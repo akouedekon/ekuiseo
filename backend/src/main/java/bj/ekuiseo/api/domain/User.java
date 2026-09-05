@@ -105,6 +105,10 @@ public class User {
     @Column(name = "suspended_reason", columnDefinition = "text")
     private String suspendedReason;
 
+    /** Date d anonymisation du compte (V14, statut DELETED). */
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
+
     /**
      * Abonnement Web Push du navigateur (endpoint + cles), au format standard
      * PushSubscriptionJSON. Colonne preparee pour une future implementation Web

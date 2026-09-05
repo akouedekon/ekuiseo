@@ -1,14 +1,19 @@
 import { motion } from 'motion/react'
 import {
+  Ban,
   Bell,
   BellOff,
   CalendarClock,
   CheckCheck,
   CheckCircle2,
   CreditCard,
+  Flag,
   MessageSquare,
   SearchCheck,
+  ShieldCheck,
+  ShieldOff,
   Star,
+  UserX,
   XCircle,
   type LucideIcon,
 } from 'lucide-react'
@@ -25,7 +30,7 @@ import {
   useNotifications,
 } from '@/hooks/useNotifications'
 import { describeError } from '@/lib/errors'
-import { formatFcfa, formatFromNow } from '@/lib/format'
+import { formatDateTime, formatFcfa, formatFromNow } from '@/lib/format'
 import { listContainer, listItem } from '@/lib/motion'
 import type { NotificationResponse, NotificationType } from '@/api/types'
 
@@ -47,6 +52,13 @@ const PRESENTATION: Partial<Record<NotificationType, { icon: LucideIcon; tone: s
   SEARCH_ALERT_MATCH: { icon: SearchCheck, tone: 'bg-[var(--indigo-soft)] text-[var(--indigo)]', title: 'Trajet correspondant trouvé' },
   SUBSCRIPTION_ACTIVATED: { icon: CheckCircle2, tone: 'bg-[var(--vert-soft)] text-[var(--vert)]', title: 'Abonnement activé' },
   REPORT_RECEIVED: { icon: Bell, tone: 'bg-[var(--ocre-soft)] text-[var(--ocre-ink)]', title: 'Signalement reçu' },
+  TRIP_UPDATED: { icon: CalendarClock, tone: 'bg-[var(--ocre-soft)] text-[var(--ocre-ink)]', title: 'Horaire modifié' },
+  BOOKING_NO_SHOW: { icon: UserX, tone: 'bg-[var(--vermillon-soft)] text-[var(--vermillon)]', title: 'Absence signalée' },
+  IDENTITY_APPROVED: { icon: ShieldCheck, tone: 'bg-[var(--vert-soft)] text-[var(--vert)]', title: 'Identité vérifiée' },
+  IDENTITY_REJECTED: { icon: ShieldOff, tone: 'bg-[var(--vermillon-soft)] text-[var(--vermillon)]', title: 'Vérification refusée' },
+  IDENTITY_REVOKED: { icon: ShieldOff, tone: 'bg-[var(--vermillon-soft)] text-[var(--vermillon)]', title: 'Badge d’identité retiré' },
+  ACCOUNT_SUSPENDED: { icon: Ban, tone: 'bg-[var(--vermillon-soft)] text-[var(--vermillon)]', title: 'Compte suspendu' },
+  REPORT_RESOLVED: { icon: Flag, tone: 'bg-[var(--indigo-soft)] text-[var(--indigo)]', title: 'Signalement traité' },
 }
 
 const DEFAULT_PRESENTATION = { icon: Bell, tone: 'bg-[var(--surface-calm)] text-ink-2', title: 'Notification' }
@@ -93,6 +105,42 @@ function describe(notification: NotificationResponse): string {
       return 'Votre abonnement conducteur est actif : plus de commission ce mois-ci.'
     case 'REPORT_RECEIVED':
       return 'Un signalement vous concernant a été reçu par la modération.'
+    case 'TRIP_UPDATED': {
+      const departureAt = str('departureAt')
+      return departureAt
+        ? `Le conducteur a déplacé le départ au ${formatDateTime(departureAt)}. Vous pouvez annuler sans frais pendant 24 h.`
+        : 'Le conducteur a modifié l’horaire de départ. Vous pouvez annuler sans frais pendant 24 h.'
+    }
+    case 'BOOKING_NO_SHOW': {
+      const retained = num('retainedAmountFcfa')
+      return retained
+        ? `Le conducteur a signalé votre absence au départ : l’acompte de ${formatFcfa(retained)} est retenu.`
+        : 'Le conducteur a signalé votre absence au départ : l’acompte est retenu.'
+    }
+    case 'IDENTITY_APPROVED':
+      return 'Votre pièce d’identité a été contrôlée : le badge « Vérifié » apparaît sur votre profil.'
+    case 'IDENTITY_REJECTED': {
+      const reason = str('reason')
+      return reason
+        ? `Votre dossier d’identité a été refusé : ${reason}. Vous pouvez renvoyer un document.`
+        : 'Votre dossier d’identité a été refusé. Vous pouvez renvoyer un document.'
+    }
+    case 'IDENTITY_REVOKED': {
+      const reason = str('reason')
+      return reason
+        ? `Votre badge d’identité vérifiée a été retiré : ${reason}. Vous pouvez soumettre un nouveau dossier.`
+        : 'Votre badge d’identité vérifiée a été retiré. Vous pouvez soumettre un nouveau dossier.'
+    }
+    case 'ACCOUNT_SUSPENDED': {
+      const reason = str('reason')
+      return reason
+        ? `Votre compte est suspendu : ${reason}. Écrivez-nous pour contester.`
+        : 'Votre compte est suspendu. Écrivez-nous pour contester.'
+    }
+    case 'REPORT_RESOLVED':
+      return str('status') === 'DISMISSED'
+        ? 'Votre signalement a été examiné et classé sans suite.'
+        : 'Votre signalement a été examiné et une mesure a été prise. Merci d’avoir contribué à la sécurité de la communauté.'
     default:
       return ''
   }
@@ -103,10 +151,23 @@ function targetOf(notification: NotificationResponse): string | null {
   const payload = notification.payload ?? {}
   const bookingId = typeof payload.bookingId === 'string' ? payload.bookingId : null
   const tripId = typeof payload.tripId === 'string' ? payload.tripId : null
-  if (notification.type === 'NEW_MESSAGE' && bookingId) return `/bookings/${bookingId}/messages`
-  if (bookingId) return '/bookings'
-  if (tripId) return `/trips/${tripId}`
-  return null
+  switch (notification.type) {
+    case 'NEW_MESSAGE':
+      return bookingId ? `/bookings/${bookingId}/messages` : '/messages'
+    case 'IDENTITY_APPROVED':
+    case 'IDENTITY_REJECTED':
+    case 'IDENTITY_REVOKED':
+      return '/me?tab=identity'
+    case 'ACCOUNT_SUSPENDED':
+      // Rien a faire dans l'application : la contestation passe par le support.
+      return null
+    case 'REPORT_RESOLVED':
+      return tripId ? `/trips/${tripId}` : null
+    default:
+      if (bookingId) return '/bookings'
+      if (tripId) return `/trips/${tripId}`
+      return null
+  }
 }
 
 export function NotificationsPage() {
