@@ -79,6 +79,14 @@ public class GlobalExceptionHandler {
                 "Le service de paiement est temporairement indisponible, reessayez plus tard.", req);
     }
 
+    /** Fournisseur SMS en panne ou mal configure : 503 explicite plutot qu'un 500 muet (le detail est journalise). */
+    @ExceptionHandler(bj.ekuiseo.api.service.sms.SmsDeliveryException.class)
+    public ProblemDetail handleSmsUnavailable(bj.ekuiseo.api.service.sms.SmsDeliveryException ex,
+                                              HttpServletRequest req) {
+        return build(HttpStatus.SERVICE_UNAVAILABLE, "sms-unavailable",
+                "L'envoi du SMS est impossible pour l'instant, reessayez dans quelques minutes.", req);
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ProblemDetail handleValidation(MethodArgumentNotValidException ex, HttpServletRequest req) {
         String detail = ex.getBindingResult().getFieldErrors().stream()
