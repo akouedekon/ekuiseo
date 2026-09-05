@@ -113,7 +113,7 @@ chaîne de déploiement, jeu de démonstration, documentation d'exploitation.
 
 ## État de vérification
 
-**Backend** : `mvn test` = 95 tests, 0 échec, 4 ignorés (Testcontainers). **Frontend** :
+**Backend** : `mvn test` = 122 tests, 0 échec, 4 ignorés (Testcontainers). **Frontend** :
 `npm run lint`, `npm test` (Vitest, 27 tests : client HTTP et rafraîchissement de jeton,
 erreurs, règles de paiement, validation) et `npm run build` passent ; les trois tournent en CI.
 
@@ -129,6 +129,16 @@ Comptes de test en production : `+22997000322` (conducteur), `+22997000321` (pas
 Il n'existe **plus aucun mode démonstration** : `api/demo.ts` et `api/resilient.ts` ont été
 supprimés, chaque hook appelle l'API et chaque écran affiche un état d'erreur avec réessai.
 Audit de départ dans `docs/AUDIT-FONCTIONNEL.md`.
+
+**Audit complet du 2026-09-05** : `docs/AUDIT-COMPLET.md` (351 constats, scores avant
+correction, plan en 8 phases) et son backlog `docs/AUDIT-COMPLET.constats.json`. **Phase 0
+(sécurisation immédiate) livrée le 2026-09-05** : journaux sans codes ni identifiants,
+timeouts HTTP sortants, clé JWT sans repli, refresh token refusé comme jeton d accès,
+rate limiting par IP réelle (X-Real-IP), suppression de la connexion par mot de passe
+(`/auth/register`, `/auth/login` n existent plus : parcours OTP seul), compteur OTP
+persistant, CORS sans credentials et restreint en production, Swagger et actuator fermés,
+HSTS, arrêt gracieux, cron de sauvegarde installé par le déploiement, exercice de
+restauration consigné dans `docs/EXPLOITATION.md`. Phases 1 à 7 : voir le plan de l audit.
 
 ## Commandes
 

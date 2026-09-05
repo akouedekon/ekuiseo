@@ -70,6 +70,14 @@ fi
 log "Construction et demarrage (Caddy sur 127.0.0.1:$PORT, derriere le nginx de l'hote)"
 docker compose -f docker-compose.prod.yml -f docker-compose.vps.yml up -d --build --remove-orphans
 
+# Caddyfile.proxied est monte en bind sur un FICHIER : quand git le remplace (nouvel
+# inode), le conteneur garde l'ancienne version et `caddy reload` relit... l'ancienne.
+# On recree donc Caddy si sa configuration a change (coupure < 2 s, healthcheck actif).
+if ! docker exec ekuiseo-caddy cat /etc/caddy/Caddyfile 2>/dev/null | cmp -s - Caddyfile.proxied; then
+  log "Caddyfile.proxied a change : recreation du conteneur Caddy"
+  docker compose -f docker-compose.prod.yml -f docker-compose.vps.yml up -d --force-recreate --no-deps caddy
+fi
+
 log "Attente de l'API (sonde JSON /actuator/health via Caddy, puis un endpoint metier)"
 for i in $(seq 1 40); do
   health="$(curl -sS -o /dev/null -w '%{http_code} %{content_type}' "http://127.0.0.1:$PORT/actuator/health" 2>/dev/null || true)"

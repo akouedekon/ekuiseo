@@ -96,7 +96,7 @@ if [[ "$DUMP_SIZE" -lt 1000 ]]; then
 fi
 
 # Le dump doit etre lisible par pg_restore (en-tete custom valide) avant d'etre conserve.
-if ! docker compose -f "$COMPOSE_FILE" exec -T postgis pg_restore --list /dev/stdin < "$TMP_PATH" >/dev/null 2>&1; then
+if ! docker compose -f "$COMPOSE_FILE" exec -T postgis pg_restore --list < "$TMP_PATH" >/dev/null 2>&1; then
   rm -f "$TMP_PATH"
   die "pg_restore ne parvient pas a lire la sauvegarde produite : fichier rejete."
 fi
