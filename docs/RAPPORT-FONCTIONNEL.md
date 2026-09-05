@@ -13,7 +13,7 @@ retour utilisateur, puis **rechargement de la page** pour vérifier la persistan
 
 | Parcours | Vérification |
 |---|---|
-| Inscription par OTP | Champs invalides refusés (prénom, nom, numéro, e-mail) ; compte créé (`POST /auth/otp/register`), code SMS journalisé, code faux → « Code OTP incorrect », code juste → session ouverte, profil en base (`role: USER`, `phoneVerified: true`). Numéro déjà inscrit → 409 affiché sur le champ. |
+| Inscription par OTP | Champs invalides refusés (prénom, nom, numéro, e-mail) ; compte créé (`POST /auth/otp/register`), code envoyé par e-mail (journalisé en mode `log`), code faux → « Code OTP incorrect », code juste → session ouverte, profil en base (`role: USER`, `emailVerified: true`). Numéro déjà inscrit → 409 affiché sur le champ. |
 | Connexion OTP, `?next=` | Retour sur l'écran demandé après connexion ; seuls les chemins internes sont acceptés. |
 | Session expirée | Jetons invalides → 401 → rafraîchissement refusé → jetons effacés, message « Votre session a expiré », redirection `/login?next=`. |
 | Rôle et permissions | Compte USER sur `/admin` → écran « Accès réservé » sans charger le module ; API `/admin/**` → **403 RFC 7807** (était 401 : corrigé). Sans jeton → 401. Compte suspendu → OTP refusé (« Compte suspendu ») et jeton existant rejeté à la requête suivante. |
@@ -89,7 +89,8 @@ retour utilisateur, puis **rechargement de la page** pour vérifier la persistan
 | Photo de la pièce d'identité et photos de profil / véhicule | Aucun stockage de fichiers côté backend | Le modérateur valide sur déclaration (type + numéro) ; l'écran le dit explicitement | Stockage objet (S3 compatible) + endpoint multipart + URL signée pour l'aperçu admin |
 | Révocation du jeton de rafraîchissement à la déconnexion | JWT sans état | Un jeton volé reste valable jusqu'à expiration (30 jours) | Table de jetons de rafraîchissement ou liste de révocation |
 | Messages jamais marqués « lus » | Aucun endpoint | Le compteur de non-lus ne se vide pas | `POST /bookings/{id}/messages/read` |
-| SMS réels | `SMS_MODE=log` en production : les codes OTP sont dans les journaux du backend | **Bloquant avant ouverture au public** | Choisir un fournisseur et passer `SMS_MODE=http` |
+| E-mails réels | Les codes de connexion partent par e-mail ; tant que `MAIL_MODE=log`, ils restent dans les journaux du backend | **Bloquant avant ouverture au public** | Renseigner un relais SMTP (Brevo gratuit ou Gmail) et passer `MAIL_MODE=smtp` |
+| SMS réels | `SMS_MODE=log` : les notifications critiques (confirmation, annulation, rappel) ne partent pas | Gênant, non bloquant : l in-app couvre l essentiel | Fournisseur SMS (`SMS_MODE=http`) quand un compte sera ouvert |
 | Webhook Kkiapay | Aucun webhook reçu pendant les tests (URL non déclarée ou sandbox muet) | La confirmation immédiate couvre le cas courant ; un navigateur fermé avant la confirmation dépend du webhook | Déclarer `https://ekuiseo.com/api/v1/payments/kkiapay/webhook` dans le tableau de bord Kkiapay |
 | Numéro Kkiapay en bac à sable | Le sandbox n'accepte que ses numéros de test | Sans effet en production | — |
 | Clé MapTiler dans le bundle | Toute variable `VITE_*` est publique | Quota consommable par un tiers | Restreindre la clé au domaine côté MapTiler |

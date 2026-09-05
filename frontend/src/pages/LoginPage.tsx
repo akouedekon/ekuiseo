@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { ArrowLeft, Mail, MessageSquareLock, Phone, ShieldCheck, UserRound } from 'lucide-react'
+import { ArrowLeft, Mail, MailCheck, MessageSquareLock, Phone, ShieldCheck, UserRound } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
@@ -10,11 +10,12 @@ import { OtpInput } from '@/components/ui/otp-input'
 import { PageContainer } from '@/components/layout/PageContainer'
 import { Logo } from '@/components/layout/Logo'
 import { ApiError } from '@/api/client'
+import type { OtpRequestResponse } from '@/api/types'
 import { useRegisterOtp, useRequestOtp, useVerifyOtp } from '@/hooks/useAuth'
 import { useCountdown } from '@/hooks/useNetwork'
 import { describeError } from '@/lib/errors'
 import { formatCountdown, formatPhone } from '@/lib/format'
-import { optionalEmailSchema, phoneSchema } from '@/lib/validation'
+import { emailSchema, phoneSchema } from '@/lib/validation'
 
 const RESEND_DELAY_MS = 45_000
 
@@ -25,9 +26,10 @@ function safeNext(value: string | null): string {
 }
 
 /**
- * Connexion et inscription par telephone + code OTP. Pas de mot de passe :
- * le numero est l'identite. L'inscription demande en plus prenom et nom
- * (obligatoires cote serveur) et un e-mail facultatif (recus de paiement).
+ * Connexion et inscription par telephone + code a 6 chiffres. Pas de mot de passe :
+ * le numero est l'identifiant, le code part a l'adresse e-mail du compte (SMS en
+ * repli si le serveur l'a configure). L'inscription demande prenom, nom et e-mail,
+ * tous obligatoires cote serveur.
  */
 export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
   const navigate = useNavigate()
@@ -43,6 +45,8 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
   const [errors, setErrors] = useState<{ phone?: string; firstName?: string; lastName?: string; email?: string }>({})
   const [codeError, setCodeError] = useState<string>()
   const [resendAt, setResendAt] = useState<number | null>(null)
+  /** Ou le dernier code est parti (canal + destination masquee), pour guider l'utilisateur. */
+  const [delivery, setDelivery] = useState<OtpRequestResponse | null>(null)
 
   const requestOtp = useRequestOtp()
   const registerOtp = useRegisterOtp()
@@ -65,17 +69,40 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
     if (mode === 'register') {
       if (!firstName.trim()) next.firstName = 'Indiquez votre prénom'
       if (!lastName.trim()) next.lastName = 'Indiquez votre nom'
-      const parsedEmail = optionalEmailSchema.safeParse(email.trim())
+      const parsedEmail = emailSchema.safeParse(email)
       if (!parsedEmail.success) next.email = parsedEmail.error.issues[0]?.message ?? 'Adresse e-mail invalide'
     }
     setErrors(next)
     return Object.keys(next).length === 0
   }
 
-  const onCodeSent = () => {
+  const onCodeSent = (sent: OtpRequestResponse) => {
+    setDelivery(sent)
     setResendAt(Date.now() + RESEND_DELAY_MS)
     setStep('code')
-    toast.success('Code envoyé', { description: `Un SMS vient de partir vers le ${formatPhone(phone)}.` })
+    toast.success('Code envoyé', {
+      description:
+        sent.channel === 'EMAIL'
+          ? `Un e-mail vient de partir vers ${sent.destination}.`
+          : `Un SMS vient de partir vers le ${formatPhone(phone)}.`,
+    })
+  }
+
+  /** Erreurs metier de la demande de code, affichees sous le champ plutot qu'en toast. */
+  const onSendError = (error: unknown, fallback: string) => {
+    if (error instanceof ApiError && error.status === 404) {
+      setErrors({ phone: 'Aucun compte pour ce numéro : créez-en un.' })
+      return
+    }
+    if (error instanceof ApiError && error.status === 401) {
+      setErrors({ phone: 'Ce compte est suspendu. Contactez le support Ekuiseo.' })
+      return
+    }
+    if (error instanceof ApiError && error.status === 400) {
+      setErrors({ phone: error.message })
+      return
+    }
+    toast.error(describeError(error, fallback))
   }
 
   const sendCode = (event?: React.FormEvent) => {
@@ -83,12 +110,17 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
     if (!validate()) return
     if (mode === 'register' && step === 'phone') {
       registerOtp.mutate(
-        { phone, firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim() || undefined },
+        { phone, firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim() },
         {
           onSuccess: onCodeSent,
           onError: (error) => {
             if (error instanceof ApiError && error.status === 409) {
-              setErrors({ phone: 'Ce numéro a déjà un compte : connectez-vous.' })
+              const onEmail = /e-mail/i.test(error.message)
+              setErrors(
+                onEmail
+                  ? { email: 'Cette adresse a déjà un compte : connectez-vous.' }
+                  : { phone: 'Ce numéro a déjà un compte : connectez-vous.' },
+              )
               return
             }
             toast.error(describeError(error, "L'inscription n'a pas abouti. Réessayez."))
@@ -99,7 +131,7 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
     }
     requestOtp.mutate(phone, {
       onSuccess: onCodeSent,
-      onError: (error) => toast.error(describeError(error, "Le code n'a pas pu être envoyé. Réessayez.")),
+      onError: (error) => onSendError(error, "Le code n'a pas pu être envoyé. Réessayez."),
     })
   }
 
@@ -130,6 +162,11 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
     )
   }
 
+  const sentTo =
+    delivery?.channel === 'SMS'
+      ? `Code envoyé par SMS au ${formatPhone(phone)}`
+      : `Code envoyé par e-mail à ${delivery?.destination ?? 'votre adresse'}`
+
   return (
     <PageContainer width="sm" className="flex min-h-[calc(100dvh-8rem)] flex-col justify-center">
       <div className="mb-8 text-center">
@@ -140,9 +177,9 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
         <p className="mt-1.5 text-[14px] text-muted">
           {step === 'phone'
             ? mode === 'register'
-              ? 'Quelques informations, puis un code par SMS pour confirmer votre numéro.'
-              : 'Votre numéro suffit : nous vous envoyons un code par SMS.'
-            : `Code envoyé au ${formatPhone(phone)}`}
+              ? 'Quelques informations, puis un code envoyé sur votre e-mail pour ouvrir la session.'
+              : "Votre numéro suffit : nous envoyons un code sur l'e-mail de votre compte."
+            : sentTo}
         </p>
       </div>
 
@@ -195,14 +232,14 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
                 />
                 {mode === 'register' ? (
                   <Input
-                    label="E-mail (facultatif)"
+                    label="E-mail"
                     type="email"
                     inputMode="email"
                     autoComplete="email"
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
                     error={errors.email}
-                    hint="Pour recevoir vos reçus de paiement."
+                    hint="Le code de connexion est envoyé à cette adresse."
                     leading={<Mail />}
                     placeholder="vous@exemple.com"
                   />
@@ -257,6 +294,13 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
                 Saisissez le code à 6 chiffres
               </div>
 
+              {delivery?.channel !== 'SMS' ? (
+                <p className="mb-4 flex items-start gap-2 rounded-lg bg-[var(--surface-2)] p-3 text-[12px] leading-relaxed text-muted">
+                  <MailCheck className="mt-0.5 size-4 shrink-0 text-[var(--indigo)]" aria-hidden />
+                  L'e-mail peut mettre une minute à arriver. Vérifiez aussi le dossier « Spam » ou « Indésirables ».
+                </p>
+              ) : null}
+
               <OtpInput
                 value={code}
                 onChange={(value) => {
@@ -285,7 +329,7 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
                 Valider
               </Button>
 
-              {/* Renvoi avec minuterie : evite le matraquage de l'API SMS. */}
+              {/* Renvoi avec minuterie : evite le matraquage du fournisseur d'e-mail ou de SMS. */}
               <div className="mt-4 text-center text-[13px]">
                 {resendIn > 0 ? (
                   <span className="tnum text-muted">Renvoyer le code dans {formatCountdown(resendIn)}</span>
@@ -327,7 +371,7 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
   )
 }
 
-/** Inscription : memes etapes, avec prenom, nom et e-mail facultatif. */
+/** Inscription : memes etapes, avec prenom, nom et e-mail (obligatoire). */
 export function RegisterPage() {
   return <LoginPage mode="register" />
 }

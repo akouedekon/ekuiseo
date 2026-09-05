@@ -11,7 +11,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import java.time.Instant;
 import java.util.UUID;
 
-/** Code a usage unique envoye par SMS pour verifier un numero de telephone. */
+/** Code a usage unique envoye par e-mail (ou SMS) pour ouvrir une session ; le numero de telephone reste l identifiant du compte. */
 @Entity
 @Table(name = "otp_codes")
 @Getter
@@ -46,6 +46,12 @@ public class OtpCode {
     @Column(nullable = false)
     @Builder.Default
     private int attempts = 0;
+
+    /** Canal par lequel ce code est parti : EMAIL ou SMS (V10). Determine le drapeau
+     * pose a la verification (email_verified ou phone_verified). */
+    @Column(nullable = false, length = 10)
+    @Builder.Default
+    private String channel = "SMS";
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)

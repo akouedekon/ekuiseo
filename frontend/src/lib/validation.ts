@@ -21,6 +21,13 @@ export const phoneSchema = z
   .refine((value) => phoneDigits(value).length >= PHONE_MIN_DIGITS, 'Numéro de téléphone incomplet')
   .refine((value) => phoneDigits(value).length <= PHONE_MAX_DIGITS, 'Numéro de téléphone trop long')
 
+/** E-mail obligatoire (inscription : le code de connexion y est envoye). */
+export const emailSchema = z
+  .string()
+  .trim()
+  .min(1, 'Indiquez votre adresse e-mail : le code de connexion y sera envoyé')
+  .email('Adresse e-mail invalide')
+
 /** E-mail facultatif : vide accepte, sinon doit etre valide. */
 export const optionalEmailSchema = z.union([z.literal(''), z.string().trim().email('Adresse e-mail invalide')])
 

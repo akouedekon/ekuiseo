@@ -93,13 +93,22 @@ Au minimum, renseignez et **changez les valeurs par défaut** de :
   — au moins les clés de test pour commencer (voir le tableau de bord Kkiapay) ; sans
   `KKIAPAY_MODE=http` explicite, le backend simule un paiement toujours réussi sans
   jamais appeler Kkiapay (mode `stub`, voir `.env.example`)
-- `SMS_MODE=http` et `SMS_PROVIDER=smspartner` (`SMSPARTNER_API_KEY`, `SMSPARTNER_SENDER`,
-  inscription libre-service sans dossier d'entreprise, SMS offerts, paiement carte ou PayPal),
+- `MAIL_MODE=smtp` avec `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`,
+  `MAIL_FROM` — **c est le canal des codes de connexion** : ils partent à l adresse e-mail du
+  compte (obligatoire à l inscription). Tout relais SMTP authentifié convient : Brevo
+  (gratuit, 300 e-mails/jour, sans dossier d entreprise : `smtp-relay.brevo.com:587`,
+  identifiant + clé SMTP depuis « SMTP & API »), ou Gmail avec un mot de passe
+  d application (`smtp.gmail.com:587`). Sans cela (mode `log` par défaut), les codes sont
+  seulement journalisés (`docker logs ekuiseo-backend | grep MAIL-STUB`). Vérifier après
+  activation : `docker logs ekuiseo-backend | grep -i mail` ne doit montrer aucune erreur
+  d authentification, et une demande de code doit arriver dans la boîte (dossier Spam compris).
+- Facultatif, SMS : `SMS_MODE=http` et `SMS_PROVIDER=smspartner` (`SMSPARTNER_API_KEY`, `SMSPARTNER_SENDER`,
+  inscription libre-service sans dossier d entreprise, SMS offerts, paiement carte ou PayPal),
   ou `SMS_PROVIDER=twilio` (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`,
   `TWILIO_FROM`) ou `SMS_PROVIDER=africastalking` (`AT_USERNAME`, `AT_API_KEY`,
-  `AT_SENDER_ID`, `AT_SANDBOX`) — sans cela (mode `log` par défaut), les codes OTP sont
-  uniquement journalisés dans les logs du backend, ce qui est **inacceptable en
-  production** (voir `docs/CONFORMITE.md` et `docs/LANCEMENT.md`). Activation sur le
+  `AT_SENDER_ID`, `AT_SANDBOX`) — le SMS ne sert plus qu aux notifications critiques
+  (réservation confirmée, annulation, rappel) et, si `OTP_SMS_FALLBACK=true`, aux codes des
+  comptes sans adresse e-mail. Activation sur le
   VPS : renseigner les variables dans `/opt/ekuiseo/.env` puis
   `docker compose -f docker-compose.prod.yml -f docker-compose.vps.yml up -d backend` ;
   le backend refuse de démarrer si la configuration du fournisseur est incomplète.

@@ -15,6 +15,7 @@ import java.util.UUID;
 public interface UserRepository extends JpaRepository<User, UUID> {
     Optional<User> findByPhone(String phone);
     boolean existsByPhone(String phone);
+    boolean existsByEmailIgnoreCase(String email);
     Page<User> findByStatus(UserStatus status, Pageable pageable);
     long countByCreatedAtBetween(Instant from, Instant to);
 

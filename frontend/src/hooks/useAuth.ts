@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSyncExternalStore } from 'react'
 import { apiClient, authStore } from '@/api/client'
 import { clearPersistedCache } from '@/lib/queryClient'
-import type { AuthResponse, UserResponse } from '@/api/types'
+import type { AuthResponse, OtpRequestResponse, UserResponse } from '@/api/types'
 
 interface OtpVerifyInput {
   phone: string
@@ -13,7 +13,8 @@ export interface OtpRegisterInput {
   phone: string
   firstName: string
   lastName: string
-  email?: string
+  /** Obligatoire : le code de connexion y est envoye. */
+  email: string
 }
 
 function persistAuth(queryClient: ReturnType<typeof useQueryClient>, data: AuthResponse) {
@@ -45,22 +46,25 @@ export function useMe() {
   })
 }
 
-/** POST /api/v1/auth/otp/request : envoie le code SMS (compte existant ou non). */
+/**
+ * POST /api/v1/auth/otp/request : envoie le code de connexion a l e-mail du compte
+ * (ou par SMS en repli) et indique ou il est parti. 404 si le numero est inconnu.
+ */
 export function useRequestOtp() {
   return useMutation({
-    mutationFn: (phone: string) => apiClient.post<void>('/api/v1/auth/otp/request', { phone }, { auth: false }),
+    mutationFn: (phone: string) => apiClient.post<OtpRequestResponse>('/api/v1/auth/otp/request', { phone }, { auth: false }),
   })
 }
 
 /**
  * POST /api/v1/auth/otp/register : cree le compte (prenom, nom, e-mail
- * facultatif) puis envoie le code SMS. La session n'est ouverte qu'a la
+ * obligatoire) puis envoie le code de connexion a cette adresse. La session n'est ouverte qu'a la
  * verification du code, comme pour une connexion.
  */
 export function useRegisterOtp() {
   return useMutation({
     mutationFn: (input: OtpRegisterInput) =>
-      apiClient.post<void>('/api/v1/auth/otp/register', input, { auth: false }),
+      apiClient.post<OtpRequestResponse>('/api/v1/auth/otp/register', input, { auth: false }),
   })
 }
 

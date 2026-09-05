@@ -62,6 +62,11 @@ public class User {
     @Builder.Default
     private boolean phoneVerified = false;
 
+    /** L adresse e-mail a recu et valide un code de connexion (V10). */
+    @Column(name = "email_verified", nullable = false)
+    @Builder.Default
+    private boolean emailVerified = false;
+
     @Column(name = "identity_verified", nullable = false)
     @Builder.Default
     private boolean identityVerified = false;

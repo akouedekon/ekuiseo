@@ -48,6 +48,12 @@ export function AccountHeaderCard({
       </div>
 
       <div className="mt-3 flex flex-wrap gap-1.5">
+        {user.emailVerified ? (
+          <Badge tone="success">
+            <Check aria-hidden />
+            E-mail confirmé
+          </Badge>
+        ) : null}
         {user.phoneVerified ? (
           <Badge tone="success">
             <Check aria-hidden />

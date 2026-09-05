@@ -45,9 +45,20 @@ export interface UserResponse {
   ratingAvg: number
   ratingCount: number
   phoneVerified: boolean
+  /** L adresse e-mail a recu et valide un code de connexion. */
+  emailVerified: boolean
   identityVerified: boolean
   /** USER par defaut ; ADMIN ouvre le back-office (/api/v1/admin/**). */
   role: 'USER' | 'ADMIN'
+}
+
+/**
+ * Reponse de POST /auth/otp/request et /auth/otp/register : ou le code est parti.
+ * `destination` est masquee (af***@example.com).
+ */
+export interface OtpRequestResponse {
+  channel: 'EMAIL' | 'SMS'
+  destination: string
 }
 
 export interface AuthResponse {

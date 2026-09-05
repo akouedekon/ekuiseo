@@ -4,6 +4,7 @@ import bj.ekuiseo.api.dto.auth.AuthResponse;
 import bj.ekuiseo.api.dto.auth.LoginRequest;
 import bj.ekuiseo.api.dto.auth.OtpRegisterRequest;
 import bj.ekuiseo.api.dto.auth.OtpRequestRequest;
+import bj.ekuiseo.api.dto.auth.OtpRequestResponse;
 import bj.ekuiseo.api.dto.auth.OtpVerifyRequest;
 import bj.ekuiseo.api.dto.auth.RefreshRequest;
 import bj.ekuiseo.api.dto.auth.RegisterRequest;
@@ -37,21 +38,19 @@ public class AuthController {
         return ResponseEntity.status(HttpStatus.CREATED).body(authService.register(req));
     }
 
-    @Operation(summary = "Inscription par OTP", description = "Cree le compte (prenom, nom, e-mail facultatif) sans mot de passe et envoie le code SMS. La session s'ouvre ensuite via /otp/verify. 409 si le numero est deja inscrit.")
+    @Operation(summary = "Inscription par OTP", description = "Cree le compte (prenom, nom, e-mail obligatoire) sans mot de passe et envoie le code de connexion a l adresse e-mail. Renvoie le canal et la destination masquee. La session s ouvre ensuite via /otp/verify. 409 si le numero ou l e-mail est deja inscrit.")
     @PostMapping("/otp/register")
-    public ResponseEntity<Void> registerWithOtp(@Valid @RequestBody OtpRegisterRequest req) {
-        authService.registerWithOtp(req);
-        return ResponseEntity.accepted().build();
+    public ResponseEntity<OtpRequestResponse> registerWithOtp(@Valid @RequestBody OtpRegisterRequest req) {
+        return ResponseEntity.accepted().body(authService.registerWithOtp(req));
     }
 
-    @Operation(summary = "Demander un code OTP", description = "Envoie un code a 6 chiffres par SMS, valable 5 minutes. Limite a 3 demandes/10 min par numero (429 au-dela).")
+    @Operation(summary = "Demander un code OTP", description = "Envoie un code a 6 chiffres a l adresse e-mail du compte (SMS en repli si configure), valable 5 minutes. Renvoie le canal et la destination masquee. 404 si le numero est inconnu, 401 si le compte est suspendu, 429 au-dela de 3 demandes/10 min par numero.")
     @PostMapping("/otp/request")
-    public ResponseEntity<Void> requestOtp(@Valid @RequestBody OtpRequestRequest req) {
-        authService.requestOtp(req);
-        return ResponseEntity.accepted().build();
+    public ResponseEntity<OtpRequestResponse> requestOtp(@Valid @RequestBody OtpRequestRequest req) {
+        return ResponseEntity.accepted().body(authService.requestOtp(req));
     }
 
-    @Operation(summary = "Verifier un code OTP", description = "Confirme le numero de telephone. Le code est invalide au-dela de 5 tentatives incorrectes (configurable).")
+    @Operation(summary = "Verifier un code OTP", description = "Valide le code et ouvre la session (marque l e-mail ou le numero comme verifie selon le canal). Le code est invalide au-dela de 5 tentatives incorrectes (configurable).")
     @PostMapping("/otp/verify")
     public AuthResponse verifyOtp(@Valid @RequestBody OtpVerifyRequest req) {
         return authService.verifyOtp(req);

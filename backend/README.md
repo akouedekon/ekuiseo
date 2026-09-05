@@ -144,7 +144,7 @@ Le front (`frontend/src/api/extended.ts`, `types.ts`, hooks) appelait des endpoi
 | `GET /api/v1/bookings/{id}?expand=trip,paymentPlan` | Idem, un seul élément (`BookingDetailResponse`). |
 | `GET /api/v1/trips/{id}/stops` | Arrêts intermédiaires avec prix par tronçon depuis l'origine. Même règle de visibilité que `GET /api/v1/trips/{id}` (public si `PUBLISHED`, 404 sinon pour un tiers). |
 | `POST /api/v1/bookings/{id}/payments/deposit` | Initie l'acompte mobile money pour cette réservation ; renvoie la même charge utile que `POST /api/v1/payments/kkiapay/initiate` (conservé, devient l'alias historique). |
-| `POST /api/v1/auth/otp/register` | Inscription sans mot de passe : crée le compte (prénom, nom, e-mail facultatif) avec un mot de passe aléatoire inutilisable et envoie le code SMS ; 202, la session s'ouvre ensuite via `/otp/verify`. 409 si le numéro existe. Un compte suspendu est refusé à la vérification OTP, au rafraîchissement **et à chaque requête** (filtre JWT). |
+| `POST /api/v1/auth/otp/register` | Inscription sans mot de passe : crée le compte (prénom, nom, e-mail **obligatoire**) avec un mot de passe aléatoire inutilisable et envoie le code de connexion à l e-mail ; 202 avec `{channel, destination}` (destination masquée), la session s ouvre ensuite via `/otp/verify`. 409 si le numéro ou l e-mail existe déjà. `POST /auth/otp/request` renvoie la même réponse, 404 si le numéro est inconnu. Un compte suspendu est refusé à la vérification OTP, au rafraîchissement **et à chaque requête** (filtre JWT). |
 | `GET /api/v1/bookings` (champ `reviewedByMe`) | Vrai si le passager a déjà noté le conducteur de ce trajet : le front n'affiche alors plus « Noter le conducteur ». |
 | `POST /api/v1/trips/{id}/bookings`, `/booking-quote` (tarif par tronçon) | Avec `dropoffStopId`, le prix unitaire est celui de l'arrêt (`trip_stops.price_from_origin`), pas celui du trajet complet ; un arrêt étranger au trajet renvoie 400. |
 | Réponses de sécurité | 401 (non authentifié) et 403 (rôle insuffisant) sont écrits directement en RFC 7807 par `SecurityConfig` ; le dispatch `/error` de Tomcat est autorisé, sinon un 403 ressortait en 401 anonyme. `CORS_ALLOWED_ORIGINS` (liste, `*` par défaut) remplace l'origine `*` en dur. |
@@ -215,6 +215,8 @@ Toutes ont une valeur par défaut sûre pour le développement (voir `applicatio
 
 | Variable | Défaut dev | Rôle |
 |---|---|---|
+| `MAIL_MODE` | `log` | `log` = e-mails journalisés (`[MAIL-STUB]`) ; `smtp` = envoi réel via `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_FROM` (Brevo, Gmail avec mot de passe d application, tout relais SMTP). Voir `service/mail/MailConfig`. |
+| `OTP_CHANNEL` / `OTP_SMS_FALLBACK` | `email` / `false` | canal des codes de connexion ; en `email`, un compte sans adresse reçoit un 400 explicite sauf si le repli SMS est activé. Voir `OtpDeliveryService`. |
 | `SMS_MODE` / `SMS_PROVIDER` | `log` / `generic` | `http` + `smspartner` (`SMSPARTNER_API_KEY`, `SMSPARTNER_SENDER`, `SMSPARTNER_SANDBOX`), `twilio` (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`) ou `africastalking` (`AT_USERNAME`, `AT_API_KEY`, `AT_SENDER_ID`, `AT_SANDBOX`) pour envoyer de vrais SMS ; `generic` = URL + cle (`SMS_HTTP_URL`, `SMS_PROVIDER_KEY`). Voir `service/sms/SmsConfig`. |
 | `KKIAPAY_MODE` | `stub` | `stub` = aucun paiement réel (dev/tests) ; `http` = appels réels à l'API Kkiapay |
 | `KKIAPAY_PUBLIC_KEY` / `KKIAPAY_PRIVATE_KEY` / `KKIAPAY_SECRET` | vide | requis si `KKIAPAY_MODE=http` |
@@ -245,7 +247,7 @@ Toutes ont une valeur par défaut sûre pour le développement (voir `applicatio
    - 6bis. Annulation par le conducteur : cascade complète (voir §3, point 6).
    - 6ter. Un trajet `DRAFT` n'est visible que par son conducteur.
 7. Annulation par le passager : remboursement intégral si > 24h avant le départ, sinon selon le barème de `CancellationPolicy` (retenue partielle) ; rien si le trajet est déjà parti.
-8. OTP : code à 6 chiffres, expire après **5 min**, **5 tentatives** incorrectes maximum avant invalidation, **3 demandes / 10 min / numéro**.
+8. OTP : code à 6 chiffres envoyé par e-mail (SMS en repli configurable), expire après **5 min**, **5 tentatives** incorrectes maximum avant invalidation, **3 demandes / 10 min / numéro**.
 9. Annulation conducteur tardive (< 24h avant le départ) : incrémente `lateCancellationsCount`, utilisé pour la modération des conducteurs peu fiables.
 10. Rappel automatique la veille du départ (SMS + in-app), envoyé une fois par trajet, scanné chaque heure sur une fenêtre glissante [23h, 25h).
 11. Abonnement conducteur : **2 000 FCFA/mois** (`ekuiseo.subscription.price-fcfa`) → commission ramenée à **0 %** pendant la période active.

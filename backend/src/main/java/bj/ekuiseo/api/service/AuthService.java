@@ -11,6 +11,7 @@ import bj.ekuiseo.api.dto.auth.AuthResponse;
 import bj.ekuiseo.api.dto.auth.LoginRequest;
 import bj.ekuiseo.api.dto.auth.OtpRegisterRequest;
 import bj.ekuiseo.api.dto.auth.OtpRequestRequest;
+import bj.ekuiseo.api.dto.auth.OtpRequestResponse;
 import bj.ekuiseo.api.dto.auth.OtpVerifyRequest;
 import bj.ekuiseo.api.dto.auth.RefreshRequest;
 import bj.ekuiseo.api.dto.auth.RegisterRequest;
@@ -36,20 +37,20 @@ public class AuthService {
     private final OtpCodeRepository otpCodeRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
-    private final SmsService smsService;
+    private final OtpDeliveryService otpDelivery;
     private final UserMapper userMapper;
     private final int otpMaxAttempts;
     private final SecureRandom random = new SecureRandom();
 
     public AuthService(UserRepository userRepository, OtpCodeRepository otpCodeRepository,
-                        PasswordEncoder passwordEncoder, JwtService jwtService, SmsService smsService,
+                        PasswordEncoder passwordEncoder, JwtService jwtService, OtpDeliveryService otpDelivery,
                         UserMapper userMapper,
                         @Value("${ekuiseo.sms.otp.max-attempts:5}") int otpMaxAttempts) {
         this.userRepository = userRepository;
         this.otpCodeRepository = otpCodeRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
-        this.smsService = smsService;
+        this.otpDelivery = otpDelivery;
         this.userMapper = userMapper;
         this.otpMaxAttempts = otpMaxAttempts;
     }
@@ -73,16 +74,20 @@ public class AuthService {
 
     /**
      * Inscription par OTP (sans mot de passe) : cree le compte avec un mot de passe
-     * aleatoire inutilisable, puis envoie le code SMS. Aucun jeton n'est remis ici :
-     * seule la verification du code (donc la possession du numero) ouvre la session.
+     * aleatoire inutilisable, puis envoie le code a l adresse e-mail (obligatoire). Aucun
+     * jeton n est remis ici : seule la verification du code (donc l acces a la boite
+     * e-mail) ouvre la session.
      * Un numero deja inscrit renvoie 409, comme pour l'inscription classique.
      */
     @Transactional
-    public void registerWithOtp(OtpRegisterRequest req) {
+    public OtpRequestResponse registerWithOtp(OtpRegisterRequest req) {
         if (userRepository.existsByPhone(req.phone())) {
             throw new ConflictException("Un compte existe deja avec ce numero de telephone");
         }
-        String email = req.email() == null || req.email().isBlank() ? null : req.email().trim();
+        String email = req.email().trim();
+        if (userRepository.existsByEmailIgnoreCase(email)) {
+            throw new ConflictException("Un compte existe deja avec cette adresse e-mail");
+        }
         User user = User.builder()
                 .phone(req.phone())
                 .firstName(req.firstName().trim())
@@ -92,20 +97,41 @@ public class AuthService {
                 .status(UserStatus.ACTIVE)
                 .build();
         userRepository.save(user);
-        requestOtp(new OtpRequestRequest(req.phone()));
+        return sendCode(user);
     }
 
+    /**
+     * Demande de code pour un numero deja inscrit. Le code part a l adresse e-mail du
+     * compte (ou par SMS en repli, voir OtpDeliveryService). Un numero inconnu renvoie
+     * 404 : l interface propose alors l inscription. Un compte suspendu renvoie 401
+     * sans rien envoyer.
+     */
     @Transactional
-    public void requestOtp(OtpRequestRequest req) {
+    public OtpRequestResponse requestOtp(OtpRequestRequest req) {
+        User user = userRepository.findByPhone(req.phone())
+                .orElseThrow(() -> new NotFoundException("Aucun compte associe a ce numero, inscrivez-vous d abord"));
+        assertActive(user);
+        return sendCode(user);
+    }
+
+    /**
+     * Genere le code (6 chiffres, hache en base, 5 minutes), choisit le canal et l envoie.
+     * Le canal est memorise sur le code pour poser le bon drapeau a la verification.
+     * L envoi a lieu apres l ecriture du code : si le fournisseur echoue (503), la
+     * transaction est annulee et aucun code fantome ne reste en base.
+     */
+    private OtpRequestResponse sendCode(User user) {
+        OtpDeliveryService.Channel channel = otpDelivery.resolveChannel(user.getEmail());
         String code = String.format("%06d", random.nextInt(1_000_000));
         OtpCode otp = OtpCode.builder()
-                .phone(req.phone())
+                .phone(user.getPhone())
                 .codeHash(passwordEncoder.encode(code))
-                .purpose("VERIFY_PHONE")
+                .purpose("LOGIN")
+                .channel(channel.name())
                 .expiresAt(Instant.now().plus(5, ChronoUnit.MINUTES))
                 .build();
         otpCodeRepository.save(otp);
-        smsService.sendOtp(req.phone(), code);
+        return otpDelivery.deliver(user.getPhone(), user.getEmail(), code);
     }
 
     @Transactional
@@ -132,7 +158,11 @@ public class AuthService {
         User user = userRepository.findByPhone(req.phone())
                 .orElseThrow(() -> new NotFoundException("Aucun compte associe a ce numero, inscrivez-vous d'abord"));
         assertActive(user);
-        user.setPhoneVerified(true);
+        if ("EMAIL".equals(otp.getChannel())) {
+            user.setEmailVerified(true);
+        } else {
+            user.setPhoneVerified(true);
+        }
         userRepository.save(user);
         return tokensFor(user);
     }

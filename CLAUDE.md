@@ -79,7 +79,7 @@ GitHub Actions, cible de déploiement : VPS Hostinger.
   Classement par distance de détour, écart horaire et note du conducteur.
 - Erreurs HTTP en **RFC 7807** (`ProblemDetail`).
 - Migrations Flyway **numérotées à la suite**. Ne jamais modifier une migration déjà
-  écrite — V1 à V9 existent.
+  écrite — V1 à V10 existent.
 - Le front ne recalcule jamais un montant pour une réservation existante : il lit le
   `paymentPlan` renvoyé par l'API. Les estimations locales sont autorisées **avant**
   création, et doivent être affichées comme telles.
@@ -93,8 +93,8 @@ GitHub Actions, cible de déploiement : VPS Hostinger.
 Complet et cohérent de bout en bout : API, interface, back-office d'administration,
 chaîne de déploiement, jeu de démonstration, documentation d'exploitation.
 
-- `backend/` — 9 migrations. Kkiapay (initiation, webhook signé et
-  idempotent, vérification serveur, remboursements), OTP par SMS avec limitation de débit,
+- `backend/` — 10 migrations. Kkiapay (initiation, webhook signé et
+  idempotent, vérification serveur, remboursements), codes de connexion par e-mail (SMS en repli) avec limitation de débit,
   géocodage des villes béninoises en base, rôles et back-office, reversements, signalements,
   journal d'audit, alertes de recherche, abonnements, trace des recherches (`search_events`,
   V9) et indicateurs de liquidité (`/api/v1/admin/stats/liquidity`, export CSV).
@@ -250,7 +250,9 @@ s'interprète pas.
   Reste à valider sur un compte marchand réel (sandbox validée d'abord) : le nom exact
   des options du widget selon la version du script (`key` / `api_key`, les deux sont
   passés) et le format de `stateData` (objet ou chaîne, les deux sont acceptés).
-- Aucun fournisseur SMS réel n'est choisi (`SmsGateway` avec implémentation journalisée).
+- Les codes de connexion partent par e-mail (`MailGateway`, relais SMTP à renseigner via
+  `MAIL_MODE=smtp` ; journalisés sinon). Aucun fournisseur SMS réel n est choisi : le SMS
+  (`SmsGateway`) ne sert qu aux notifications critiques et au repli OTP optionnel.
 - Le téléversement de la photo de pièce d'identité n'est pas implémenté (stockage sécurisé
   à décider) ; seul l'état de la vérification existe.
 - Aucun fournisseur de tuiles cartographiques n'est câblé : `RouteMap` dessine un tracé

@@ -87,6 +87,13 @@ public class GlobalExceptionHandler {
                 "L'envoi du SMS est impossible pour l'instant, reessayez dans quelques minutes.", req);
     }
 
+    @ExceptionHandler(bj.ekuiseo.api.service.mail.MailDeliveryException.class)
+    public ProblemDetail handleMailUnavailable(bj.ekuiseo.api.service.mail.MailDeliveryException ex,
+                                               HttpServletRequest req) {
+        return build(HttpStatus.SERVICE_UNAVAILABLE, "mail-unavailable",
+                "L envoi de l e-mail est impossible pour l instant, reessayez dans quelques minutes.", req);
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ProblemDetail handleValidation(MethodArgumentNotValidException ex, HttpServletRequest req) {
         String detail = ex.getBindingResult().getFieldErrors().stream()

@@ -15,6 +15,19 @@ spring:
       hibernate:
         jdbc:
           time_zone: UTC
+  mail:
+    # Relais SMTP pour les codes de connexion (MAIL_MODE=smtp). Sans MAIL_HOST, aucun
+    # JavaMailSender n est cree et seul le mode log fonctionne.
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${MAIL_SMTP_AUTH:true}
+      mail.smtp.starttls.enable: ${MAIL_SMTP_STARTTLS:true}
+      mail.smtp.connectiontimeout: 10000
+      mail.smtp.timeout: 10000
+      mail.smtp.writetimeout: 10000
   flyway:
     enabled: true
     locations: classpath:db/migration
@@ -35,6 +48,11 @@ springdoc:
     path: /v3/api-docs
 
 management:
+  health:
+    mail:
+      # L indicateur mail tente une connexion SMTP a chaque /actuator/health : actif seulement
+      # en mode smtp reel, sinon un hote vide ferait passer l API en DOWN.
+      enabled: ${MAIL_HEALTH_ENABLED:false}
   endpoints:
     web:
       exposure:
@@ -111,6 +129,16 @@ ekuiseo:
       rate-limit:
         max-requests: ${OTP_RATE_LIMIT_MAX_REQUESTS:3}
         window-minutes: ${OTP_RATE_LIMIT_WINDOW_MINUTES:10}
+  mail:
+    # "log" (par defaut) : journalise l e-mail au lieu de l envoyer (dev/tests, code lisible
+    # dans les logs sous [MAIL-STUB]). "smtp" : envoi reel via spring.mail.* ci-dessus.
+    mode: ${MAIL_MODE:log}
+    from: ${MAIL_FROM:}
+  otp:
+    # Canal de livraison des codes de connexion : email (defaut) ou sms.
+    channel: ${OTP_CHANNEL:email}
+    # En canal email, un compte sans adresse recoit le code par SMS si true, sinon 400.
+    sms-fallback: ${OTP_SMS_FALLBACK:false}
   search-alert:
     radius-km: ${SEARCH_ALERT_RADIUS_KM:10}
   search-events:

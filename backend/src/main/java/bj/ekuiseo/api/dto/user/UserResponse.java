@@ -21,6 +21,7 @@ public record UserResponse(
         BigDecimal ratingAvg,
         int ratingCount,
         boolean phoneVerified,
+        boolean emailVerified,
         boolean identityVerified,
         Role role
 ) {
