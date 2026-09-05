@@ -5,7 +5,7 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public record RegisterRequest(
-        @NotBlank @Pattern(regexp = "^\\+[1-9][0-9]{7,14}$", message = "Format E.164 attendu, ex: +22997000000") String phone,
+        @NotBlank @Pattern(regexp = "^\\+[1-9][0-9]{7,14}$", message = "Format E.164 attendu, ex: +2290197000000") String phone,
         @NotBlank String firstName,
         @NotBlank String lastName,
         String email,

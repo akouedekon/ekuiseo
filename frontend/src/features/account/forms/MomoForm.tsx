@@ -46,7 +46,7 @@ export function MomoForm({
         autoComplete="tel"
         className="tnum"
         leading={<Phone />}
-        placeholder="+229 97 00 00 00"
+        placeholder="+229 01 97 00 00 00"
         hint="Le numéro doit être enregistré chez cet opérateur."
         error={errors.phone?.message}
         {...form.register('phone')}

@@ -457,7 +457,7 @@ export function BookingPage() {
                       : 'Vous recevrez une demande de confirmation sur ce numéro.'
                   }
                   leading={<Phone />}
-                  placeholder="+229 97 00 00 00"
+                  placeholder="+229 01 97 00 00 00"
                 />
               </div>
             </Card>

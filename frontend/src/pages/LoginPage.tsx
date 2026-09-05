@@ -225,9 +225,9 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
                   value={phone}
                   onChange={(event) => setPhone(event.target.value)}
                   error={errors.phone}
-                  hint="Bénin (+229), Togo, Nigéria acceptés."
+                  hint="Bénin : +229 suivi des 10 chiffres (01 …). Togo et Nigéria acceptés."
                   leading={<Phone />}
-                  placeholder="+229 97 00 00 00"
+                  placeholder="+229 01 97 00 00 00"
                   className="tnum text-[17px] font-semibold"
                 />
                 {mode === 'register' ? (
