@@ -75,12 +75,26 @@ export function TripDetailPage() {
   ]
   const full = data.seatsAvailable === 0
   const cancelled = data.status === 'CANCELLED'
+  // Un trajet parti (statut serveur ou heure locale depassee) ne se reserve plus (constat F035).
+  const departed =
+    data.status === 'ONGOING' ||
+    data.status === 'COMPLETED' ||
+    (data.status !== 'TEMPLATE' && new Date(data.departureAt).getTime() < Date.now())
+  const bookable = !full && !cancelled && !departed && data.status === 'PUBLISHED'
   // Regle metier n.8 : un conducteur ne reserve pas sur son propre trajet.
   const isOwnTrip = me.data?.id === data.driver.id
   const driverData = driver.data
   const reviewList = (reviews.data ?? []).slice(0, 4)
   const shareText = `${data.originLabel} → ${data.destLabel}, ${formatRelativeDay(data.departureAt).toLowerCase()} — ${formatFcfa(data.pricePerSeat)} par place sur Ekuiseo`
-  const primaryLabel = isOwnTrip ? 'Votre trajet' : full ? 'Complet' : cancelled ? 'Trajet annulé' : 'Réserver'
+  const primaryLabel = isOwnTrip
+    ? 'Votre trajet'
+    : cancelled
+      ? 'Trajet annulé'
+      : departed
+        ? 'Trajet déjà parti'
+        : full
+          ? 'Complet'
+          : 'Réserver'
 
   return (
     <>
@@ -105,6 +119,10 @@ export function TripDetailPage() {
             {cancelled ? (
               <Card className="border-[var(--vermillon)] bg-[var(--vermillon-soft)] p-4 text-[14px] font-medium text-[var(--vermillon)]">
                 Ce trajet a été annulé par le conducteur.
+              </Card>
+            ) : departed && !isOwnTrip ? (
+              <Card className="border-[var(--ocre)] bg-[var(--ocre-soft)] p-4 text-[14px] font-medium text-[var(--ocre-deep,var(--ocre))]">
+                Ce trajet est déjà parti. Cherchez un prochain départ sur le même axe.
               </Card>
             ) : null}
 
@@ -328,7 +346,7 @@ export function TripDetailPage() {
                       size="lg"
                       block
                       className="mt-4"
-                      disabled={full || cancelled}
+                      disabled={!bookable}
                       onClick={() => navigate(`/book/${data.id}`)}
                     >
                       {primaryLabel}
@@ -375,10 +393,10 @@ export function TripDetailPage() {
             <Button
               size="lg"
               className="flex-1 sm:ml-auto sm:flex-none sm:px-10"
-              disabled={full || cancelled}
+              disabled={!bookable}
               onClick={() => navigate(`/book/${data.id}`)}
             >
-              {full ? 'Complet' : cancelled ? 'Annulé' : 'Réserver'}
+              {cancelled ? 'Annulé' : departed ? 'Déjà parti' : full ? 'Complet' : 'Réserver'}
             </Button>
           )}
         </div>

@@ -121,7 +121,7 @@ class TripSearchIntegrationTest {
 
         Page<Trip> results = tripRepository.search(
                 COTONOU_LAT, COTONOU_LNG, PORTO_NOVO_LAT, PORTO_NOVO_LNG,
-                20_000, 1, null, null, null, PageRequest.of(0, 10));
+                20_000, 1, null, null, null, java.time.Instant.now(), PageRequest.of(0, 10));
 
         assertThat(results.getContent()).extracting(Trip::getId).containsExactly(matching.getId());
     }

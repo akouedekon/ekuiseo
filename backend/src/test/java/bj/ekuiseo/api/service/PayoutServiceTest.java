@@ -46,7 +46,7 @@ import static org.mockito.Mockito.when;
  */
 class PayoutServiceTest {
 
-    private static final List<BookingStatus> PAYABLE_STATUSES = List.of(BookingStatus.CONFIRMED, BookingStatus.COMPLETED);
+    private static final List<BookingStatus> PAYABLE_STATUSES = List.of(BookingStatus.CONFIRMED, BookingStatus.COMPLETED, BookingStatus.NO_SHOW);
     private static final List<PaymentMethod> PAYABLE_METHODS = List.of(PaymentMethod.MOMO_DEPOSIT, PaymentMethod.MOMO_FULL);
 
     private final BookingRepository bookingRepository = mock(BookingRepository.class);

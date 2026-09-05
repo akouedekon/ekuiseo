@@ -4,8 +4,10 @@ import bj.ekuiseo.api.common.PhoneNumbers;
 import bj.ekuiseo.api.common.exception.BadRequestException;
 import bj.ekuiseo.api.common.exception.ConflictException;
 import bj.ekuiseo.api.common.exception.NotFoundException;
+import bj.ekuiseo.api.domain.Trip;
 import bj.ekuiseo.api.domain.User;
 import bj.ekuiseo.api.domain.Vehicle;
+import bj.ekuiseo.api.domain.enums.TripStatus;
 import bj.ekuiseo.api.domain.enums.UserStatus;
 import bj.ekuiseo.api.dto.admin.AdminUserResponse;
 import bj.ekuiseo.api.repository.BookingRepository;
@@ -13,6 +15,7 @@ import bj.ekuiseo.api.repository.TripRepository;
 import bj.ekuiseo.api.repository.UserRepository;
 import bj.ekuiseo.api.repository.VehicleRepository;
 import bj.ekuiseo.api.service.AuditService;
+import bj.ekuiseo.api.service.BookingService;
 import bj.ekuiseo.api.service.RefreshTokenService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -47,11 +50,14 @@ public class AdminUserService {
     private final BookingRepository bookingRepository;
     private final AuditService auditService;
     private final RefreshTokenService refreshTokenService;
+    private final BookingService bookingService;
 
     public AdminUserService(UserRepository userRepository, VehicleRepository vehicleRepository,
                              TripRepository tripRepository, BookingRepository bookingRepository,
-                             AuditService auditService, RefreshTokenService refreshTokenService) {
+                             AuditService auditService, RefreshTokenService refreshTokenService,
+                             BookingService bookingService) {
         this.refreshTokenService = refreshTokenService;
+        this.bookingService = bookingService;
         this.userRepository = userRepository;
         this.vehicleRepository = vehicleRepository;
         this.tripRepository = tripRepository;
@@ -71,9 +77,18 @@ public class AdminUserService {
         return page.getContent().stream().map(this::toResponse).toList();
     }
 
+    /**
+     * Suspension avec cascade (constat F039) : sessions revoquees, trajets a venir du
+     * conducteur annules (passagers rembourses et prevenus, sans annulation tardive
+     * comptee), navettes (modeles) fermees, et reservations actives du passager annulees
+     * avec remboursement integral. Le nombre d elements touches est journalise.
+     */
     @Transactional
     public AdminUserResponse suspend(UUID adminId, UUID userId, String reason) {
         User user = findUser(userId);
+        if (user.getStatus() == UserStatus.SUSPENDED) {
+            throw new ConflictException("Cet utilisateur est deja suspendu");
+        }
         user.setStatus(UserStatus.SUSPENDED);
         user.setSuspendedReason(reason);
         user.setSuspendedAt(Instant.now());
@@ -81,7 +96,25 @@ public class AdminUserService {
         // Plus aucune session ne doit se prolonger : le filtre JWT coupe les acces en cours
         // (statut verifie a chaque requete) et la revocation coupe les rafraichissements.
         refreshTokenService.revokeAll(userId);
-        auditService.log(adminId, "USER_SUSPENDED", "user", userId, Map.of("reason", reason));
+
+        List<Trip> upcoming = tripRepository.findByDriverIdAndStatusInAndDepartureAtAfter(userId,
+                List.of(TripStatus.PUBLISHED, TripStatus.FULL, TripStatus.DRAFT), Instant.now());
+        List<Trip> templates = tripRepository.findByRecurrenceRuleIsNotNullAndParentTripIdIsNullAndStatus(TripStatus.TEMPLATE)
+                .stream().filter(t -> t.getDriver().getId().equals(userId)).toList();
+        for (Trip trip : upcoming) {
+            trip.setStatus(TripStatus.CANCELLED);
+            tripRepository.save(trip);
+            bookingService.cascadeCancelForPlatform(trip, "SUSPENSION_CONDUCTEUR");
+        }
+        for (Trip template : templates) {
+            template.setStatus(TripStatus.CANCELLED);
+            tripRepository.save(template);
+        }
+        int bookingsCancelled = bookingService.cancelActiveBookingsForSuspendedPassenger(userId);
+
+        auditService.log(adminId, "USER_SUSPENDED", "user", userId, Map.of("reason", reason,
+                "tripsCancelled", upcoming.size(), "templatesClosed", templates.size(),
+                "bookingsCancelled", bookingsCancelled));
         return toResponse(user);
     }
 

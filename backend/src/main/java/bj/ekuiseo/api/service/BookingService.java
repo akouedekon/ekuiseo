@@ -1,5 +1,6 @@
 package bj.ekuiseo.api.service;
 
+import bj.ekuiseo.api.common.Tz;
 import bj.ekuiseo.api.common.FeePolicy;
 import bj.ekuiseo.api.common.exception.BadRequestException;
 import bj.ekuiseo.api.common.exception.ConflictException;
@@ -36,7 +37,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalTime;
-import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -104,9 +104,7 @@ public class BookingService {
     public BookingResponse createBooking(UUID tripId, UUID passengerId, CreateBookingRequest req) {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new NotFoundException("Trajet introuvable"));
-        if (trip.getStatus() != TripStatus.PUBLISHED) {
-            throw new ConflictException("Ce trajet n'accepte plus de reservations");
-        }
+        assertBookable(trip);
         if (trip.getDriver().getId().equals(passengerId)) {
             // Regle metier n.5 : un conducteur ne peut pas reserver son propre trajet.
             throw new ForbiddenException("Un conducteur ne peut pas reserver son propre trajet");
@@ -181,9 +179,7 @@ public class BookingService {
     public PaymentPlanResponse quote(UUID tripId, UUID requesterId, BookingQuoteRequest req) {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new NotFoundException("Trajet introuvable"));
-        if (trip.getStatus() != TripStatus.PUBLISHED) {
-            throw new ConflictException("Ce trajet n'accepte plus de reservations");
-        }
+        assertBookable(trip);
         if (trip.getDriver().getId().equals(requesterId)) {
             // Regle metier n.5 : un conducteur ne peut pas reserver son propre trajet.
             throw new ForbiddenException("Un conducteur ne peut pas reserver son propre trajet");
@@ -206,6 +202,23 @@ public class BookingService {
         return new PaymentPlanResponse(amounts.amount(), amounts.depositAmount(), amounts.balanceDueOnBoard(),
                 amounts.serviceFee(), method, "PENDING", depositDueAt,
                 (int) CancellationPolicy.FREE_CANCELLATION_WINDOW.toHours());
+    }
+
+    /**
+     * Un trajet est reservable s il est PUBLISHED (ni modele TEMPLATE, ni FULL, ni parti),
+     * que son depart est a venir et que son conducteur n est pas suspendu (constats
+     * F035/F039/F202). Partage par {@link #createBooking} et {@link #quote}.
+     */
+    private static void assertBookable(Trip trip) {
+        if (trip.getStatus() != TripStatus.PUBLISHED) {
+            throw new ConflictException("Ce trajet n accepte plus de reservations");
+        }
+        if (!Instant.now().isBefore(trip.getDepartureAt())) {
+            throw new ConflictException("Ce trajet est deja parti");
+        }
+        if (trip.getDriver().getStatus() != bj.ekuiseo.api.domain.enums.UserStatus.ACTIVE) {
+            throw new ConflictException("Ce conducteur n est plus disponible");
+        }
     }
 
     /**
@@ -369,9 +382,10 @@ public class BookingService {
             var trip = mostRecent.getTrip();
             Set<DayOfWeek> weekdays = EnumSet.noneOf(DayOfWeek.class);
             for (Booking b : bookings) {
-                weekdays.add(b.getTrip().getDepartureAt().atZone(ZoneOffset.UTC).getDayOfWeek());
+                weekdays.add(b.getTrip().getDepartureAt().atZone(Tz.BENIN).getDayOfWeek());
             }
-            LocalTime timeOfDay = trip.getDepartureAt().atZone(ZoneOffset.UTC).toLocalTime();
+            // Heure locale (Benin), formatee HH:mm pour l affichage (constat F415).
+            LocalTime timeOfDay = trip.getDepartureAt().atZone(Tz.BENIN).toLocalTime().withSecond(0).withNano(0);
             long matches = tripRepository.countByOriginLabelAndDestLabelAndStatusAndDepartureAtAfterAndSeatsAvailableGreaterThan(
                     trip.getOriginLabel(), trip.getDestLabel(), bj.ekuiseo.api.domain.enums.TripStatus.PUBLISHED, now, 0);
             var next = tripRepository.findFirstByOriginLabelAndDestLabelAndStatusAndDepartureAtAfterAndSeatsAvailableGreaterThanOrderByDepartureAtAsc(
@@ -387,7 +401,13 @@ public class BookingService {
         return result;
     }
 
-    /** Annulation par le passager, avec application de la politique de remboursement (regle n.7). */
+    /**
+     * Annulation par le passager, avec application de la politique de remboursement
+     * (regle n.7). Impossible une fois le trajet parti (constat F036) : la reservation
+     * est alors cloturee par le cycle de vie (COMPLETED) ou signalee NO_SHOW par le
+     * conducteur. Le conducteur est prevenu (par SMS si l annulation est tardive), le
+     * passager recoit le detail du remboursement.
+     */
     @Transactional
     public BookingResponse cancelByPassenger(UUID id, UUID passengerId) {
         Booking booking = findBooking(id);
@@ -397,59 +417,163 @@ public class BookingService {
         if (booking.getStatus() != BookingStatus.PENDING_PAYMENT && booking.getStatus() != BookingStatus.CONFIRMED) {
             throw new BadRequestException("Cette reservation ne peut plus etre annulee");
         }
-        // Regle metier n.21 (point 3) : le bareme d'annulation porte sur depositAmount,
+        Trip trip = booking.getTrip();
+        Instant now = Instant.now();
+        if (trip.getStatus() == TripStatus.ONGOING || trip.getStatus() == TripStatus.COMPLETED
+                || !now.isBefore(trip.getDepartureAt())) {
+            throw new BadRequestException("Le trajet est deja parti : la reservation ne peut plus etre annulee");
+        }
+        // Regle metier n.21 (point 3) : le bareme d annulation porte sur depositAmount,
         // seul montant reellement encaisse par la plateforme via Kkiapay (booking.amount
-        // est le prix TOTAL, mais balanceDueOnBoard n'a jamais transite par la plateforme -
-        // il n'y a donc rien a en rembourser, le passager ne le doit simplement plus
-        // puisque le trajet n'aura pas lieu).
-        CancellationPolicy.Outcome outcome = cancellationPolicy.evaluate(
-                booking.getDepositAmount(), Instant.now(), booking.getTrip().getDepartureAt());
+        // est le prix TOTAL, mais balanceDueOnBoard n a jamais transite par la plateforme -
+        // il n y a donc rien a en rembourser, le passager ne le doit simplement plus
+        // puisque le trajet n aura pas lieu).
+        CancellationPolicy.Outcome outcome;
+        if (booking.getFreeCancellationUntil() != null && now.isBefore(booking.getFreeCancellationUntil())) {
+            // Le conducteur a modifie l horaire : annulation gratuite pendant 24 h (lot 1.3).
+            outcome = new CancellationPolicy.Outcome(booking.getDepositAmount(), 0L,
+                    "Annulation gratuite (horaire modifie par le conducteur)");
+        } else {
+            outcome = cancellationPolicy.evaluate(booking.getDepositAmount(), now, trip.getDepartureAt());
+        }
         log.info("Annulation reservation {} : remboursement={} retenu={} ({})",
                 booking.getId(), outcome.refundAmount(), outcome.retainedAmount(), outcome.reason());
 
+        boolean wasConfirmed = booking.getStatus() == BookingStatus.CONFIRMED;
         booking.setStatus(BookingStatus.CANCELLED_BY_PASSENGER);
+        booking.setExpiresAt(null);
         bookingRepository.save(booking);
-        releaseSeats(booking.getTrip().getId(), booking.getSeats());
+        releaseSeats(trip.getId(), booking.getSeats());
 
         PaymentService.RefundOutcome refund = paymentService.refundBooking(booking, outcome.refundAmount(), "ANNULATION_PASSAGER");
         auditService.log(passengerId, "BOOKING_CANCELLED_BY_PASSENGER", "booking", booking.getId(),
                 Map.of("refundAmountFcfa", outcome.refundAmount(), "retainedAmountFcfa", outcome.retainedAmount(),
                         "refundStatus", refund.status().name()));
         log.info("Resultat remboursement reservation {} : {} ({})", booking.getId(), refund.status(), refund.message());
+
+        Map<String, Object> payload = Map.of("bookingId", booking.getId().toString(), "tripId", trip.getId().toString(),
+                "refundAmountFcfa", outcome.refundAmount(), "retainedAmountFcfa", outcome.retainedAmount(),
+                "seats", booking.getSeats());
+        notificationService.notify(booking.getPassenger(), NotificationType.BOOKING_CANCELLED, payload);
+        if (wasConfirmed) {
+            String summary = "Ekuiseo : " + booking.getPassenger().getFirstName() + " a annule sa reservation ("
+                    + booking.getSeats() + " place(s)) sur votre trajet " + trip.getOriginLabel() + " - "
+                    + trip.getDestLabel() + " du " + formatLocal(trip.getDepartureAt()) + ".";
+            if (driverCancellationPolicy.isLate(now, trip.getDepartureAt())) {
+                notificationService.notifyCritical(trip.getDriver(), NotificationType.BOOKING_CANCELLED, payload, summary);
+            } else {
+                notificationService.notify(trip.getDriver(), NotificationType.BOOKING_CANCELLED, payload);
+            }
+        }
         return bookingMapper.toResponse(booking);
     }
 
     /**
-     * Annulation en cascade des reservations d'un trajet annule par son conducteur
+     * Reservations d un trajet, pour son conducteur (GET /api/v1/trips/{id}/bookings) :
+     * les reservations actives, terminees ou signalees absentes ; les annulations et les
+     * acomptes jamais payes n interessent pas le depart.
+     */
+    @Transactional(readOnly = true)
+    public List<bj.ekuiseo.api.dto.booking.TripBookingResponse> listForDriver(UUID tripId, UUID driverId) {
+        Trip trip = tripRepository.findById(tripId).orElseThrow(() -> new NotFoundException("Trajet introuvable"));
+        if (!trip.getDriver().getId().equals(driverId)) {
+            throw new ForbiddenException("Vous n etes pas le conducteur de ce trajet");
+        }
+        return bookingRepository.findByTripIdAndStatusIn(tripId,
+                        List.of(BookingStatus.CONFIRMED, BookingStatus.COMPLETED, BookingStatus.NO_SHOW)).stream()
+                .sorted(Comparator.comparing(Booking::getCreatedAt))
+                .map(b -> new bj.ekuiseo.api.dto.booking.TripBookingResponse(b.getId(), b.getPassenger().getId(),
+                        b.getPassenger().getFirstName(), b.getPassenger().getLastName(), b.getPassenger().getPhotoUrl(),
+                        b.getPassenger().getRatingAvg(), b.getSeats(), b.getStatus(), b.getPaymentMethod(),
+                        b.getBalanceDueOnBoard(), b.getPickupStopId(), b.getDropoffStopId(), b.getCreatedAt()))
+                .toList();
+    }
+
+    /** Fenetre pendant laquelle le conducteur peut signaler l absence d un passager apres le depart. */
+    static final java.time.Duration NO_SHOW_WINDOW = java.time.Duration.ofHours(48);
+
+    /**
+     * Signalement d absence par le conducteur (POST /api/v1/bookings/{id}/no-show,
+     * constat F037) : la reservation confirmee d un passager qui ne s est pas presente
+     * au depart passe NO_SHOW. L acompte reste acquis (bareme n.7 : 100 % retenus
+     * apres l heure de depart) et est reverse net au conducteur comme un trajet
+     * effectue. Possible entre l heure de depart et 48 h apres.
+     */
+    @Transactional
+    public BookingResponse markNoShow(UUID id, UUID driverId) {
+        Booking booking = findBooking(id);
+        Trip trip = booking.getTrip();
+        if (!trip.getDriver().getId().equals(driverId)) {
+            throw new ForbiddenException("Vous n etes pas le conducteur de ce trajet");
+        }
+        if (booking.getStatus() != BookingStatus.CONFIRMED && booking.getStatus() != BookingStatus.COMPLETED) {
+            throw new BadRequestException("Seule une reservation confirmee peut etre signalee absente");
+        }
+        Instant now = Instant.now();
+        if (now.isBefore(trip.getDepartureAt())) {
+            throw new BadRequestException("L absence ne peut etre signalee qu apres l heure de depart");
+        }
+        if (now.isAfter(trip.getDepartureAt().plus(NO_SHOW_WINDOW))) {
+            throw new BadRequestException("Le delai de signalement (48 h apres le depart) est depasse");
+        }
+        booking.setStatus(BookingStatus.NO_SHOW);
+        bookingRepository.save(booking);
+        auditService.log(driverId, "BOOKING_NO_SHOW", "booking", booking.getId(),
+                Map.of("tripId", trip.getId().toString(), "retainedAmountFcfa", booking.getDepositAmount()));
+        notificationService.notify(booking.getPassenger(), NotificationType.BOOKING_NO_SHOW,
+                Map.of("bookingId", booking.getId().toString(), "tripId", trip.getId().toString(),
+                        "retainedAmountFcfa", booking.getDepositAmount()));
+        return bookingMapper.toResponse(booking);
+    }
+
+    /**
+     * Annulation en cascade des reservations d un trajet annule par son conducteur
      * (regle metier n.6bis, ajoutee). Le remboursement passager est TOUJOURS integral
-     * ici (ce n'est jamais la faute du passager, contrairement a
+     * ici (ce n est jamais la faute du passager, contrairement a
      * {@link #cancelByPassenger}) - integral de depositAmount, seul montant reellement
-     * encaisse par la plateforme (regle metier n.21) : balanceDueOnBoard n'a jamais
-     * transite par Kkiapay, le passager ne le doit simplement plus. L'annulation est
+     * encaisse par la plateforme (regle metier n.21) : balanceDueOnBoard n a jamais
+     * transite par Kkiapay, le passager ne le doit simplement plus. L annulation est
      * comptabilisee dans les statistiques du conducteur si elle est tardive (voir
      * DriverCancellationPolicy), afin de pouvoir moderer les conducteurs peu fiables.
      */
     @Transactional
     public void cascadeCancelForDriverTripCancellation(Trip trip) {
+        cascadeCancelTrip(trip, true, "ANNULATION_CONDUCTEUR", "TRIP_CANCELLED_BY_DRIVER");
+    }
+
+    /**
+     * Cascade d une annulation de trajet decidee par la plateforme (suspension du
+     * conducteur, moderation) : memes remboursements et notifications, sans compter
+     * d annulation tardive au conducteur.
+     */
+    @Transactional
+    public void cascadeCancelForPlatform(Trip trip, String reason) {
+        cascadeCancelTrip(trip, false, reason, "TRIP_CANCELLED_BY_PLATFORM");
+    }
+
+    private void cascadeCancelTrip(Trip trip, boolean countLate, String refundReason, String auditAction) {
         List<Booking> active = bookingRepository.findByTripIdAndStatusIn(trip.getId(), ACTIVE_STATUSES);
         Instant now = Instant.now();
         boolean late = driverCancellationPolicy.isLate(now, trip.getDepartureAt());
 
         for (Booking booking : active) {
             booking.setStatus(BookingStatus.CANCELLED_BY_DRIVER);
+            booking.setExpiresAt(null);
             bookingRepository.save(booking);
 
-            PaymentService.RefundOutcome refund = paymentService.refundBooking(booking, booking.getDepositAmount(), "ANNULATION_CONDUCTEUR");
-            log.info("Annulation conducteur : reservation {} annulee, remboursement {} ({})",
+            PaymentService.RefundOutcome refund = paymentService.refundBooking(booking, booking.getDepositAmount(), refundReason);
+            log.info("Annulation de trajet : reservation {} annulee, remboursement {} ({})",
                     booking.getId(), refund.status(), refund.message());
 
             notificationService.notifyCritical(booking.getPassenger(), NotificationType.BOOKING_CANCELLED,
-                    Map.of("bookingId", booking.getId().toString(), "tripId", trip.getId().toString()),
-                    "Ekuiseo : votre trajet du " + trip.getDepartureAt() + " a ete annule par le conducteur. "
-                            + "Vous serez rembourse integralement.");
+                    Map.of("bookingId", booking.getId().toString(), "tripId", trip.getId().toString(),
+                            "refundAmountFcfa", booking.getDepositAmount()),
+                    "Ekuiseo : votre trajet " + trip.getOriginLabel() + " - " + trip.getDestLabel() + " du "
+                            + formatLocal(trip.getDepartureAt()) + " a ete annule par le conducteur. "
+                            + (booking.getDepositAmount() > 0 ? "Votre acompte vous sera rembourse integralement." : ""));
         }
 
-        if (!active.isEmpty() && late) {
+        if (countLate && !active.isEmpty() && late) {
             User driver = trip.getDriver();
             driver.setLateCancellationsCount(driver.getLateCancellationsCount() + 1);
             userRepository.save(driver);
@@ -457,8 +581,45 @@ public class BookingService {
                     driver.getId(), trip.getId(), active.size());
         }
 
-        auditService.log(trip.getDriver().getId(), "TRIP_CANCELLED_BY_DRIVER", "trip", trip.getId(),
+        auditService.log(trip.getDriver().getId(), auditAction, "trip", trip.getId(),
                 Map.of("affectedBookings", active.size(), "late", late));
+    }
+
+    /**
+     * Annulation des reservations actives d un passager suspendu (cascade de
+     * suspension, constat F039) : places liberees, acompte rembourse integralement,
+     * conducteur prevenu.
+     */
+    @Transactional
+    public int cancelActiveBookingsForSuspendedPassenger(UUID passengerId) {
+        List<Booking> active = bookingRepository.findByPassengerIdAndStatusIn(passengerId, ACTIVE_STATUSES);
+        int cancelled = 0;
+        for (Booking booking : active) {
+            Trip trip = booking.getTrip();
+            if (trip.getStatus() == TripStatus.ONGOING || trip.getStatus() == TripStatus.COMPLETED
+                    || !Instant.now().isBefore(trip.getDepartureAt())) {
+                continue;
+            }
+            boolean wasConfirmed = booking.getStatus() == BookingStatus.CONFIRMED;
+            booking.setStatus(BookingStatus.CANCELLED_BY_PASSENGER);
+            booking.setExpiresAt(null);
+            bookingRepository.save(booking);
+            releaseSeats(trip.getId(), booking.getSeats());
+            PaymentService.RefundOutcome refund = paymentService.refundBooking(booking, booking.getDepositAmount(), "SUSPENSION_PASSAGER");
+            log.info("Suspension : reservation {} annulee, remboursement {} ({})", booking.getId(), refund.status(), refund.message());
+            if (wasConfirmed) {
+                notificationService.notify(trip.getDriver(), NotificationType.BOOKING_CANCELLED,
+                        Map.of("bookingId", booking.getId().toString(), "tripId", trip.getId().toString(),
+                                "seats", booking.getSeats()));
+            }
+            cancelled++;
+        }
+        return cancelled;
+    }
+
+    /** Date et heure locales du Benin pour les SMS et messages (ex. « 12/09/2026 07:30 »). */
+    public static String formatLocal(Instant instant) {
+        return java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(Tz.BENIN).format(instant);
     }
 
     /**

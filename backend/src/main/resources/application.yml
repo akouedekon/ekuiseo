@@ -98,6 +98,10 @@ ekuiseo:
     refresh-absolute-ttl-days: ${JWT_REFRESH_ABSOLUTE_TTL_DAYS:90}
   booking:
     pending-payment-ttl-minutes: 20
+  trip:
+    # Cycle de vie (TripLifecycleScheduler) : delai apres le depart au-dela duquel un trajet
+    # ONGOING est repute termine (COMPLETED) et ses reservations confirmees cloturees.
+    completion-delay-hours: ${TRIP_COMPLETION_DELAY_HOURS:6}
     # Acompte de base du mode MOMO_DEPOSIT (regle metier n.21), injecte dans FeePolicy.
     # L'acompte reellement preleve est max(cette valeur, frais de service de la
     # reservation) - voir FeePolicy#computeDepositAmount pour la justification.

@@ -63,7 +63,8 @@ import java.util.UUID;
 public class PayoutService {
 
     private static final Logger log = LoggerFactory.getLogger(PayoutService.class);
-    private static final List<BookingStatus> PAYABLE_STATUSES = List.of(BookingStatus.CONFIRMED, BookingStatus.COMPLETED);
+    /** NO_SHOW inclus (lot 1.3) : l acompte d un passager absent est acquis et reverse net au conducteur. */
+    private static final List<BookingStatus> PAYABLE_STATUSES = List.of(BookingStatus.CONFIRMED, BookingStatus.COMPLETED, BookingStatus.NO_SHOW);
     /** Les deux modes qui font transiter de l'argent par la plateforme (jamais CASH). */
     private static final List<PaymentMethod> PAYABLE_METHODS =
             List.of(PaymentMethod.MOMO_DEPOSIT, PaymentMethod.MOMO_FULL);

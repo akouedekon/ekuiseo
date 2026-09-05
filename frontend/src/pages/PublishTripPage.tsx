@@ -193,10 +193,14 @@ export function PublishTripPage() {
     }
 
     createTrip.mutate(payload, {
-      onSuccess: () => {
-        toast.success('Trajet publié', {
+      onSuccess: (trip) => {
+        // Le nombre reel d occurrences vient du serveur (navette) : l estimation locale ne fait pas foi.
+        const generated = trip.generatedOccurrences ?? null
+        toast.success(trip.status === 'TEMPLATE' ? 'Navette publiée' : 'Trajet publié', {
           description:
-            departuresCount > 1 ? `${departuresCount} départs ont été créés.` : 'Votre annonce est en ligne.',
+            generated !== null
+              ? `${generated} départ${generated > 1 ? 's' : ''} sur les 14 prochains jours. Les suivants seront ajoutés automatiquement.`
+              : 'Votre annonce est en ligne.',
         })
         navigate('/trips/mine')
       },
@@ -379,7 +383,7 @@ export function PublishTripPage() {
                   <p className="mt-3 flex items-center gap-2 rounded-[var(--radius-control)] bg-[var(--indigo-soft)] px-3 py-2.5 text-[13px] font-medium text-[var(--indigo-deep)]">
                     <Repeat className="size-4 shrink-0" aria-hidden />
                     <span className="tnum">
-                      {departuresCount} départ{departuresCount > 1 ? 's' : ''} seront générés.
+                      {departuresCount} départ{departuresCount > 1 ? 's' : ''} au total, publiés 14 jours à l'avance.
                     </span>
                   </p>
                 </Card>

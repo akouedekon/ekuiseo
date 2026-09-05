@@ -1,5 +1,6 @@
 package bj.ekuiseo.api.service.admin;
 
+import bj.ekuiseo.api.common.Tz;
 import bj.ekuiseo.api.domain.Booking;
 import bj.ekuiseo.api.domain.Trip;
 import bj.ekuiseo.api.domain.enums.BookingStatus;
@@ -89,17 +90,17 @@ public class AdminStatsService {
 
     private List<AdminStatsResponse.DaySeries> buildSeries(int days, List<Instant> tripTimestamps, List<Booking> bookings) {
         Map<LocalDate, long[]> byDay = new TreeMap<>(); // [trips, bookings, gmv, revenue]
-        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+        LocalDate today = LocalDate.now(Tz.BENIN);
         for (int i = days - 1; i >= 0; i--) {
             byDay.put(today.minusDays(i), new long[4]);
         }
         for (Instant t : tripTimestamps) {
-            LocalDate d = t.atZone(ZoneOffset.UTC).toLocalDate();
+            LocalDate d = t.atZone(Tz.BENIN).toLocalDate();
             long[] bucket = byDay.get(d);
             if (bucket != null) bucket[0]++;
         }
         for (Booking b : bookings) {
-            LocalDate d = b.getCreatedAt().atZone(ZoneOffset.UTC).toLocalDate();
+            LocalDate d = b.getCreatedAt().atZone(Tz.BENIN).toLocalDate();
             long[] bucket = byDay.get(d);
             if (bucket == null) continue;
             bucket[1]++;

@@ -1,12 +1,16 @@
 package bj.ekuiseo.api.service;
 
+import bj.ekuiseo.api.common.Tz;
 import bj.ekuiseo.api.common.exception.BadRequestException;
 import bj.ekuiseo.api.common.exception.ForbiddenException;
 import bj.ekuiseo.api.common.exception.NotFoundException;
+import bj.ekuiseo.api.domain.Booking;
 import bj.ekuiseo.api.domain.Trip;
 import bj.ekuiseo.api.domain.TripStop;
 import bj.ekuiseo.api.domain.User;
 import bj.ekuiseo.api.domain.Vehicle;
+import bj.ekuiseo.api.domain.enums.BookingStatus;
+import bj.ekuiseo.api.domain.enums.NotificationType;
 import bj.ekuiseo.api.domain.enums.TripStatus;
 import bj.ekuiseo.api.domain.enums.TripType;
 import bj.ekuiseo.api.dto.trip.CreateTripRequest;
@@ -16,6 +20,7 @@ import bj.ekuiseo.api.dto.trip.TripResponse;
 import bj.ekuiseo.api.dto.trip.TripStopResponse;
 import bj.ekuiseo.api.dto.trip.UpdateTripRequest;
 import bj.ekuiseo.api.mapper.TripMapper;
+import bj.ekuiseo.api.repository.BookingRepository;
 import bj.ekuiseo.api.repository.TripRepository;
 import bj.ekuiseo.api.repository.TripStopRepository;
 import bj.ekuiseo.api.repository.UserRepository;
@@ -27,7 +32,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
+import java.util.Map;
 import java.util.List;
 import java.util.UUID;
 
@@ -45,12 +51,19 @@ public class TripService {
     private final BookingService bookingService;
     private final SearchAlertMatchService searchAlertMatchService;
     private final SearchEventService searchEventService;
+    private final RecurrenceService recurrenceService;
+    private final BookingRepository bookingRepository;
+    private final NotificationService notificationService;
 
     public TripService(TripRepository tripRepository, TripStopRepository tripStopRepository,
                         UserRepository userRepository, VehicleRepository vehicleRepository,
                         TripMapper tripMapper, BookingService bookingService,
                         SearchAlertMatchService searchAlertMatchService,
-                        SearchEventService searchEventService) {
+                        SearchEventService searchEventService, RecurrenceService recurrenceService,
+                        BookingRepository bookingRepository, NotificationService notificationService) {
+        this.recurrenceService = recurrenceService;
+        this.bookingRepository = bookingRepository;
+        this.notificationService = notificationService;
         this.tripRepository = tripRepository;
         this.tripStopRepository = tripStopRepository;
         this.userRepository = userRepository;
@@ -77,6 +90,9 @@ public class TripService {
             throw new BadRequestException("Une regle de recurrence est requise pour un trajet QUOTIDIEN");
         }
         validatePrices(req.pricePerSeat(), req.stops() == null ? List.of() : req.stops().stream().map(StopRequest::priceFromOrigin).toList());
+        // Une navette QUOTIDIEN est un modele (TEMPLATE, jamais cherchable) : ses occurrences,
+        // generees ci-dessous sur 14 jours, sont les seuls trajets reservables (constats F041/F202).
+        boolean recurring = req.tripType() == TripType.QUOTIDIEN;
 
         Trip trip = Trip.builder()
                 .driver(driver)
@@ -95,8 +111,8 @@ public class TripService {
                 .instantBooking(req.instantBooking())
                 .luggagePolicy(req.luggagePolicy())
                 .description(req.description())
-                .status(TripStatus.PUBLISHED)
-                .recurrenceRule(req.tripType() == TripType.QUOTIDIEN ? req.recurrenceRule() : null)
+                .status(recurring ? TripStatus.TEMPLATE : TripStatus.PUBLISHED)
+                .recurrenceRule(recurring ? req.recurrenceRule() : null)
                 .build();
         trip = tripRepository.save(trip);
 
@@ -118,9 +134,15 @@ public class TripService {
             }
         }
 
-        if (trip.getStatus() == TripStatus.PUBLISHED) {
-            searchAlertMatchService.notifyMatchingAlerts(trip);
+        if (recurring) {
+            int generated = recurrenceService.generateFor(trip);
+            if (generated == 0) {
+                throw new BadRequestException("Aucun depart ne correspond a cette recurrence dans les 14 prochains jours : "
+                        + "verifiez les jours choisis et la date du premier depart");
+            }
+            return tripMapper.toResponse(trip).withGeneratedOccurrences(generated);
         }
+        searchAlertMatchService.notifyMatchingAlerts(trip);
         return tripMapper.toResponse(trip);
     }
 
@@ -169,24 +191,81 @@ public class TripService {
         }
     }
 
+
     /**
      * Modification par le conducteur. Le trajet est charge sous verrou pessimiste
      * (constat F005) : une reservation concurrente qui decremente les places ne peut
      * plus etre ecrasee par une lecture perimee, et le statut FULL/PUBLISHED est
      * recalcule apres tout changement de places.
+     *
+     * <p>Lot 1.3 (constats F038/F208) : un trajet deja reserve ne peut plus changer
+     * d itineraire ; un changement d horaire est notifie a chaque passager (SMS) et lui
+     * ouvre 24 h d annulation gratuite. Sur un modele de navette (TEMPLATE), les
+     * changements sont repercutes sur les occurrences a venir sans reservation.</p>
      */
     @Transactional
     public TripResponse updateTrip(UUID id, UUID driverId, UpdateTripRequest req) {
         Trip trip = tripRepository.findByIdForUpdate(id).orElseThrow(() -> new NotFoundException("Trajet introuvable"));
         if (!trip.getDriver().getId().equals(driverId)) {
-            throw new ForbiddenException("Vous n'etes pas le conducteur de ce trajet");
+            throw new ForbiddenException("Vous n etes pas le conducteur de ce trajet");
+        }
+        if (trip.getStatus() == TripStatus.ONGOING) {
+            throw new BadRequestException("Ce trajet est en cours : il ne peut plus etre modifie");
         }
         if (trip.getStatus() == TripStatus.COMPLETED || trip.getStatus() == TripStatus.CANCELLED) {
             throw new BadRequestException("Ce trajet ne peut plus etre modifie");
         }
+        List<Booking> activeBookings = trip.getStatus() == TripStatus.TEMPLATE ? List.of()
+                : bookingRepository.findByTripIdAndStatusIn(id, List.of(BookingStatus.PENDING_PAYMENT, BookingStatus.CONFIRMED));
+        boolean routeChange = req.originLabel() != null || req.originLat() != null || req.originLng() != null
+                || req.destLabel() != null || req.destLat() != null || req.destLng() != null;
+        if (routeChange && !activeBookings.isEmpty()) {
+            throw new BadRequestException("Des passagers ont deja reserve : l itineraire ne peut plus changer. "
+                    + "Annulez ce trajet et publiez-en un nouveau.");
+        }
+        applyUpdate(trip, req);
+        Instant previousDeparture = trip.getDepartureAt();
+        boolean departureChanged = req.departureAt() != null && !req.departureAt().equals(previousDeparture);
+        if (departureChanged) {
+            trip.setDepartureAt(req.departureAt());
+            // Le rappel de la veille doit repartir sur le nouvel horaire.
+            trip.setReminderSentAt(null);
+        }
+        // Statut recalcule apres un changement de places : un trajet FULL qui gagne des
+        // places redevient reservable, un trajet PUBLISHED sans place devient FULL.
+        if (trip.getStatus() == TripStatus.FULL && trip.getSeatsAvailable() > 0) {
+            trip.setStatus(TripStatus.PUBLISHED);
+        } else if (trip.getStatus() == TripStatus.PUBLISHED && trip.getSeatsAvailable() == 0) {
+            trip.setStatus(TripStatus.FULL);
+        }
+        trip = tripRepository.save(trip);
+
+        if (departureChanged && !activeBookings.isEmpty()) {
+            Instant freeUntil = Instant.now().plus(CancellationPolicy.FREE_CANCELLATION_WINDOW);
+            for (Booking booking : activeBookings) {
+                booking.setFreeCancellationUntil(freeUntil);
+                bookingRepository.save(booking);
+                notificationService.notifyCritical(booking.getPassenger(), NotificationType.TRIP_UPDATED,
+                        Map.of("bookingId", booking.getId().toString(), "tripId", trip.getId().toString(),
+                                "previousDepartureAt", previousDeparture.toString(),
+                                "departureAt", trip.getDepartureAt().toString(),
+                                "freeCancellationUntil", freeUntil.toString()),
+                        "Ekuiseo : le depart de votre trajet " + trip.getOriginLabel() + " - " + trip.getDestLabel()
+                                + " est deplace au " + BookingService.formatLocal(trip.getDepartureAt())
+                                + ". Vous pouvez annuler sans frais pendant 24 h.");
+            }
+        }
+        if (trip.getStatus() == TripStatus.TEMPLATE) {
+            propagateTemplateUpdate(trip, departureChanged);
+        }
+        return tripMapper.toResponse(trip);
+    }
+
+    /** Champs simples d une modification (hors horaire, traite a part pour la notification). */
+    private void applyUpdate(Trip trip, UpdateTripRequest req) {
         if (req.originLabel() != null) {
             if (req.originLabel().isBlank()) {
-                throw new BadRequestException("Le libelle d'origine ne peut pas etre vide");
+                throw new BadRequestException("Le libelle d origine ne peut pas etre vide");
             }
             trip.setOriginLabel(req.originLabel());
         }
@@ -200,7 +279,6 @@ public class TripService {
         }
         if (req.destLat() != null) trip.setDestLat(req.destLat());
         if (req.destLng() != null) trip.setDestLng(req.destLng());
-        if (req.departureAt() != null) trip.setDepartureAt(req.departureAt());
         if (req.seatsTotal() != null) {
             // Regle metier n.6bis (corrigee) : le nouveau total ne doit jamais depasser la
             // capacite du vehicule, ni descendre sous le nombre de places deja reservees.
@@ -217,40 +295,84 @@ public class TripService {
             trip.setSeatsAvailable(trip.getSeatsAvailable() + delta);
         }
         if (req.pricePerSeat() != null) {
-            validatePrices(req.pricePerSeat(), tripStopRepository.findByTripIdOrderByPosition(id).stream()
+            validatePrices(req.pricePerSeat(), tripStopRepository.findByTripIdOrderByPosition(trip.getId()).stream()
                     .map(TripStop::getPriceFromOrigin).toList());
             trip.setPricePerSeat(req.pricePerSeat());
         }
         if (req.instantBooking() != null) trip.setInstantBooking(req.instantBooking());
         if (req.luggagePolicy() != null) trip.setLuggagePolicy(req.luggagePolicy());
         if (req.description() != null) trip.setDescription(req.description());
-        // Statut recalcule apres un changement de places : un trajet FULL qui gagne des
-        // places redevient reservable, un trajet PUBLISHED sans place devient FULL.
-        if (trip.getStatus() == TripStatus.FULL && trip.getSeatsAvailable() > 0) {
-            trip.setStatus(TripStatus.PUBLISHED);
-        } else if (trip.getStatus() == TripStatus.PUBLISHED && trip.getSeatsAvailable() == 0) {
-            trip.setStatus(TripStatus.FULL);
+    }
+
+    /**
+     * Repercute une modification du modele sur ses occurrences a venir sans aucune
+     * reservation (les occurrences reservees gardent leurs conditions : le passager a
+     * accepte un prix et un horaire precis). Un changement d heure de depart deplace
+     * chaque occurrence a la meme heure locale (fuseau du Benin).
+     */
+    private void propagateTemplateUpdate(Trip template, boolean departureChanged) {
+        List<Trip> upcoming = tripRepository.findByParentTripIdAndStatusInAndDepartureAtAfter(
+                template.getId(), List.of(TripStatus.PUBLISHED, TripStatus.FULL), Instant.now());
+        java.time.LocalTime localTime = template.getDepartureAt().atZone(Tz.BENIN).toLocalTime();
+        for (Trip occurrence : upcoming) {
+            boolean booked = occurrence.getSeatsAvailable() < occurrence.getSeatsTotal();
+            if (booked) {
+                continue;
+            }
+            occurrence.setOriginLabel(template.getOriginLabel());
+            occurrence.setOriginLat(template.getOriginLat());
+            occurrence.setOriginLng(template.getOriginLng());
+            occurrence.setDestLabel(template.getDestLabel());
+            occurrence.setDestLat(template.getDestLat());
+            occurrence.setDestLng(template.getDestLng());
+            occurrence.setSeatsTotal(template.getSeatsTotal());
+            occurrence.setSeatsAvailable(template.getSeatsTotal());
+            occurrence.setPricePerSeat(template.getPricePerSeat());
+            occurrence.setInstantBooking(template.isInstantBooking());
+            occurrence.setLuggagePolicy(template.getLuggagePolicy());
+            occurrence.setDescription(template.getDescription());
+            if (departureChanged) {
+                occurrence.setDepartureAt(occurrence.getDepartureAt().atZone(Tz.BENIN).toLocalDate()
+                        .atTime(localTime).atZone(Tz.BENIN).toInstant());
+                occurrence.setReminderSentAt(null);
+            }
+            occurrence.setStatus(TripStatus.PUBLISHED);
+            tripRepository.save(occurrence);
         }
-        return tripMapper.toResponse(tripRepository.save(trip));
     }
 
     /**
      * Annulation par le conducteur, avec cascade sur les reservations liees (regle
      * metier n.6bis) : reservations annulees, remboursement integral declenche,
      * passagers notifies, et annulation tardive comptabilisee dans les statistiques
-     * du conducteur.
+     * du conducteur. Annuler un modele de navette annule toutes ses occurrences a venir
+     * (constat F203) ; un trajet deja parti (ONGOING) ne s annule plus.
      */
     @Transactional
     public void cancelTrip(UUID id, UUID driverId) {
         Trip trip = findTrip(id);
         if (!trip.getDriver().getId().equals(driverId)) {
-            throw new ForbiddenException("Vous n'etes pas le conducteur de ce trajet");
+            throw new ForbiddenException("Vous n etes pas le conducteur de ce trajet");
+        }
+        if (trip.getStatus() == TripStatus.ONGOING) {
+            throw new BadRequestException("Ce trajet est en cours : il ne peut plus etre annule");
         }
         if (trip.getStatus() == TripStatus.COMPLETED || trip.getStatus() == TripStatus.CANCELLED) {
             throw new BadRequestException("Ce trajet ne peut plus etre annule");
         }
+        boolean template = trip.getStatus() == TripStatus.TEMPLATE;
         trip.setStatus(TripStatus.CANCELLED);
         tripRepository.save(trip);
+        if (template) {
+            List<Trip> upcoming = tripRepository.findByParentTripIdAndStatusInAndDepartureAtAfter(
+                    trip.getId(), List.of(TripStatus.PUBLISHED, TripStatus.FULL), Instant.now());
+            for (Trip occurrence : upcoming) {
+                occurrence.setStatus(TripStatus.CANCELLED);
+                tripRepository.save(occurrence);
+                bookingService.cascadeCancelForDriverTripCancellation(occurrence);
+            }
+            return;
+        }
         bookingService.cascadeCancelForDriverTripCancellation(trip);
     }
 
@@ -272,10 +394,11 @@ public class TripService {
                                       Pageable pageable) {
         double effectiveRadiusKm = radiusKm != null ? radiusKm : DEFAULT_RADIUS_KM;
         double radiusMeters = effectiveRadiusKm * 1000.0;
-        Instant dateFrom = date != null ? date.atStartOfDay(ZoneOffset.UTC).toInstant() : null;
-        Instant dateTo = date != null ? date.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant() : null;
+        // Jour civil du Benin (constat F415) ; les trajets deja partis sont exclus par la requete.
+        Instant dateFrom = date != null ? date.atStartOfDay(Tz.BENIN).toInstant() : null;
+        Instant dateTo = date != null ? date.plusDays(1).atStartOfDay(Tz.BENIN).toInstant() : null;
         Page<Trip> page = tripRepository.search(originLat, originLng, destLat, destLng, radiusMeters, seats,
-                tripType != null ? tripType.name() : null, dateFrom, dateTo, pageable);
+                tripType != null ? tripType.name() : null, dateFrom, dateTo, Instant.now(), pageable);
         if (pageable.getPageNumber() == 0) {
             searchEventService.record(requesterId,
                     new SearchEventService.SearchRequest(originLabel, originLat, originLng,

@@ -3,7 +3,8 @@
 // Les montants sont en FCFA (XOF), toujours des entiers.
 
 export type TripType = 'INTERURBAIN' | 'QUOTIDIEN'
-export type TripStatus = 'DRAFT' | 'PUBLISHED' | 'FULL' | 'ONGOING' | 'COMPLETED' | 'CANCELLED'
+/** TEMPLATE : modele d une navette quotidienne (jamais cherchable), ONGOING : depart passe, plus de reservation ni d annulation. */
+export type TripStatus = 'DRAFT' | 'TEMPLATE' | 'PUBLISHED' | 'FULL' | 'ONGOING' | 'COMPLETED' | 'CANCELLED'
 export type BookingStatus =
   | 'PENDING_PAYMENT'
   | 'CONFIRMED'
@@ -128,6 +129,27 @@ export interface TripResponse {
   description: string | null
   status: TripStatus
   recurrenceRule: string | null
+  createdAt: string
+  /** Modele de navette dont ce trajet est une occurrence. */
+  parentTripId: string | null
+  /** Renseigne uniquement dans la reponse de creation d une navette : occurrences generees. */
+  generatedOccurrences?: number | null
+}
+
+/** Reservation d un trajet vue par son conducteur (GET /api/v1/trips/{id}/bookings). */
+export interface TripBookingResponse {
+  id: string
+  passengerId: string
+  firstName: string
+  lastName: string | null
+  photoUrl: string | null
+  ratingAvg: number | null
+  seats: number
+  status: BookingStatus
+  paymentMethod: PaymentMethod
+  balanceDueOnBoard: number
+  pickupStopId: string | null
+  dropoffStopId: string | null
   createdAt: string
 }
 

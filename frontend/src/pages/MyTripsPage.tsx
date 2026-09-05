@@ -28,6 +28,7 @@ import { EmptyState, ErrorState, ListSkeleton } from '@/components/ui/states'
 import { PageContainer, PageHeader } from '@/components/layout/PageContainer'
 import { DepositCountdown } from '@/components/booking/Countdown'
 import { EditTripSheet } from '@/features/trips/EditTripSheet'
+import { TripPassengersSheet } from '@/features/trips/TripPassengersSheet'
 import { useCancelBooking, useMyBookings } from '@/hooks/useBookings'
 import { useCancelTrip, useMyTrips } from '@/hooks/useTrips'
 import { describeError } from '@/lib/errors'
@@ -62,6 +63,20 @@ function isPastBooking(booking: BookingDetailResponse): boolean {
   )
 }
 
+const RRULE_DAY_LABELS: Record<string, string> = { MO: 'lun', TU: 'mar', WE: 'mer', TH: 'jeu', FR: 'ven', SA: 'sam', SU: 'dim' }
+
+/** « lun, mar, mer » a partir d une regle FREQ=WEEKLY;BYDAY=MO,TU,WE (tous les jours si BYDAY absent). */
+function describeRecurrence(rule: string | null): string {
+  const byDay = rule?.split(';').find((part) => part.toUpperCase().startsWith('BYDAY='))
+  if (!byDay) return 'tous les jours'
+  const days = byDay
+    .slice('BYDAY='.length)
+    .split(',')
+    .map((code) => RRULE_DAY_LABELS[code.trim().toUpperCase()])
+    .filter(Boolean)
+  return days.length === 7 ? 'tous les jours' : days.join(', ')
+}
+
 /** Un avis se laisse apres le depart, sur une reservation honoree (confirmee ou terminee). */
 function canReview(booking: BookingDetailResponse): boolean {
   return (
@@ -83,11 +98,16 @@ export function MyTripsPage({ defaultTab = 'upcoming' }: { defaultTab?: TabKey }
   const trips = useMyTrips()
   const cancelBooking = useCancelBooking()
   const cancelTrip = useCancelTrip()
-  const [confirm, setConfirm] = useState<{ kind: 'booking' | 'trip'; id: string; label: string; hours?: number } | null>(
-    null,
-  )
+  const [confirm, setConfirm] = useState<{
+    kind: 'booking' | 'trip'
+    id: string
+    label: string
+    hours?: number
+    template?: boolean
+  } | null>(null)
   const [reviewing, setReviewing] = useState<BookingDetailResponse | null>(null)
   const [editing, setEditing] = useState<TripResponse | null>(null)
+  const [viewingPassengers, setViewingPassengers] = useState<TripResponse | null>(null)
 
   const bookingList = bookings.data ?? []
   const upcoming = bookingList.filter((b) => !isPastBooking(b))
@@ -105,7 +125,10 @@ export function MyTripsPage({ defaultTab = 'upcoming' }: { defaultTab?: TabKey }
       })
     } else {
       cancelTrip.mutate(target.id, {
-        onSuccess: () => toast.success('Trajet annulé', { description: 'Les passagers ont été prévenus.' }),
+        onSuccess: () =>
+          toast.success(target.template ? 'Navette arrêtée' : 'Trajet annulé', {
+            description: 'Les passagers ont été prévenus.',
+          }),
         onError: (error) => toast.error(describeError(error, "L'annulation a échoué.")),
         onSettled: () => setConfirm(null),
       })
@@ -216,8 +239,14 @@ export function MyTripsPage({ defaultTab = 'upcoming' }: { defaultTab?: TabKey }
                   key={trip.id}
                   trip={trip}
                   onEdit={() => setEditing(trip)}
+                  onPassengers={() => setViewingPassengers(trip)}
                   onCancel={() =>
-                    setConfirm({ kind: 'trip', id: trip.id, label: `${trip.originLabel} → ${trip.destLabel}` })
+                    setConfirm({
+                      kind: 'trip',
+                      id: trip.id,
+                      label: `${trip.originLabel} → ${trip.destLabel}`,
+                      template: trip.status === 'TEMPLATE',
+                    })
                   }
                 />
               ))}
@@ -229,10 +258,18 @@ export function MyTripsPage({ defaultTab = 'upcoming' }: { defaultTab?: TabKey }
       <ConfirmDialog
         open={confirm !== null}
         onOpenChange={(open) => !open && setConfirm(null)}
-        title={confirm?.kind === 'trip' ? 'Annuler ce trajet ?' : 'Annuler cette réservation ?'}
+        title={
+          confirm?.kind === 'trip'
+            ? confirm.template
+              ? 'Arrêter cette navette ?'
+              : 'Annuler ce trajet ?'
+            : 'Annuler cette réservation ?'
+        }
         description={
           confirm?.kind === 'trip'
-            ? `Les passagers de ${confirm.label} seront prévenus et intégralement remboursés.`
+            ? confirm.template
+              ? `Tous les départs à venir de ${confirm.label} seront annulés. Les passagers déjà inscrits seront prévenus et intégralement remboursés.`
+              : `Les passagers de ${confirm.label} seront prévenus et intégralement remboursés.`
             : confirm
               ? `Trajet ${confirm.label}. Annulation gratuite jusqu'à ${confirm.hours ?? 24} h avant le départ ; en deçà, la moitié de l'acompte est retenue, et la totalité après l'heure de départ.`
               : undefined
@@ -254,6 +291,7 @@ export function MyTripsPage({ defaultTab = 'upcoming' }: { defaultTab?: TabKey }
       ) : null}
 
       {editing ? <EditTripSheet trip={editing} open onOpenChange={(open) => !open && setEditing(null)} /> : null}
+      <TripPassengersSheet trip={viewingPassengers} onOpenChange={(open) => !open && setViewingPassengers(null)} />
     </PageContainer>
   )
 }
@@ -395,12 +433,27 @@ function BookingCard({
   )
 }
 
-function DrivingCard({ trip, onEdit, onCancel }: { trip: TripResponse; onEdit: () => void; onCancel: () => void }) {
+function DrivingCard({
+  trip,
+  onEdit,
+  onCancel,
+  onPassengers,
+}: {
+  trip: TripResponse
+  onEdit: () => void
+  onCancel: () => void
+  onPassengers: () => void
+}) {
   const cancelled = trip.status === 'CANCELLED'
   const completed = trip.status === 'COMPLETED'
-  const departed = new Date(trip.departureAt).getTime() < Date.now()
+  const template = trip.status === 'TEMPLATE'
+  // Le statut ONGOING est pose par le serveur toutes les 5 min ; l heure locale couvre l intervalle.
+  const departed = trip.status === 'ONGOING' || (!template && new Date(trip.departureAt).getTime() < Date.now())
   const editable = !cancelled && !completed && !departed
   const booked = trip.seatsTotal - trip.seatsAvailable
+  // La liste d appel sert des qu il y a des passagers, et jusqu a 48 h apres le depart (no-show).
+  const showPassengers =
+    !template && !cancelled && (booked > 0 || departed) && new Date(trip.departureAt).getTime() + 48 * 3600 * 1000 > Date.now()
 
   return (
     <motion.div variants={listItem} layout>
@@ -420,31 +473,50 @@ function DrivingCard({ trip, onEdit, onCancel }: { trip: TripResponse; onEdit: (
                 {trip.originLabel} → {trip.destLabel}
               </p>
               <p className="tnum mt-0.5 text-[13px] text-muted">
-                {formatRelativeDay(trip.departureAt)} · {formatTime(trip.departureAt)}
+                {template
+                  ? `Navette · ${describeRecurrence(trip.recurrenceRule)} à ${formatTime(trip.departureAt)}`
+                  : `${formatRelativeDay(trip.departureAt)} · ${formatTime(trip.departureAt)}`}
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              <Badge tone={cancelled ? 'danger' : completed ? 'neutral' : booked > 0 ? 'success' : 'warning'}>
-                <Users aria-hidden />
-                {booked}/{trip.seatsTotal}
-              </Badge>
+              {template ? (
+                <Badge tone={cancelled ? 'danger' : 'neutral'}>Navette</Badge>
+              ) : departed && !completed && !cancelled ? (
+                <Badge tone="warning">En cours</Badge>
+              ) : (
+                <Badge tone={cancelled ? 'danger' : completed ? 'neutral' : booked > 0 ? 'success' : 'warning'}>
+                  <Users aria-hidden />
+                  {booked}/{trip.seatsTotal}
+                </Badge>
+              )}
               <ChevronRight className="size-4 text-muted" aria-hidden />
             </div>
           </div>
           <p className="tnum mt-2 text-[13px] text-ink-2">
-            {formatFcfa(trip.pricePerSeat)} par place · {booked} place{booked > 1 ? 's' : ''} réservée
-            {booked > 1 ? 's' : ''}
+            {template
+              ? `${formatFcfa(trip.pricePerSeat)} par place · ${trip.seatsTotal} place${trip.seatsTotal > 1 ? 's' : ''} par départ`
+              : `${formatFcfa(trip.pricePerSeat)} par place · ${booked} place${booked > 1 ? 's' : ''} réservée${booked > 1 ? 's' : ''}`}
           </p>
         </Link>
-        {editable ? (
+        {editable || showPassengers ? (
           <div className="flex items-center gap-2 border-t border-rule px-3 py-2">
-            <Button variant="ghost" size="sm" onClick={onEdit}>
-              <Pencil className="size-4" aria-hidden />
-              Modifier
-            </Button>
-            <Button variant="ghost" size="sm" className="ml-auto text-[var(--vermillon)]" onClick={onCancel}>
-              Annuler le trajet
-            </Button>
+            {showPassengers ? (
+              <Button variant="ghost" size="sm" onClick={onPassengers}>
+                <Users className="size-4" aria-hidden />
+                Passagers
+              </Button>
+            ) : null}
+            {editable ? (
+              <>
+                <Button variant="ghost" size="sm" onClick={onEdit}>
+                  <Pencil className="size-4" aria-hidden />
+                  Modifier
+                </Button>
+                <Button variant="ghost" size="sm" className="ml-auto text-[var(--vermillon)]" onClick={onCancel}>
+                  {template ? 'Arrêter la navette' : 'Annuler le trajet'}
+                </Button>
+              </>
+            ) : null}
           </div>
         ) : null}
       </Card>

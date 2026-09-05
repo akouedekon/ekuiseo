@@ -109,6 +109,12 @@ public class TripController {
         return ResponseEntity.noContent().build();
     }
 
+    @Operation(summary = "Passagers de mon trajet", description = "Reserve au conducteur : reservations confirmees, terminees ou signalees absentes, pour l appel au depart et le signalement d absence (POST /api/v1/bookings/{id}/no-show).")
+    @GetMapping("/{id}/bookings")
+    public java.util.List<bj.ekuiseo.api.dto.booking.TripBookingResponse> passengers(@PathVariable UUID id) {
+        return bookingService.listForDriver(id, currentUser.id());
+    }
+
     @Operation(summary = "Reserver des places sur ce trajet")
     @PostMapping("/{id}/bookings")
     public ResponseEntity<BookingResponse> book(@PathVariable UUID id, @Valid @RequestBody CreateBookingRequest req) {

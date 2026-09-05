@@ -17,5 +17,9 @@ public enum NotificationType {
     /** Remboursement confirme. */
     PAYMENT_REFUNDED,
     /** Conducteur exclu d un lot de reversement faute de compte mobile money verifie. */
-    PAYOUT_ACCOUNT_MISSING
+    PAYOUT_ACCOUNT_MISSING,
+    /** Le conducteur a modifie l horaire ou le prix d un trajet reserve (annulation gratuite 24 h). */
+    TRIP_UPDATED,
+    /** Le conducteur a signale l absence du passager au depart. */
+    BOOKING_NO_SHOW
 }

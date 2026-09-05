@@ -76,6 +76,10 @@ public class Booking {
     @Column(name = "expires_at")
     private Instant expiresAt;
 
+    /** Annulation gratuite ouverte jusqu a cet instant (V13) quand le conducteur a modifie l horaire d un trajet reserve. */
+    @Column(name = "free_cancellation_until")
+    private Instant freeCancellationUntil;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;

@@ -32,6 +32,14 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     boolean existsByTripIdAndPassengerIdAndStatusIn(UUID tripId, UUID passengerId, List<BookingStatus> statuses);
 
     /** Reservations en attente dont l echeance d acompte (expires_at, V12) est depassee. */
+    /** Reservations confirmees de trajets partis depuis longtemps : a cloturer COMPLETED (TripLifecycleScheduler). */
+    @Query("select b from Booking b join fetch b.trip t where b.status = :status and t.departureAt < :before "
+            + "and t.status <> bj.ekuiseo.api.domain.enums.TripStatus.CANCELLED")
+    List<Booking> findByStatusWithTripDepartedBefore(@Param("status") BookingStatus status, @Param("before") Instant before);
+
+    /** Reservations actives d un passager (cascade de suspension). */
+    List<Booking> findByPassengerIdAndStatusIn(UUID passengerId, List<BookingStatus> statuses);
+
     @Query("select b from Booking b where b.status = :status and b.expiresAt is not null and b.expiresAt < :now")
     List<Booking> findExpirable(@Param("status") BookingStatus status, @Param("now") Instant now);
 

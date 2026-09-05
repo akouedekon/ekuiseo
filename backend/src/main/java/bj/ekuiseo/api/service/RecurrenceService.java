@@ -1,10 +1,14 @@
 package bj.ekuiseo.api.service;
 
+import bj.ekuiseo.api.common.Tz;
 import bj.ekuiseo.api.domain.Trip;
+import bj.ekuiseo.api.domain.TripStop;
 import bj.ekuiseo.api.domain.enums.TripStatus;
 import bj.ekuiseo.api.repository.TripRepository;
+import bj.ekuiseo.api.repository.TripStopRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,111 +17,196 @@ import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 
 /**
- * Genere les occurrences des trajets QUOTIDIEN recurrents (regle metier n.6).
- * Un trajet "parent" (trip_type = QUOTIDIEN, recurrence_rule renseignee,
- * parent_trip_id = null) decrit le modele (heure, itineraire, prix, vehicule).
- * Cette tache genere, pour les 14 prochains jours, une occurrence (trip enfant,
- * parent_trip_id = id du parent) par jour correspondant a la regle de
- * recurrence, si elle n'existe pas deja.
+ * Genere les occurrences des navettes QUOTIDIEN (regle metier n.9).
  *
- * <p>Format de recurrence supporte (sous-ensemble volontairement simplifie de
- * RFC 5545) : {@code FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR}. BYDAY absent = tous
- * les jours.</p>
+ * <p>Un trajet <b>modele</b> ({@code status = TEMPLATE}, {@code recurrence_rule}
+ * renseignee, {@code parent_trip_id = null}) decrit l itineraire, l heure locale,
+ * le prix, le vehicule et les arrets. Il n est ni cherchable ni reservable. Cette
+ * classe engendre, sur un horizon glissant de 14 jours, une occurrence
+ * ({@code PUBLISHED}, {@code parent_trip_id} = modele) par jour de la regle, a
+ * partir du jour du premier depart inclus, sans jamais depasser {@code COUNT} ni
+ * {@code UNTIL} (constats F041/F042/F125/F202/F203/F415).</p>
+ *
+ * <p>Format de recurrence supporte (sous-ensemble de RFC 5545) :
+ * {@code FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;COUNT=20} ou {@code UNTIL=20261231}.
+ * BYDAY absent = tous les jours. Tout est calcule dans le fuseau du Benin
+ * ({@link Tz#BENIN}) : un depart lundi 00:30 a Cotonou reste un lundi.</p>
  */
 @Service
 public class RecurrenceService {
 
     private static final Logger log = LoggerFactory.getLogger(RecurrenceService.class);
-    private static final int HORIZON_DAYS = 14;
+    static final int HORIZON_DAYS = 14;
 
     private final TripRepository tripRepository;
+    private final TripStopRepository tripStopRepository;
     private final SearchAlertMatchService searchAlertMatchService;
 
-    public RecurrenceService(TripRepository tripRepository, SearchAlertMatchService searchAlertMatchService) {
+    public RecurrenceService(TripRepository tripRepository, TripStopRepository tripStopRepository,
+                             SearchAlertMatchService searchAlertMatchService) {
         this.tripRepository = tripRepository;
+        this.tripStopRepository = tripStopRepository;
         this.searchAlertMatchService = searchAlertMatchService;
     }
 
-    /** Execute chaque jour a 03h00 UTC. */
+    /** Execute chaque jour a 03h00 (heure du serveur) pour faire glisser l horizon. */
     @Scheduled(cron = "0 0 3 * * *")
     @Transactional
     public void generateUpcomingOccurrences() {
-        List<Trip> parents = tripRepository.findByRecurrenceRuleIsNotNullAndStatus(TripStatus.PUBLISHED).stream()
-                .filter(t -> t.getParentTripId() == null)
-                .toList();
+        List<Trip> templates = tripRepository
+                .findByRecurrenceRuleIsNotNullAndParentTripIdIsNullAndStatus(TripStatus.TEMPLATE);
         int created = 0;
-        for (Trip parent : parents) {
-            created += generateFor(parent);
+        for (Trip template : templates) {
+            created += generateFor(template);
         }
         if (created > 0) {
             log.info("Recurrence : {} occurrence(s) generee(s) pour les {} prochains jours", created, HORIZON_DAYS);
         }
     }
 
-    int generateFor(Trip parent) {
-        Set<DayOfWeek> days = parseByDay(parent.getRecurrenceRule());
-        LocalTime timeOfDay = parent.getDepartureAt().atZone(ZoneOffset.UTC).toLocalTime();
-        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+    /**
+     * Engendre les occurrences manquantes du modele sur l horizon : du jour du premier
+     * depart (inclus) ou d aujourd hui si le premier depart est passe, jusqu a
+     * aujourd hui + 14 jours. Idempotent (index unique parent/depart).
+     *
+     * @return nombre d occurrences creees
+     */
+    @Transactional
+    public int generateFor(Trip template) {
+        Rule rule = parse(template.getRecurrenceRule());
+        ZonedDateTime firstDeparture = template.getDepartureAt().atZone(Tz.BENIN);
+        LocalTime timeOfDay = firstDeparture.toLocalTime();
+        LocalDate today = LocalDate.now(Tz.BENIN);
+        LocalDate start = firstDeparture.toLocalDate().isAfter(today) ? firstDeparture.toLocalDate() : today;
+        LocalDate end = today.plusDays(HORIZON_DAYS);
+        if (rule.until() != null && rule.until().isBefore(end)) {
+            end = rule.until();
+        }
+        long existing = tripRepository.countByParentTripId(template.getId());
+        List<TripStop> stops = tripStopRepository.findByTripIdOrderByPosition(template.getId());
+        Instant now = Instant.now();
         int created = 0;
-        for (int i = 1; i <= HORIZON_DAYS; i++) {
-            LocalDate date = today.plusDays(i);
-            if (!days.contains(date.getDayOfWeek())) {
+        for (LocalDate date = start; !date.isAfter(end); date = date.plusDays(1)) {
+            if (!rule.days().contains(date.getDayOfWeek())) {
                 continue;
             }
-            Instant occurrenceDeparture = date.atTime(timeOfDay).toInstant(ZoneOffset.UTC);
-            if (tripRepository.existsByParentTripIdAndDepartureAt(parent.getId(), occurrenceDeparture)) {
+            if (rule.count() != null && existing + created >= rule.count()) {
+                break;
+            }
+            Instant occurrenceDeparture = date.atTime(timeOfDay).atZone(Tz.BENIN).toInstant();
+            if (occurrenceDeparture.isBefore(now)) {
+                continue;
+            }
+            if (tripRepository.existsByParentTripIdAndDepartureAt(template.getId(), occurrenceDeparture)) {
                 continue;
             }
             Trip occurrence = Trip.builder()
-                    .driver(parent.getDriver())
-                    .vehicle(parent.getVehicle())
-                    .tripType(parent.getTripType())
-                    .originLabel(parent.getOriginLabel())
-                    .originLat(parent.getOriginLat())
-                    .originLng(parent.getOriginLng())
-                    .destLabel(parent.getDestLabel())
-                    .destLat(parent.getDestLat())
-                    .destLng(parent.getDestLng())
+                    .driver(template.getDriver())
+                    .vehicle(template.getVehicle())
+                    .tripType(template.getTripType())
+                    .originLabel(template.getOriginLabel())
+                    .originLat(template.getOriginLat())
+                    .originLng(template.getOriginLng())
+                    .destLabel(template.getDestLabel())
+                    .destLat(template.getDestLat())
+                    .destLng(template.getDestLng())
                     .departureAt(occurrenceDeparture)
-                    .seatsTotal(parent.getSeatsTotal())
-                    .seatsAvailable(parent.getSeatsTotal())
-                    .pricePerSeat(parent.getPricePerSeat())
-                    .instantBooking(parent.isInstantBooking())
-                    .luggagePolicy(parent.getLuggagePolicy())
-                    .description(parent.getDescription())
+                    .seatsTotal(template.getSeatsTotal())
+                    .seatsAvailable(template.getSeatsTotal())
+                    .pricePerSeat(template.getPricePerSeat())
+                    .instantBooking(template.isInstantBooking())
+                    .luggagePolicy(template.getLuggagePolicy())
+                    .description(template.getDescription())
                     .status(TripStatus.PUBLISHED)
-                    .parentTripId(parent.getId())
+                    .parentTripId(template.getId())
                     .build();
-            occurrence = tripRepository.save(occurrence);
+            try {
+                occurrence = tripRepository.saveAndFlush(occurrence);
+            } catch (DataIntegrityViolationException ex) {
+                // Course avec la tache nocturne ou une double creation : l occurrence existe deja.
+                log.debug("Occurrence deja presente pour {} a {}", template.getId(), occurrenceDeparture);
+                continue;
+            }
+            for (TripStop stop : stops) {
+                tripStopRepository.save(TripStop.builder()
+                        .trip(occurrence)
+                        .position(stop.getPosition())
+                        .label(stop.getLabel())
+                        .lat(stop.getLat())
+                        .lng(stop.getLng())
+                        .plannedAt(stop.getPlannedAt() == null ? null
+                                : occurrenceDeparture.plus(java.time.Duration.between(template.getDepartureAt(), stop.getPlannedAt())))
+                        .priceFromOrigin(stop.getPriceFromOrigin())
+                        .build());
+            }
             searchAlertMatchService.notifyMatchingAlerts(occurrence);
             created++;
         }
         return created;
     }
 
-    static Set<DayOfWeek> parseByDay(String rrule) {
+    /** Regle analysee : jours actifs, plafond d occurrences (COUNT) et date de fin (UNTIL, incluse). */
+    record Rule(Set<DayOfWeek> days, Integer count, LocalDate until) {
+    }
+
+    static Rule parse(String rrule) {
+        Set<DayOfWeek> days = EnumSet.allOf(DayOfWeek.class);
+        Integer count = null;
+        LocalDate until = null;
         if (rrule == null || rrule.isBlank()) {
-            return EnumSet.allOf(DayOfWeek.class);
+            return new Rule(days, null, null);
         }
         for (String part : rrule.split(";")) {
             String[] kv = part.split("=", 2);
-            if (kv.length == 2 && kv[0].trim().equalsIgnoreCase("BYDAY")) {
-                Set<DayOfWeek> days = EnumSet.noneOf(DayOfWeek.class);
-                Arrays.stream(kv[1].split(",")).map(String::trim).forEach(code -> {
-                    DayOfWeek d = fromIcalCode(code);
-                    if (d != null) days.add(d);
-                });
-                return days.isEmpty() ? EnumSet.allOf(DayOfWeek.class) : days;
+            if (kv.length != 2) continue;
+            String key = kv[0].trim().toUpperCase();
+            String value = kv[1].trim();
+            switch (key) {
+                case "BYDAY" -> {
+                    Set<DayOfWeek> parsed = EnumSet.noneOf(DayOfWeek.class);
+                    Arrays.stream(value.split(",")).map(String::trim).forEach(code -> {
+                        DayOfWeek d = fromIcalCode(code);
+                        if (d != null) parsed.add(d);
+                    });
+                    if (!parsed.isEmpty()) days = parsed;
+                }
+                case "COUNT" -> {
+                    try {
+                        int n = Integer.parseInt(value);
+                        if (n > 0) count = n;
+                    } catch (NumberFormatException ignored) {
+                        // COUNT illisible : pas de plafond
+                    }
+                }
+                case "UNTIL" -> {
+                    try {
+                        String digits = value.replaceAll("[^0-9]", "");
+                        if (digits.length() >= 8) {
+                            until = LocalDate.parse(digits.substring(0, 8), java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
+                        }
+                    } catch (DateTimeParseException ignored) {
+                        // UNTIL illisible : pas de date de fin
+                    }
+                }
+                default -> {
+                    // FREQ et autres cles ignorees (WEEKLY est le seul frequence supportee)
+                }
             }
         }
-        return EnumSet.allOf(DayOfWeek.class);
+        return new Rule(days, count, until);
+    }
+
+    /** Compatibilite : jours actifs seuls. */
+    static Set<DayOfWeek> parseByDay(String rrule) {
+        return parse(rrule).days();
     }
 
     private static DayOfWeek fromIcalCode(String code) {

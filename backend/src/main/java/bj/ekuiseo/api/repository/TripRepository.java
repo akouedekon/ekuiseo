@@ -82,6 +82,23 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
 
     boolean existsByParentTripIdAndDepartureAt(UUID parentTripId, Instant departureAt);
 
+    /** Occurrences deja engendrees par un modele, tous statuts confondus (plafond COUNT de la recurrence). */
+    long countByParentTripId(UUID parentTripId);
+
+    /** Occurrences a venir d un modele, pour la cascade d annulation / de mise a jour. */
+    List<Trip> findByParentTripIdAndStatusInAndDepartureAtAfter(UUID parentTripId,
+            List<bj.ekuiseo.api.domain.enums.TripStatus> statuses, Instant departureAfter);
+
+    /** Trajets a venir d un conducteur, pour la cascade de suspension. */
+    List<Trip> findByDriverIdAndStatusInAndDepartureAtAfter(UUID driverId,
+            List<bj.ekuiseo.api.domain.enums.TripStatus> statuses, Instant departureAfter);
+
+    /** Cycle de vie (TripLifecycleScheduler) : trajets dans ces statuts dont le depart est anterieur a before. */
+    List<Trip> findByStatusInAndDepartureAtBefore(List<bj.ekuiseo.api.domain.enums.TripStatus> statuses, Instant before);
+
+    /** Modeles de navette actifs (recurrence), pour la generation des occurrences. */
+    List<Trip> findByRecurrenceRuleIsNotNullAndParentTripIdIsNullAndStatus(bj.ekuiseo.api.domain.enums.TripStatus status);
+
     /** Trajets publies qui partent dans la fenetre [from, to) et n'ont pas encore recu leur rappel (regle metier n.10). */
     @Query("select t from Trip t where t.status = bj.ekuiseo.api.domain.enums.TripStatus.PUBLISHED "
             + "and t.reminderSentAt is null and t.departureAt between :from and :to")
@@ -124,6 +141,8 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
             select t.* from trips t
             join users d on d.id = t.driver_id
             where t.status = 'PUBLISHED'
+              and d.status = 'ACTIVE'
+              and t.departure_at >= :now
               and t.seats_available >= :seats
               and (cast(:tripType as varchar) is null or t.trip_type = cast(:tripType as varchar))
               and (cast(:dateFrom as timestamptz) is null or t.departure_at >= cast(:dateFrom as timestamptz))
@@ -138,7 +157,10 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
             """,
             countQuery = """
             select count(*) from trips t
+            join users d on d.id = t.driver_id
             where t.status = 'PUBLISHED'
+              and d.status = 'ACTIVE'
+              and t.departure_at >= :now
               and t.seats_available >= :seats
               and (cast(:tripType as varchar) is null or t.trip_type = cast(:tripType as varchar))
               and (cast(:dateFrom as timestamptz) is null or t.departure_at >= cast(:dateFrom as timestamptz))
@@ -156,6 +178,7 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
                        @Param("tripType") String tripType,
                        @Param("dateFrom") Instant dateFrom,
                        @Param("dateTo") Instant dateTo,
+                       @Param("now") Instant now,
                        Pageable pageable);
 
     /** Axe propose en ce moment, pour {@link #findPopularRoutes}. */

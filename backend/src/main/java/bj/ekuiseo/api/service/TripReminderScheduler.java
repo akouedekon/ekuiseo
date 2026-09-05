@@ -1,5 +1,6 @@
 package bj.ekuiseo.api.service;
 
+import bj.ekuiseo.api.common.Tz;
 import bj.ekuiseo.api.domain.Booking;
 import bj.ekuiseo.api.domain.Trip;
 import bj.ekuiseo.api.domain.enums.BookingStatus;
@@ -33,7 +34,7 @@ public class TripReminderScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(TripReminderScheduler.class);
     private static final DateTimeFormatter DEPARTURE_FORMAT =
-            DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).withLocale(Locale.FRENCH).withZone(ZoneOffset.UTC);
+            DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).withLocale(Locale.FRENCH).withZone(Tz.BENIN);
 
     private final TripRepository tripRepository;
     private final BookingRepository bookingRepository;
@@ -60,7 +61,7 @@ public class TripReminderScheduler {
                 notificationService.notifyCritical(booking.getPassenger(), NotificationType.TRIP_REMINDER,
                         Map.of("tripId", trip.getId().toString(), "bookingId", booking.getId().toString()),
                         "Ekuiseo : rappel, votre trajet " + trip.getOriginLabel() + " -> " + trip.getDestLabel()
-                                + " part demain (" + when + " UTC). Bon voyage !");
+                                + " part demain (" + when + "). Bon voyage !");
             }
             tripRepository.markReminderSent(trip.getId(), now);
         }

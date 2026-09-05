@@ -13,6 +13,7 @@ public interface TripMapper {
 
     @Mapping(target = "driver", source = "driver")
     @Mapping(target = "vehicle", source = "vehicle")
+    @Mapping(target = "generatedOccurrences", ignore = true)
     TripResponse toResponse(Trip trip);
 
     DriverSummary toDriverSummary(bj.ekuiseo.api.domain.User user);

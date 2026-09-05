@@ -1,5 +1,6 @@
 package bj.ekuiseo.api.service;
 
+import bj.ekuiseo.api.common.Tz;
 import bj.ekuiseo.api.domain.SearchAlert;
 import bj.ekuiseo.api.domain.Trip;
 import bj.ekuiseo.api.domain.enums.NotificationType;
@@ -52,7 +53,7 @@ public class SearchAlertMatchService {
 
     @Transactional
     public void notifyMatchingAlerts(Trip trip) {
-        LocalDate departureDate = trip.getDepartureAt().atZone(ZoneOffset.UTC).toLocalDate();
+        LocalDate departureDate = trip.getDepartureAt().atZone(Tz.BENIN).toLocalDate();
         List<SearchAlert> candidates = searchAlertRepository.findActiveCandidates(departureDate);
         int matches = 0;
         for (SearchAlert alert : candidates) {

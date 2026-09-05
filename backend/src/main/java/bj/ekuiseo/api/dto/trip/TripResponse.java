@@ -26,6 +26,15 @@ public record TripResponse(
         String description,
         TripStatus status,
         String recurrenceRule,
-        Instant createdAt
+        Instant createdAt,
+        /** Modele de navette dont ce trajet est une occurrence (null sinon). */
+        UUID parentTripId,
+        /** Renseigne uniquement a la creation d une navette : occurrences generees immediatement. */
+        Integer generatedOccurrences
 ) {
+    public TripResponse withGeneratedOccurrences(int count) {
+        return new TripResponse(id, driver, vehicle, tripType, originLabel, originLat, originLng, destLabel, destLat, destLng,
+                departureAt, seatsTotal, seatsAvailable, pricePerSeat, instantBooking, luggagePolicy, description, status,
+                recurrenceRule, createdAt, parentTripId, count);
+    }
 }

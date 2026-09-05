@@ -1,7 +1,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/api/client'
 import type { PopularRouteResponse, RecurringTripResponse, TripStopResponse, UpdateTripRequest } from '@/api/extended'
-import type { CreateTripRequest, Page, TripResponse, TripType } from '@/api/types'
+import type { BookingResponse, CreateTripRequest, Page, TripBookingResponse, TripResponse, TripType } from '@/api/types'
 
 export interface TripSearchParams {
   originLat: number
@@ -148,5 +148,27 @@ export function useRecurringTrips(enabled: boolean) {
     queryKey: ['me', 'recurring-trips'],
     queryFn: () => apiClient.get<RecurringTripResponse[]>('/api/v1/me/recurring-trips'),
     enabled,
+  })
+}
+
+/** GET /api/v1/trips/{id}/bookings : passagers d un trajet que je conduis (appel au depart, no-show). */
+export function useTripPassengers(tripId: string | null) {
+  return useQuery({
+    queryKey: ['trips', tripId, 'passengers'],
+    queryFn: () => apiClient.get<TripBookingResponse[]>(`/api/v1/trips/${tripId}/bookings`),
+    enabled: tripId !== null,
+    staleTime: 30_000,
+  })
+}
+
+/** POST /api/v1/bookings/{id}/no-show : le conducteur signale l absence d un passager (jusqu a 48 h apres le depart). */
+export function useMarkNoShow() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ bookingId }: { bookingId: string; tripId: string }) =>
+      apiClient.post<BookingResponse>(`/api/v1/bookings/${bookingId}/no-show`),
+    onSuccess: (_result, { tripId }) => {
+      queryClient.invalidateQueries({ queryKey: ['trips', tripId, 'passengers'] })
+    },
   })
 }

@@ -57,6 +57,12 @@ public class BookingController {
         return bookingService.getBookingDetailed(id, currentUser.id());
     }
 
+    @Operation(summary = "Signaler l absence du passager", description = "Reserve au conducteur du trajet, entre l heure de depart et 48 h apres : la reservation passe NO_SHOW, l acompte reste acquis.")
+    @PostMapping("/{id}/no-show")
+    public BookingResponse noShow(@PathVariable UUID id) {
+        return bookingService.markNoShow(id, currentUser.id());
+    }
+
     @Operation(summary = "Annuler ma reservation", description = "Remboursement selon le bareme : integral si plus de 24h avant le depart, 50% retenus si moins de 24h, rien si apres le depart.")
     @PostMapping("/{id}/cancel")
     public BookingResponse cancel(@PathVariable UUID id) {
