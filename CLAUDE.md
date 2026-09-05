@@ -148,6 +148,18 @@ et activé au premier code, purgé après 24 h sinon ; changement d e-mail en de
 de contact par l administration (journalisée) ; quota par IP dédié aux demandes de code ; alias
 admin morts retirés. Le seed et les comptes de test sont au format `+229 01 …`.
 
+**Phase 1, lot 1.2 (argent) livré le 2026-09-05** : remboursements en deux temps (`RefundService` :
+décision et statut `REFUND_PENDING` dans la transaction d annulation, appel Kkiapay après validation,
+reprise toutes les 5 min, `REFUND_MANUAL` pour les partiels et échecs définitifs, file `/admin/payments`) ;
+acompte reçu après expiration remboursé automatiquement et affiché comme tel ; échéance `bookings.expires_at`
+prolongée à l initiation du paiement ; reversements limités aux réservations voyagées depuis 24 h et
+encaissées, destination = compte mobile money vérifié (jamais le numéro de connexion), conducteurs sans
+compte exclus et notifiés, réservation remboursée retirée du lot ou marquée à déduire ; comptes mobile
+money vérifiés d office (numéro du compte) ou par l administration ; prix par place et par arrêt
+strictement positifs, bornés et croissants (V12) ; modification de trajet sous verrou avec recalcul
+FULL/PUBLISHED ; abonnement : souscription en attente réutilisée, confirmation rejouée avec le même
+paiement, expiration après 30 min.
+
 ## Commandes
 
 ```bash

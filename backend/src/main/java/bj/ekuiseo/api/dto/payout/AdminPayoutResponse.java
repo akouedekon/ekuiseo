@@ -9,17 +9,13 @@ import java.util.UUID;
  * Vue back-office d'un lot de reversement, GET /api/v1/admin/payouts (voir
  * PayoutService#listAllForAdmin).
  *
- * @param provider operateur mobile money du conducteur : celui de son moyen de
- *                 paiement par defaut s'il en a enregistre un (voir PaymentAccount),
- *                 sinon MTN_MOMO par defaut (operateur le plus repandu au Benin) -
- *                 approximation assumee en l'absence d'operateur trace sur
- *                 DriverPayout lui-meme (seul le numero destinataire y est stocke).
- * @param tripCount nombre de reservations incluses dans ce lot (pas necessairement
- *                   le nombre de trajets distincts, un conducteur pouvant avoir
- *                   plusieurs reservations sur le meme trajet).
- * @param status PENDING/PROCESSING/PAID/FAILED (PAID correspond a SETTLED cote
- *               backend interne, voir PayoutStatus - vocabulaire aligne sur le
- *               contrat front, extended.ts).
+ * @param provider operateur du compte mobile money verifie par defaut du conducteur,
+ *                 fige au moment du lot (V12). Null uniquement sur les lots anterieurs.
+ * @param phone numero de ce compte (jamais le numero de connexion depuis V12).
+ * @param tripCount nombre de reservations incluses dans ce lot.
+ * @param reversedCount reservations remboursees apres inclusion dans un lot deja traite ;
+ *                      {@code reversedAmount} est a deduire du prochain virement.
+ * @param status PENDING/PROCESSING/PAID/FAILED (PAID = SETTLED interne).
  */
 public record AdminPayoutResponse(
         UUID id,
@@ -32,6 +28,8 @@ public record AdminPayoutResponse(
         Instant periodStart,
         Instant periodEnd,
         String status,
-        Instant paidAt
+        Instant paidAt,
+        long reversedCount,
+        long reversedAmount
 ) {
 }

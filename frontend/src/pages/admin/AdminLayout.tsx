@@ -1,4 +1,5 @@
 import {
+  Banknote,
   AlertTriangle,
   BadgeCheck,
   Gauge,
@@ -44,6 +45,7 @@ const ADMIN_NAV: AdminNavGroup[] = [
       { to: '/admin/reports', label: 'Signalements', icon: AlertTriangle, end: false },
       { to: '/admin/verifications', label: 'Vérifications', icon: BadgeCheck, end: false },
       { to: '/admin/payouts', label: 'Reversements', icon: Wallet, end: false },
+      { to: '/admin/payments', label: 'Paiements', icon: Banknote, end: false },
       { to: '/admin/users', label: 'Utilisateurs', icon: Users, end: false },
       { to: '/admin/audit', label: 'Journal', icon: ScrollText, end: false },
     ],

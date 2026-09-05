@@ -24,4 +24,7 @@ public interface DriverSubscriptionRepository extends JpaRepository<DriverSubscr
     }
 
     Optional<DriverSubscription> findFirstByDriverIdAndStatusOrderByCreatedAtDesc(UUID driverId, SubscriptionStatus status);
+
+    /** Abonnements jamais payes (PENDING_PAYMENT) plus anciens que before, a expirer. */
+    List<DriverSubscription> findByStatusAndCreatedAtBefore(SubscriptionStatus status, Instant before);
 }

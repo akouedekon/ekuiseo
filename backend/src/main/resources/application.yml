@@ -180,6 +180,11 @@ ekuiseo:
     retention-days: ${SEARCH_EVENTS_RETENTION_DAYS:180}
   payout:
     minimum-threshold-fcfa: ${PAYOUT_MIN_THRESHOLD_FCFA:2000}
+    # Une reservation n est reversable qu une fois le depart passe depuis ce delai (heures).
+    eligibility-delay-hours: ${PAYOUT_ELIGIBILITY_DELAY_HOURS:24}
+  refund:
+    # Tentatives Kkiapay avant de basculer un remboursement en traitement manuel.
+    max-attempts: ${REFUND_MAX_ATTEMPTS:5}
   subscription:
     price-fcfa: ${SUBSCRIPTION_PRICE_FCFA:2000}
   rate-limit:

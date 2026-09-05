@@ -6,7 +6,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.Positive;
 
 import java.time.Instant;
 import java.util.List;
@@ -23,7 +23,7 @@ public record CreateTripRequest(
         @NotNull Double destLng,
         @NotNull @Future Instant departureAt,
         @Min(1) @Max(8) int seatsTotal,
-        @PositiveOrZero long pricePerSeat,
+        @Positive(message = "Le prix par place doit etre superieur a 0 F") long pricePerSeat,
         boolean instantBooking,
         String luggagePolicy,
         String description,

@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { EmptyState, ErrorState } from '@/components/ui/states'
 import { providerLabel } from '@/lib/payments'
+import { PaymentAccountsToVerify } from '@/features/admin/PaymentAccountsToVerify'
 import { useAdminPayouts, useMarkPayoutPaid, useRunPayoutBatch } from '@/hooks/useAdmin'
 import { describeError } from '@/lib/errors'
 import { formatDayShort, formatFcfa, formatPhone } from '@/lib/format'
@@ -81,7 +82,17 @@ const COLUMNS: DataTableColumn<AdminPayoutResponse>[] = [
     align: 'right',
     mobile: 'value',
     sortValue: (payout) => payout.amount,
-    cell: (payout) => <span className="font-display font-bold text-ink">{formatFcfa(payout.amount)}</span>,
+    cell: (payout) => (
+      <span className="font-display font-bold text-ink">
+        {formatFcfa(payout.amount)}
+        {payout.reversedCount > 0 ? (
+          <span className="block text-[12px] font-normal text-[var(--vermillon)]">
+            −{formatFcfa(payout.reversedAmount)} à déduire ({payout.reversedCount} remboursement
+            {payout.reversedCount > 1 ? 's' : ''})
+          </span>
+        ) : null}
+      </span>
+    ),
   },
   {
     id: 'status',
@@ -132,6 +143,16 @@ export function AdminPayouts() {
                 : 'Aucun conducteur ne dépasse le seuil de reversement cette semaine.',
           },
         )
+        if (result.skipped.length > 0) {
+          const names = result.skipped.map((s) => `${s.driverName} (${formatFcfa(s.amountFcfa)})`).join(', ')
+          toast.warning(
+            `${result.skipped.length} conducteur${result.skipped.length > 1 ? 's' : ''} sans compte mobile money vérifié`,
+            {
+              description: `${names}. Ils ont été prévenus ; leur solde attend le prochain lot.`,
+              duration: 10_000,
+            },
+          )
+        }
       },
       onError: (error) => toast.error(describeError(error, "Le lot n'a pas pu être constitué.")),
     })
@@ -162,6 +183,8 @@ export function AdminPayouts() {
           </p>
         </div>
       </Card>
+
+      <PaymentAccountsToVerify />
 
       {payouts.isError ? (
         <ErrorState description={describeError(payouts.error)} onRetry={() => payouts.refetch()} />

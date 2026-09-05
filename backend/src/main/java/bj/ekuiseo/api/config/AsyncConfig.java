@@ -26,6 +26,24 @@ public class AsyncConfig {
     private static final Logger log = LoggerFactory.getLogger(AsyncConfig.class);
 
     public static final String SEARCH_EVENT_EXECUTOR = "searchEventExecutor";
+    public static final String REFUND_EXECUTOR = "refundExecutor";
+
+    /** Execution des remboursements Kkiapay apres validation de la transaction metier (RefundService). */
+    @Bean(name = REFUND_EXECUTOR)
+    public Executor refundExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setThreadNamePrefix("refunds-");
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(2);
+        executor.setQueueCapacity(500);
+        executor.setRejectedExecutionHandler((runnable, pool) ->
+                log.warn("Remboursement differe a la reprise planifiee : file pleine ({} en attente)", pool.getQueue().size()));
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(20);
+        executor.initialize();
+        return executor;
+    }
+
 
     @Bean(name = SEARCH_EVENT_EXECUTOR)
     public Executor searchEventExecutor() {

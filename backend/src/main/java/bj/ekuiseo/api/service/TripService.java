@@ -76,6 +76,7 @@ public class TripService {
         if (req.tripType() == TripType.QUOTIDIEN && (req.recurrenceRule() == null || req.recurrenceRule().isBlank())) {
             throw new BadRequestException("Une regle de recurrence est requise pour un trajet QUOTIDIEN");
         }
+        validatePrices(req.pricePerSeat(), req.stops() == null ? List.of() : req.stops().stream().map(StopRequest::priceFromOrigin).toList());
 
         Trip trip = Trip.builder()
                 .driver(driver)
@@ -139,9 +140,44 @@ public class TripService {
         return tripMapper.toResponse(trip);
     }
 
+    /**
+     * Bornes de prix (constats F040/F207) : prix par place strictement positif ; chaque
+     * arret intermediaire entre 1 F et le prix par place, croissant avec la position
+     * (un troncon plus long ne peut pas couter moins cher). Une reservation a 0 F serait
+     * confirmee gratuitement en especes et impayable en mobile money.
+     */
+    static void validatePrices(long pricePerSeat, List<Long> stopPrices) {
+        if (pricePerSeat <= 0) {
+            throw new BadRequestException("Le prix par place doit etre superieur a 0 F");
+        }
+        long previous = 0;
+        int position = 1;
+        for (Long price : stopPrices) {
+            long p = price == null ? 0 : price;
+            if (p <= 0) {
+                throw new BadRequestException("Le prix jusqu a l arret " + position + " doit etre superieur a 0 F");
+            }
+            if (p > pricePerSeat) {
+                throw new BadRequestException("Le prix jusqu a l arret " + position + " (" + p
+                        + " F) depasse le prix du trajet complet (" + pricePerSeat + " F)");
+            }
+            if (p < previous) {
+                throw new BadRequestException("Le prix jusqu a l arret " + position + " doit etre au moins celui de l arret precedent");
+            }
+            previous = p;
+            position++;
+        }
+    }
+
+    /**
+     * Modification par le conducteur. Le trajet est charge sous verrou pessimiste
+     * (constat F005) : une reservation concurrente qui decremente les places ne peut
+     * plus etre ecrasee par une lecture perimee, et le statut FULL/PUBLISHED est
+     * recalcule apres tout changement de places.
+     */
     @Transactional
     public TripResponse updateTrip(UUID id, UUID driverId, UpdateTripRequest req) {
-        Trip trip = findTrip(id);
+        Trip trip = tripRepository.findByIdForUpdate(id).orElseThrow(() -> new NotFoundException("Trajet introuvable"));
         if (!trip.getDriver().getId().equals(driverId)) {
             throw new ForbiddenException("Vous n'etes pas le conducteur de ce trajet");
         }
@@ -180,10 +216,21 @@ public class TripService {
             trip.setSeatsTotal(req.seatsTotal());
             trip.setSeatsAvailable(trip.getSeatsAvailable() + delta);
         }
-        if (req.pricePerSeat() != null) trip.setPricePerSeat(req.pricePerSeat());
+        if (req.pricePerSeat() != null) {
+            validatePrices(req.pricePerSeat(), tripStopRepository.findByTripIdOrderByPosition(id).stream()
+                    .map(TripStop::getPriceFromOrigin).toList());
+            trip.setPricePerSeat(req.pricePerSeat());
+        }
         if (req.instantBooking() != null) trip.setInstantBooking(req.instantBooking());
         if (req.luggagePolicy() != null) trip.setLuggagePolicy(req.luggagePolicy());
         if (req.description() != null) trip.setDescription(req.description());
+        // Statut recalcule apres un changement de places : un trajet FULL qui gagne des
+        // places redevient reservable, un trajet PUBLISHED sans place devient FULL.
+        if (trip.getStatus() == TripStatus.FULL && trip.getSeatsAvailable() > 0) {
+            trip.setStatus(TripStatus.PUBLISHED);
+        } else if (trip.getStatus() == TripStatus.PUBLISHED && trip.getSeatsAvailable() == 0) {
+            trip.setStatus(TripStatus.FULL);
+        }
         return tripMapper.toResponse(tripRepository.save(trip));
     }
 

@@ -11,4 +11,7 @@ public interface PaymentAccountRepository extends JpaRepository<PaymentAccount, 
     List<PaymentAccount> findByUserIdOrderByCreatedAtAsc(UUID userId);
     Optional<PaymentAccount> findByUserIdAndIsDefaultTrue(UUID userId);
     long countByUserId(UUID userId);
+    List<PaymentAccount> findAllByOrderByCreatedAtDesc();
+    List<PaymentAccount> findByVerifiedAtIsNotNullOrderByCreatedAtDesc();
+    List<PaymentAccount> findByVerifiedAtIsNullOrderByCreatedAtDesc();
 }

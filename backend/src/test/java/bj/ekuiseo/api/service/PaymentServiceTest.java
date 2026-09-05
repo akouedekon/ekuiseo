@@ -44,6 +44,7 @@ class PaymentServiceTest {
     private final NotificationService notificationService = mock(NotificationService.class);
     private final AuditService auditService = mock(AuditService.class);
     private final KkiapayGateway gateway = mock(KkiapayGateway.class);
+    private final RefundService refundService = mock(RefundService.class);
 
     private PaymentService service;
     private User passenger;
@@ -53,7 +54,7 @@ class PaymentServiceTest {
     @BeforeEach
     void setUp() {
         service = new PaymentService(paymentRepository, bookingRepository, subscriptionRepository,
-                notificationService, auditService, gateway, "pk_test", "secret", true);
+                notificationService, auditService, gateway, refundService, "pk_test", "secret", true);
         passenger = User.builder().id(UUID.randomUUID()).build();
         User driver = User.builder().id(UUID.randomUUID()).build();
         Trip trip = Trip.builder().id(UUID.randomUUID()).driver(driver).build();

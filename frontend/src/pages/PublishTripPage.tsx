@@ -69,9 +69,21 @@ const schema = z.object({
       // Coordonnees posees par l'autocompletion : un arret sans position n'est pas envoye en aveugle.
       lat: z.number({ message: 'Choisissez une ville dans la liste' }),
       lng: z.number({ message: 'Choisissez une ville dans la liste' }),
-      priceFromOrigin: z.number().min(0),
+      priceFromOrigin: z.number({ message: 'Indiquez le prix jusqu’à cet arrêt' }).min(100, 'Prix trop bas (100 FCFA minimum)'),
     }),
   ),
+}).superRefine((values, ctx) => {
+  // Memes bornes que le serveur (TripService#validatePrices) : un arret ne coute jamais
+  // plus que le trajet complet et les prix croissent avec la position.
+  values.stops.forEach((stop, index) => {
+    if (stop.priceFromOrigin > values.pricePerSeat) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['stops', index, 'priceFromOrigin'], message: 'Ne peut pas dépasser le prix par place' })
+    }
+    const previous = index > 0 ? values.stops[index - 1]?.priceFromOrigin ?? 0 : 0
+    if (stop.priceFromOrigin < previous) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['stops', index, 'priceFromOrigin'], message: 'Au moins le prix de l’arrêt précédent' })
+    }
+  })
 })
 
 type FormValues = z.infer<typeof schema>
@@ -510,7 +522,13 @@ export function PublishTripPage() {
                   action={
                     <button
                       type="button"
-                      onClick={() => stopsField.append({ label: '', lat: undefined as unknown as number, lng: undefined as unknown as number, priceFromOrigin: 0 })}
+                      onClick={() => {
+                        // Prix suggere : celui de l'arret precedent, sinon la moitie du prix par place (arrondie aux 100 F).
+                        const stops = form.getValues('stops')
+                        const previous = stops.length > 0 ? stops[stops.length - 1]?.priceFromOrigin ?? 0 : 0
+                        const suggested = previous > 0 ? previous : Math.max(100, Math.round(form.getValues('pricePerSeat') / 200) * 100)
+                        stopsField.append({ label: '', lat: undefined as unknown as number, lng: undefined as unknown as number, priceFromOrigin: suggested })
+                      }}
                       className="flex items-center gap-1 text-[13px] font-semibold text-[var(--indigo)] underline-offset-4 hover:underline"
                     >
                       <Plus className="size-3.5" aria-hidden />

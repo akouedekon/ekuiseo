@@ -143,7 +143,7 @@ export function usePaymentStatus(paymentId: string | undefined) {
     enabled: !!paymentId,
     refetchInterval: (query) => {
       const status = query.state.data?.status
-      return status === 'SUCCEEDED' || status === 'FAILED' || status === 'EXPIRED' ? false : 3000
+      return status === 'SUCCEEDED' || status === 'FAILED' || status === 'EXPIRED' || status === 'REFUNDED' || status === 'REFUND_PENDING' ? false : 3000
     },
     staleTime: 0,
   })

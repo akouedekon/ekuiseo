@@ -1,5 +1,6 @@
 package bj.ekuiseo.api.domain;
 
+import bj.ekuiseo.api.domain.enums.MobileMoneyOperator;
 import bj.ekuiseo.api.domain.enums.PayoutStatus;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -43,8 +44,14 @@ public class DriverPayout {
     @Column(name = "settled_at")
     private Instant settledAt;
 
-    @Column(name = "destination_msisdn", nullable = false, length = 20)
+    /** Numero du compte mobile money verifie par defaut du conducteur au moment du lot (V12 : nullable, plus jamais le numero de connexion). */
+    @Column(name = "destination_msisdn", length = 20)
     private String destinationMsisdn;
+
+    /** Operateur fige au moment du lot (V12). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "destination_provider", length = 20)
+    private MobileMoneyOperator destinationProvider;
 
     /** Periode couverte par ce lot de reversement hebdomadaire (regle metier n.12). */
     @Column(name = "period_start")

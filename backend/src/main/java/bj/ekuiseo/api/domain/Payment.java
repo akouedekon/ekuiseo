@@ -70,6 +70,27 @@ public class Payment {
     @Column(name = "raw_payload", columnDefinition = "jsonb")
     private Map<String, Object> rawPayload;
 
+    /** Montant dont le remboursement a ete demande (integral aujourd hui, l API Kkiapay ne fait pas de partiel). */
+    @Column(name = "refund_amount")
+    private Long refundAmount;
+
+    /** ANNULATION_PASSAGER, ANNULATION_CONDUCTEUR, PAYMENT_ORPHAN, AMOUNT_INSUFFICIENT... */
+    @Column(name = "refund_reason", length = 60)
+    private String refundReason;
+
+    @Column(name = "refund_requested_at")
+    private Instant refundRequestedAt;
+
+    @Column(name = "refund_attempts", nullable = false)
+    @Builder.Default
+    private int refundAttempts = 0;
+
+    @Column(name = "refund_last_error", length = 500)
+    private String refundLastError;
+
+    @Column(name = "refunded_at")
+    private Instant refundedAt;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;

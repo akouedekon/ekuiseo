@@ -23,6 +23,9 @@ import java.util.UUID;
  */
 @Entity
 @Table(name = "trips")
+// Ne reecrit que les colonnes modifiees : un PATCH du prix ne doit pas ecraser seats_available
+// avec une valeur perimee (constat F005).
+@org.hibernate.annotations.DynamicUpdate
 @Getter
 @Setter
 @NoArgsConstructor

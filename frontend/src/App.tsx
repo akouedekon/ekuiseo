@@ -29,6 +29,7 @@ const AdminVerifications = lazy(() =>
   import('@/pages/admin/AdminVerifications').then((m) => ({ default: m.AdminVerifications })),
 )
 const AdminPayouts = lazy(() => import('@/pages/admin/AdminPayouts').then((m) => ({ default: m.AdminPayouts })))
+const AdminPayments = lazy(() => import('@/pages/admin/AdminPayments').then((m) => ({ default: m.AdminPayments })))
 const AdminUsers = lazy(() => import('@/pages/admin/AdminUsers').then((m) => ({ default: m.AdminUsers })))
 const AdminAudit = lazy(() => import('@/pages/admin/AdminAudit').then((m) => ({ default: m.AdminAudit })))
 /* Charte graphique vivante : reference de l'equipe, servie uniquement en developpement. */
@@ -79,6 +80,7 @@ export default function App() {
           <Route path="reports" element={<Suspense fallback={null}><AdminReports /></Suspense>} />
           <Route path="verifications" element={<Suspense fallback={null}><AdminVerifications /></Suspense>} />
           <Route path="payouts" element={<Suspense fallback={null}><AdminPayouts /></Suspense>} />
+          <Route path="payments" element={<Suspense fallback={null}><AdminPayments /></Suspense>} />
           <Route path="users" element={<Suspense fallback={null}><AdminUsers /></Suspense>} />
           <Route path="audit" element={<Suspense fallback={null}><AdminAudit /></Suspense>} />
         </Route>

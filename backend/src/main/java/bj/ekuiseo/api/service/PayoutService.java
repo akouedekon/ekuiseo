@@ -1,14 +1,16 @@
 package bj.ekuiseo.api.service;
 
+import bj.ekuiseo.api.common.exception.ConflictException;
 import bj.ekuiseo.api.common.exception.NotFoundException;
 import bj.ekuiseo.api.domain.Booking;
 import bj.ekuiseo.api.domain.DriverPayout;
 import bj.ekuiseo.api.domain.DriverPayoutItem;
+import bj.ekuiseo.api.domain.PaymentAccount;
 import bj.ekuiseo.api.domain.User;
 import bj.ekuiseo.api.domain.enums.BookingStatus;
-import bj.ekuiseo.api.domain.enums.MobileMoneyOperator;
-import bj.ekuiseo.api.domain.enums.PayoutStatus;
+import bj.ekuiseo.api.domain.enums.NotificationType;
 import bj.ekuiseo.api.domain.enums.PaymentMethod;
+import bj.ekuiseo.api.domain.enums.PayoutStatus;
 import bj.ekuiseo.api.dto.payout.AdminPayoutResponse;
 import bj.ekuiseo.api.dto.payout.DriverBalanceResponse;
 import bj.ekuiseo.api.dto.payout.PayoutBatchResultResponse;
@@ -26,31 +28,36 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
  * Reversements conducteurs (regle metier n.12, corrigee par la regle n.21 -
  * paiement fractionne, migration V7) : la plateforme ne reverse au conducteur
  * que ce qu'elle a REELLEMENT encaisse en ligne via Kkiapay, jamais le prix
- * total de la reservation. Deux modes MoMo genent un reversement, avec un calcul
- * different (voir {@link #netAmount}) ; les reservations CASH n'en genent jamais
- * (la plateforme n'a rien encaisse pour elles).
+ * total de la reservation. Deux modes MoMo generent un reversement, avec un calcul
+ * different (voir {@link #netAmount}) ; les reservations CASH n'en generent jamais.
  *
- * <p><b>Invariant nouveau, remplace l'ancien "net = amount - serviceFee"</b> : la
- * plateforme ne redistribue jamais plus qu'elle n'a reellement recu. En
- * MOMO_DEPOSIT, seul l'acompte a transite par Kkiapay - le solde est regle en
- * especes directement au conducteur par le passager, la plateforme n'a jamais vu
- * cet argent et ne peut donc pas le reverser une seconde fois.</p>
+ * <p><b>Lot 1.2 de l audit</b> (F006/F102/F103/F602) :</p>
+ * <ul>
+ *   <li>une reservation n est reversable qu une fois le depart passe depuis
+ *       {@code ekuiseo.payout.eligibility-delay-hours} (24 h) ET si son acompte a
+ *       reellement ete encaisse (paiement SUCCEEDED, non rembourse) ;</li>
+ *   <li>la destination est le compte mobile money <b>verifie</b> par defaut du
+ *       conducteur, fige sur le lot (numero + operateur) ; sans compte, le conducteur
+ *       est exclu du lot, liste dans le resultat et notifie ;</li>
+ *   <li>une reservation remboursee apres inclusion dans un lot en est retiree (lot
+ *       PENDING) ou marquee a deduire (lot deja traite), jamais oubliee.</li>
+ * </ul>
  *
  * <p><b>Limitation connue</b> : le decaissement reel (transfert d'argent vers le
  * numero mobile money du conducteur) n'est pas automatise ici. Aucune API de
- * transfert/payout Kkiapay n'a pu etre confirmee depuis cet environnement (voir
- * KkiapayGateway) : {@link #settle} se contente donc de marquer le lot comme
- * regle une fois le virement effectue manuellement par le back-office, et
- * consigne l'action dans le journal d'audit.</p>
+ * transfert/payout Kkiapay n'a pu etre confirmee ; {@link #settle} marque le lot
+ * comme regle une fois le virement effectue manuellement par le back-office.</p>
  */
 @Service
 public class PayoutService {
@@ -60,6 +67,7 @@ public class PayoutService {
     /** Les deux modes qui font transiter de l'argent par la plateforme (jamais CASH). */
     private static final List<PaymentMethod> PAYABLE_METHODS =
             List.of(PaymentMethod.MOMO_DEPOSIT, PaymentMethod.MOMO_FULL);
+    public static final String SKIP_NO_ACCOUNT = "Aucun compte mobile money verifie";
 
     private final BookingRepository bookingRepository;
     private final DriverPayoutRepository driverPayoutRepository;
@@ -68,13 +76,16 @@ public class PayoutService {
     private final PaymentAccountRepository paymentAccountRepository;
     private final PayoutMapper payoutMapper;
     private final AuditService auditService;
+    private final NotificationService notificationService;
     private final long minimumThresholdFcfa;
+    private final long eligibilityDelayHours;
 
     public PayoutService(BookingRepository bookingRepository, DriverPayoutRepository driverPayoutRepository,
                           DriverPayoutItemRepository driverPayoutItemRepository, UserRepository userRepository,
                           PaymentAccountRepository paymentAccountRepository, PayoutMapper payoutMapper,
-                          AuditService auditService,
-                          @Value("${ekuiseo.payout.minimum-threshold-fcfa:2000}") long minimumThresholdFcfa) {
+                          AuditService auditService, NotificationService notificationService,
+                          @Value("${ekuiseo.payout.minimum-threshold-fcfa:2000}") long minimumThresholdFcfa,
+                          @Value("${ekuiseo.payout.eligibility-delay-hours:24}") long eligibilityDelayHours) {
         this.bookingRepository = bookingRepository;
         this.driverPayoutRepository = driverPayoutRepository;
         this.driverPayoutItemRepository = driverPayoutItemRepository;
@@ -82,14 +93,19 @@ public class PayoutService {
         this.paymentAccountRepository = paymentAccountRepository;
         this.payoutMapper = payoutMapper;
         this.auditService = auditService;
+        this.notificationService = notificationService;
         this.minimumThresholdFcfa = minimumThresholdFcfa;
+        this.eligibilityDelayHours = eligibilityDelayHours;
+    }
+
+    private Instant eligibilityCutoff() {
+        return Instant.now().minus(eligibilityDelayHours, ChronoUnit.HOURS);
     }
 
     @Transactional(readOnly = true)
     public DriverBalanceResponse getBalance(UUID driverId) {
-        long balance = bookingRepository.findPayableForDriver(driverId, PAYABLE_STATUSES, PAYABLE_METHODS).stream()
-                .mapToLong(this::netAmount)
-                .sum();
+        long balance = bookingRepository.findPayableForDriver(driverId, PAYABLE_STATUSES, PAYABLE_METHODS, eligibilityCutoff())
+                .stream().mapToLong(this::netAmount).sum();
         return new DriverBalanceResponse(balance, minimumThresholdFcfa);
     }
 
@@ -101,39 +117,47 @@ public class PayoutService {
 
     /**
      * Calcule et cree un lot de reversements (un DriverPayout PENDING par conducteur
-     * eligible, regroupant toutes ses reservations MoMo payees non encore reversees).
-     * N'inclut un conducteur que si son solde atteint le seuil minimum configure
-     * (ekuiseo.payout.minimum-threshold-fcfa, 2000 FCFA par defaut). Declenche par
-     * l'admin (voir AdminPayoutController) ; peut aussi etre appele par un scheduler
-     * hebdomadaire externe si souhaite (non planifie automatiquement ici pour laisser
-     * l'admin choisir le moment exact du lot).
+     * eligible, regroupant toutes ses reservations MoMo payees, voyagees et non encore
+     * reversees). N'inclut un conducteur que si son solde atteint le seuil minimum et
+     * qu il a un compte mobile money verifie par defaut ; sinon il est liste dans
+     * {@code skipped} et notifie. Declenche par l'admin (AdminPayoutController).
      */
     @Transactional
     public PayoutBatchResultResponse runWeeklyBatch(UUID adminId) {
-        List<UUID> driverIds = bookingRepository.findDriverIdsWithPayableBookings(PAYABLE_STATUSES, PAYABLE_METHODS);
+        Instant cutoff = eligibilityCutoff();
+        List<UUID> driverIds = bookingRepository.findDriverIdsWithPayableBookings(PAYABLE_STATUSES, PAYABLE_METHODS, cutoff);
         Instant now = Instant.now();
         List<PayoutResponse> created = new ArrayList<>();
+        List<PayoutBatchResultResponse.SkippedDriver> skipped = new ArrayList<>();
         long totalAmount = 0;
 
         for (UUID driverId : driverIds) {
-            List<Booking> payable = bookingRepository.findPayableForDriver(driverId, PAYABLE_STATUSES, PAYABLE_METHODS);
+            List<Booking> payable = bookingRepository.findPayableForDriver(driverId, PAYABLE_STATUSES, PAYABLE_METHODS, cutoff);
             long amount = payable.stream().mapToLong(this::netAmount).sum();
             if (amount < minimumThresholdFcfa) {
                 continue; // reporte au prochain lot, sous le seuil minimum
             }
             User driver = userRepository.findById(driverId).orElseThrow(() -> new NotFoundException("Conducteur introuvable"));
+            Optional<PaymentAccount> account = paymentAccountRepository.findByUserIdAndIsDefaultTrue(driverId)
+                    .filter(a -> a.getVerifiedAt() != null);
+            if (account.isEmpty()) {
+                skipped.add(new PayoutBatchResultResponse.SkippedDriver(driverId,
+                        driver.getFirstName() + " " + driver.getLastName(), amount, SKIP_NO_ACCOUNT));
+                notificationService.notify(driver, NotificationType.PAYOUT_ACCOUNT_MISSING,
+                        Map.of("amountFcfa", amount));
+                continue;
+            }
             Instant periodStart = payable.stream().map(Booking::getCreatedAt).min(Instant::compareTo).orElse(now);
 
             DriverPayout payout = DriverPayout.builder()
                     .driver(driver)
                     .amount(amount)
                     .status(PayoutStatus.PENDING)
-                    .destinationMsisdn(driver.getPhone())
+                    .destinationMsisdn(account.get().getPhone())
+                    .destinationProvider(account.get().getProvider())
                     .periodStart(periodStart)
                     .periodEnd(now)
                     .build();
-            // Variable distincte (effectivement finale) pour la lambda ci-dessous :
-            // "payout" est reaffectee, javac refuserait sa capture.
             DriverPayout savedPayout = driverPayoutRepository.save(payout);
 
             List<DriverPayoutItem> items = payable.stream()
@@ -146,9 +170,50 @@ public class PayoutService {
         }
 
         auditService.log(adminId, "PAYOUT_BATCH_RUN", "driver_payout", null,
-                Map.of("payoutsCreated", created.size(), "totalAmountFcfa", totalAmount));
-        log.info("Lot de reversement : {} reversement(s) crees pour un total de {} FCFA", created.size(), totalAmount);
-        return new PayoutBatchResultResponse(created.size(), totalAmount, created);
+                Map.of("payoutsCreated", created.size(), "totalAmountFcfa", totalAmount, "skipped", skipped.size()));
+        log.info("Lot de reversement : {} reversement(s) crees pour {} FCFA, {} conducteur(s) sans compte verifie",
+                created.size(), totalAmount, skipped.size());
+        return new PayoutBatchResultResponse(created.size(), totalAmount, created, skipped);
+    }
+
+    /**
+     * Reservation annulee/remboursee : si elle figure dans un lot PENDING, elle en est
+     * retiree et le lot recalcule (supprime s il se vide) ; si le lot est deja traite,
+     * l item est marque a deduire et l audit le signale (constats F006/F102).
+     */
+    @Transactional
+    public void excludeCancelledBooking(Booking booking, String reason) {
+        Optional<DriverPayoutItem> found = driverPayoutItemRepository.findByBookingId(booking.getId());
+        if (found.isEmpty()) return;
+        DriverPayoutItem item = found.get();
+        DriverPayout payout = item.getPayout();
+        if (payout.getStatus() == PayoutStatus.PENDING) {
+            driverPayoutItemRepository.delete(item);
+            long remaining = payout.getAmount() - item.getNetAmount();
+            long left = driverPayoutItemRepository.countByPayoutId(payout.getId()) - 1;
+            if (left <= 0) {
+                driverPayoutRepository.delete(payout);
+                auditService.log(null, "PAYOUT_EMPTIED", "driver_payout", payout.getId(),
+                        Map.of("bookingId", booking.getId().toString(), "reason", reason));
+            } else {
+                payout.setAmount(Math.max(0, remaining));
+                driverPayoutRepository.save(payout);
+                auditService.log(null, "PAYOUT_ITEM_REMOVED", "driver_payout", payout.getId(),
+                        Map.of("bookingId", booking.getId().toString(), "netAmountFcfa", item.getNetAmount(),
+                                "newAmountFcfa", payout.getAmount(), "reason", reason));
+            }
+            return;
+        }
+        if (item.getReversedAt() == null) {
+            item.setReversedAt(Instant.now());
+            item.setReversalReason(reason);
+            driverPayoutItemRepository.save(item);
+            auditService.log(null, "PAYOUT_ALREADY_INCLUDED", "driver_payout", payout.getId(),
+                    Map.of("bookingId", booking.getId().toString(), "netAmountFcfa", item.getNetAmount(),
+                            "payoutStatus", payout.getStatus().name(), "reason", reason));
+            log.warn("Reservation {} remboursee alors que le lot {} est {} : {} FCFA a deduire du prochain virement",
+                    booking.getId(), payout.getId(), payout.getStatus(), item.getNetAmount());
+        }
     }
 
     @Transactional(readOnly = true)
@@ -156,11 +221,7 @@ public class PayoutService {
         return driverPayoutRepository.findAll().stream().map(payoutMapper::toResponse).toList();
     }
 
-    /**
-     * Vue back-office GET /api/v1/admin/payouts (voir AdminPayoutResponse pour
-     * le detail des champs derives - driverName, provider, tripCount, statut au
-     * vocabulaire front).
-     */
+    /** Vue back-office GET /api/v1/admin/payouts (voir AdminPayoutResponse). */
     @Transactional(readOnly = true)
     public List<AdminPayoutResponse> listAllForAdmin() {
         return driverPayoutRepository.findAll().stream().map(this::toAdminResponse).toList();
@@ -168,14 +229,14 @@ public class PayoutService {
 
     private AdminPayoutResponse toAdminResponse(DriverPayout payout) {
         User driver = payout.getDriver();
-        MobileMoneyOperator provider = paymentAccountRepository.findByUserIdAndIsDefaultTrue(driver.getId())
-                .map(bj.ekuiseo.api.domain.PaymentAccount::getProvider)
-                .orElse(MobileMoneyOperator.MTN_MOMO);
         long tripCount = driverPayoutItemRepository.countByPayoutId(payout.getId());
+        long reversedCount = driverPayoutItemRepository.countByPayoutIdAndReversedAtIsNotNull(payout.getId());
+        long reversedAmount = reversedCount == 0 ? 0 : driverPayoutItemRepository.sumReversedByPayoutId(payout.getId());
         return new AdminPayoutResponse(payout.getId(), driver.getId(),
-                driver.getFirstName() + " " + driver.getLastName(), provider, payout.getDestinationMsisdn(),
-                payout.getAmount(), tripCount, payout.getPeriodStart(), payout.getPeriodEnd(),
-                toAdminStatus(payout.getStatus()), payout.getSettledAt());
+                driver.getFirstName() + " " + driver.getLastName(), payout.getDestinationProvider(),
+                payout.getDestinationMsisdn(), payout.getAmount(), tripCount, payout.getPeriodStart(),
+                payout.getPeriodEnd(), toAdminStatus(payout.getStatus()), payout.getSettledAt(),
+                reversedCount, reversedAmount);
     }
 
     /** PENDING/PROCESSING/FAILED sont identiques ; SETTLED (interne) devient PAID (vocabulaire front, extended.ts). */
@@ -188,11 +249,19 @@ public class PayoutService {
     public PayoutResponse settle(UUID adminId, UUID payoutId) {
         DriverPayout payout = driverPayoutRepository.findById(payoutId)
                 .orElseThrow(() -> new NotFoundException("Reversement introuvable"));
+        if (payout.getStatus() == PayoutStatus.SETTLED) {
+            throw new ConflictException("Ce reversement est deja regle");
+        }
+        if (payout.getDestinationMsisdn() == null) {
+            throw new ConflictException("Ce lot n a pas de compte mobile money de destination");
+        }
+        long reversedCount = driverPayoutItemRepository.countByPayoutIdAndReversedAtIsNotNull(payoutId);
         payout.setStatus(PayoutStatus.SETTLED);
         payout.setSettledAt(Instant.now());
         payout = driverPayoutRepository.save(payout);
         auditService.log(adminId, "PAYOUT_SETTLED", "driver_payout", payout.getId(),
-                Map.of("amountFcfa", payout.getAmount(), "driverId", payout.getDriver().getId().toString()));
+                Map.of("amountFcfa", payout.getAmount(), "driverId", payout.getDriver().getId().toString(),
+                        "destination", String.valueOf(payout.getDestinationMsisdn()), "reversedItems", reversedCount));
         return payoutMapper.toResponse(payout);
     }
 
@@ -201,14 +270,9 @@ public class PayoutService {
      * corrigee par la regle n.21) : la plateforme ne redistribue que ce qu'elle a
      * reellement encaisse en ligne.
      * <ul>
-     *   <li>{@code MOMO_FULL} : le passager a paye la totalite en ligne -&gt;
-     *       net = amount - serviceFee (comportement historique inchange).</li>
-     *   <li>{@code MOMO_DEPOSIT} : seul l'acompte a ete encaisse en ligne, le solde
-     *       est regle en especes directement au conducteur -&gt;
-     *       net = depositAmount - serviceFee (JAMAIS amount - serviceFee, qui
-     *       crediterait a tort le conducteur d'un solde que la plateforme n'a
-     *       jamais recu). Toujours &gt;= 0 : FeePolicy#computeDepositAmount garantit
-     *       deposit &gt;= serviceFee a la creation de la reservation.</li>
+     *   <li>{@code MOMO_FULL} : net = amount - serviceFee.</li>
+     *   <li>{@code MOMO_DEPOSIT} : net = depositAmount - serviceFee (jamais amount -
+     *       serviceFee, qui crediterait un solde que la plateforme n'a jamais recu).</li>
      * </ul>
      * CASH n'atteint jamais cette methode (exclu en amont par {@link #PAYABLE_METHODS}).
      */

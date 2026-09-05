@@ -3,7 +3,7 @@ package bj.ekuiseo.api.dto.trip;
 import jakarta.validation.constraints.Future;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
 import java.time.Instant;
@@ -31,7 +31,7 @@ public record UpdateTripRequest(
         Double destLng,
         @Future Instant departureAt,
         @Min(1) @Max(8) Integer seatsTotal,
-        @PositiveOrZero Long pricePerSeat,
+        @Positive(message = "Le prix par place doit etre superieur a 0 F") Long pricePerSeat,
         Boolean instantBooking,
         String luggagePolicy,
         String description

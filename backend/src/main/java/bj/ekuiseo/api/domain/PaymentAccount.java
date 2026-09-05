@@ -50,6 +50,10 @@ public class PaymentAccount {
     @Builder.Default
     private boolean isDefault = false;
 
+    /** Possession du numero etablie (numero de connexion, ou validation admin journalisee) : seul un compte verifie recoit des reversements (V12). */
+    @Column(name = "verified_at")
+    private Instant verifiedAt;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;

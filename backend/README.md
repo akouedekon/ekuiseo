@@ -168,7 +168,9 @@ Le front (`frontend/src/api/extended.ts`, `types.ts`, hooks) appelait des endpoi
 | Nouvelle forme (front) | Ancienne forme (conservée en alias) |
 |---|---|
 | `GET /api/v1/admin/verifications?status=PENDING`, `POST /{id}/approve`, `POST /{id}/reject` (motif optionnel) | `POST /api/v1/admin/users/{id}/verify-identity` (conservé tel quel, chemin distinct — pas un simple alias, voir §10) |
-| `POST /api/v1/admin/payouts/{id}/pay` | `POST /api/v1/admin/payouts/{id}/settle` (alias, même méthode de service) |
+| `POST /api/v1/admin/payouts/{id}/pay` | Marque un lot réglé après virement manuel ; refuse un lot déjà réglé ou sans compte de destination (V12 : destination = compte mobile money vérifié du conducteur, jamais son numéro de connexion ; `reversedCount`/`reversedAmount` signalent les réservations remboursées après inclusion). |
+| `GET /api/v1/admin/payments?status=`, `POST /{id}/refund`, `POST /{id}/mark-refunded` | File des remboursements (lot 1.2) : `REFUND_PENDING` exécutés hors transaction avec reprise toutes les 5 min, `REFUND_MANUAL` (partiel, échec définitif, sans identifiant Kkiapay) à traiter depuis le tableau de bord Kkiapay puis marquer. |
+| `GET /api/v1/admin/payment-accounts?verified=`, `POST /{id}/verify` | Comptes mobile money à vérifier (possession du numéro) avant de servir de destination de reversement. |
 | `POST /api/v1/admin/users/{id}/reinstate` | Réactivation d un compte suspendu (l alias historique `/activate` a été retiré, lot 1.1). |
 | `PATCH /api/v1/admin/reports/{id}` (`{status}`) | `POST /api/v1/admin/reports/{id}/resolve` (conservé, sémantique legèrement différente : `resolve` prend une note de résolution, `PATCH` change juste le statut) |
 | `GET /api/v1/admin/stats?days=N` | `GET /api/v1/admin/stats?from=...&to=...` (conservé ; les deux formes coexistent sur le même chemin, distinguées par les paramètres de requête présents) |

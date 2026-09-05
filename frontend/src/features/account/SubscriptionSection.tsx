@@ -1,5 +1,5 @@
 import { BadgeCheck, Sparkles } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/feedback/ConfirmDialog'
@@ -17,6 +17,33 @@ import { openKkiapay } from '@/lib/kkiapay'
 import type { PaymentStatusResponse } from '@/api/extended'
 import type { UserResponse } from '@/api/types'
 
+const PENDING_CONFIRM_KEY = 'ekuiseo.subscription.pendingConfirm'
+
+function readPendingConfirm(): { paymentId: string; transactionId: string } | null {
+  try {
+    const raw = sessionStorage.getItem(PENDING_CONFIRM_KEY)
+    return raw ? (JSON.parse(raw) as { paymentId: string; transactionId: string }) : null
+  } catch {
+    return null
+  }
+}
+
+function savePendingConfirm(value: { paymentId: string; transactionId: string }) {
+  try {
+    sessionStorage.setItem(PENDING_CONFIRM_KEY, JSON.stringify(value))
+  } catch {
+    // stockage indisponible : la reprise ne sera pas possible, le paiement reste verifiable par le webhook
+  }
+}
+
+function clearPendingConfirm() {
+  try {
+    sessionStorage.removeItem(PENDING_CONFIRM_KEY)
+  } catch {
+    // ignore
+  }
+}
+
 /**
  * Abonnement conducteur (regle metier n.10) : 2 000 FCFA/mois, commission
  * ramenee a 0 %. Le paiement passe par le widget Kkiapay, puis le serveur
@@ -29,9 +56,32 @@ export function SubscriptionSection({ user }: { user: UserResponse }) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [paying, setPaying] = useState(false)
 
+  /*
+   * Reprise : si le widget a reussi mais que la confirmation serveur a echoue (reseau,
+   * onglet ferme), paymentId + transactionId sont conserves pour rejouer /confirm avec
+   * le MEME paiement au lieu d'en creer un nouveau (constat F206).
+   */
+  useEffect(() => {
+    const raw = readPendingConfirm()
+    if (!raw) return
+    apiClient
+      .post<PaymentStatusResponse>(`/api/v1/payments//confirm`, { transactionId: raw.transactionId })
+      .then(async (status) => {
+        if (status.status === 'SUCCEEDED') {
+          clearPendingConfirm()
+          await queryClient.invalidateQueries({ queryKey: ['me', 'subscription'] })
+          toast.success('Abonnement activé', { description: 'Votre paiement précédent a été retrouvé et confirmé.' })
+        } else if (status.status === 'FAILED') {
+          clearPendingConfirm()
+        }
+      })
+      .catch(() => undefined)
+  }, [queryClient])
+
   const start = async () => {
     setConfirmOpen(false)
     setPaying(true)
+    let pending: { paymentId: string; transactionId: string } | null = null
     try {
       const payment = await subscribe.mutateAsync()
       const result = await openKkiapay({
@@ -43,9 +93,12 @@ export function SubscriptionSection({ user }: { user: UserResponse }) {
         email: user.email ?? undefined,
         data: payment.widgetData,
       })
-      await apiClient.post<PaymentStatusResponse>(`/api/v1/payments/${payment.paymentId}/confirm`, {
+      pending = { paymentId: payment.paymentId, transactionId: result.transactionId }
+      savePendingConfirm(pending)
+      await apiClient.post<PaymentStatusResponse>(`/api/v1/payments//confirm`, {
         transactionId: result.transactionId,
       })
+      clearPendingConfirm()
       await queryClient.invalidateQueries({ queryKey: ['me', 'subscription'] })
       toast.success('Abonnement activé', { description: 'Plus aucune commission sur vos trajets ce mois-ci.' })
     } catch (error) {

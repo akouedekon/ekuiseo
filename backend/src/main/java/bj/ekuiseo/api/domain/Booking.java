@@ -72,6 +72,10 @@ public class Booking {
     @Builder.Default
     private PaymentMethod paymentMethod = PaymentMethod.MOMO_DEPOSIT;
 
+    /** Echeance de l acompte pour une reservation PENDING_PAYMENT (V12) ; null en especes ou une fois confirmee. Prolongee a l initiation du paiement. */
+    @Column(name = "expires_at")
+    private Instant expiresAt;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;

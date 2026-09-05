@@ -53,7 +53,8 @@ export interface DriverPreferences {
 /* ---------------------------------------------------------------- Paiement */
 
 export type PaymentProvider = 'MTN_MOMO' | 'MOOV_MONEY' | 'CELTIIS_CASH'
-export type PaymentStatus = 'PENDING' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED' | 'EXPIRED'
+/** Vocabulaire client d un paiement (PaymentStatusResponse) : REFUND_PENDING / REFUNDED = acompte recu trop tard, rembourse. */
+export type PaymentStatus = 'PENDING' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED' | 'EXPIRED' | 'REFUND_PENDING' | 'REFUNDED'
 
 /** Mode de reglement choisi par le passager a la reservation. */
 /** Valeurs telles que stockees en base par le backend. */
@@ -170,6 +171,8 @@ export interface PaymentMethodResponse {
   phone: string
   label: string | null
   isDefault: boolean
+  /** Possession du numero etablie (numero de connexion, ou validation par l administration) : seul un compte verifie recoit des reversements. */
+  verified: boolean
 }
 
 export type IdentityVerificationStatus = 'NOT_SUBMITTED' | 'PENDING' | 'APPROVED' | 'REJECTED'
@@ -407,6 +410,9 @@ export interface AdminPayoutResponse {
   periodEnd: string
   status: PayoutStatus
   paidAt: string | null
+  /** Reservations remboursees apres inclusion dans un lot deja traite : montant a deduire du prochain virement. */
+  reversedCount: number
+  reversedAmount: number
 }
 
 /** POST /admin/payouts/{id}/pay et GET /me/payouts : lot de reversement brut (dto.payout.PayoutResponse). */
@@ -427,6 +433,47 @@ export interface PayoutBatchResultResponse {
   payoutsCreated: number
   totalAmountFcfa: number
   payouts: PayoutResponse[]
+  /** Conducteurs eligibles mais exclus du lot (aucun compte mobile money verifie). */
+  skipped: { driverId: string; driverName: string; amountFcfa: number; reason: string }[]
+}
+
+/** Statut interne d un paiement (dto.payment.AdminPaymentResponse). */
+export type PaymentRecordStatus = 'INITIATED' | 'SUCCEEDED' | 'FAILED' | 'REFUND_PENDING' | 'REFUNDED' | 'REFUND_MANUAL'
+
+export type AdminPaymentsFilter = 'TODO' | 'REFUNDED' | 'ALL'
+
+/** GET /admin/payments : paiements a suivre (remboursements). */
+export interface AdminPaymentResponse {
+  id: string
+  bookingId: string | null
+  subscriptionId: string | null
+  passengerId: string | null
+  passengerName: string | null
+  passengerPhone: string | null
+  providerTxId: string
+  amount: number
+  status: PaymentRecordStatus
+  refundAmount: number | null
+  refundReason: string | null
+  refundRequestedAt: string | null
+  refundAttempts: number
+  refundLastError: string | null
+  refundedAt: string | null
+  createdAt: string
+}
+
+/** GET /admin/payment-accounts : comptes mobile money a verifier avant reversement. */
+export interface AdminPaymentAccountResponse {
+  id: string
+  userId: string
+  userName: string
+  userPhone: string
+  provider: PaymentProvider
+  phone: string
+  label: string | null
+  isDefault: boolean
+  verifiedAt: string | null
+  createdAt: string
 }
 
 /** GET /me/payouts/balance */

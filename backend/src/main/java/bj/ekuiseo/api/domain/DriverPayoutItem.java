@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -37,4 +38,11 @@ public class DriverPayoutItem {
 
     @Column(name = "net_amount", nullable = false)
     private long netAmount;
+
+    /** Reservation remboursee apres inclusion dans un lot deja traite (V12) : montant a deduire du prochain virement. */
+    @Column(name = "reversed_at")
+    private Instant reversedAt;
+
+    @Column(name = "reversal_reason", length = 60)
+    private String reversalReason;
 }

@@ -2,6 +2,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient, downloadFile } from '@/api/client'
 import type {
   AdminLiquidityResponse,
+  AdminPaymentAccountResponse,
+  AdminPaymentResponse,
+  AdminPaymentsFilter,
   AdminPayoutResponse,
   AdminReportResponse,
   AdminStatsResponse,
@@ -164,6 +167,56 @@ export function useUpdateUserContact() {
     mutationFn: ({ id, ...input }: { id: string; email?: string; phone?: string; reason: string }) =>
       apiClient.patch<AdminUserResponse>(`/api/v1/admin/users/${id}/contact`, input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'users'] }),
+  })
+}
+
+/* ------------------------------------------------------------ Paiements (remboursements) */
+
+/** GET /api/v1/admin/payments?status= (TODO = REFUND_PENDING + REFUND_MANUAL, la file de travail). */
+export function useAdminPayments(filter: AdminPaymentsFilter) {
+  const status = filter === 'TODO' ? '' : `?status=${filter}`
+  return useQuery<AdminPaymentResponse[]>({
+    queryKey: ['admin', 'payments', filter],
+    queryFn: () => apiClient.get<AdminPaymentResponse[]>(`/api/v1/admin/payments${status}`),
+    refetchInterval: filter === 'TODO' ? 60_000 : false,
+  })
+}
+
+/** POST /api/v1/admin/payments/{id}/refund : rejoue l'appel Kkiapay tout de suite. */
+export function useRetryRefund() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => apiClient.post<AdminPaymentResponse>(`/api/v1/admin/payments/${id}/refund`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'payments'] }),
+  })
+}
+
+/** POST /api/v1/admin/payments/{id}/mark-refunded { note } */
+export function useMarkPaymentRefunded() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, note }: { id: string; note?: string }) =>
+      apiClient.post<AdminPaymentResponse>(`/api/v1/admin/payments/${id}/mark-refunded`, { note }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'payments'] }),
+  })
+}
+
+/* ------------------------------------------------------------ Comptes mobile money */
+
+/** GET /api/v1/admin/payment-accounts?verified=false : comptes en attente de vérification de possession. */
+export function useAdminPaymentAccounts(verified: boolean) {
+  return useQuery<AdminPaymentAccountResponse[]>({
+    queryKey: ['admin', 'payment-accounts', verified],
+    queryFn: () => apiClient.get<AdminPaymentAccountResponse[]>(`/api/v1/admin/payment-accounts?verified=${verified}`),
+  })
+}
+
+/** POST /api/v1/admin/payment-accounts/{id}/verify */
+export function useVerifyPaymentAccount() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => apiClient.post<AdminPaymentAccountResponse>(`/api/v1/admin/payment-accounts/${id}/verify`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'payment-accounts'] }),
   })
 }
 

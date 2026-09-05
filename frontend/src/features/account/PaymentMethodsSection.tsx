@@ -74,6 +74,11 @@ export function PaymentMethodsSection({ defaultPhone }: { defaultPhone: string }
                   <p className="font-display text-base font-bold">{providerLabel(method.provider)}</p>
                   <p className="tnum text-label text-muted">{formatPhone(method.phone)}</p>
                 </div>
+                {method.verified ? (
+                  <Badge tone="success">Vérifié</Badge>
+                ) : (
+                  <Badge tone="warning">À vérifier</Badge>
+                )}
                 {method.isDefault ? <Badge tone="indigo">Par défaut</Badge> : null}
                 <Button
                   variant="ghost"
@@ -92,7 +97,8 @@ export function PaymentMethodsSection({ defaultPhone }: { defaultPhone: string }
 
       <p className="mt-3 text-label leading-relaxed text-muted">
         Ces comptes servent à régler l'acompte de vos réservations et, si vous conduisez, à recevoir vos
-        reversements.
+        reversements. Un compte au numéro de votre profil est vérifié d'office ; tout autre numéro est vérifié par
+        l'équipe Ekuiseo avant le premier reversement (le lot vous attend, il n'est pas perdu).
       </p>
 
       <Sheet

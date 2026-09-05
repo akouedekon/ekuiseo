@@ -151,6 +151,9 @@ public class BookingService {
                 // (acompte ou totalite selon le mode) reste PENDING_PAYMENT jusqu'au webhook
                 // Kkiapay confirmant l'encaissement de deposit_amount.
                 .status(isCash ? BookingStatus.CONFIRMED : BookingStatus.PENDING_PAYMENT)
+                // Echeance de l acompte (V12) : le scheduler d expiration lit cette colonne, que
+                // PaymentService#initiate prolonge si le paiement est lance juste avant la limite.
+                .expiresAt(isCash ? null : Instant.now().plus(pendingPaymentTtlMinutes, ChronoUnit.MINUTES))
                 .build();
         booking = bookingRepository.save(booking);
 
@@ -305,7 +308,8 @@ public class BookingService {
     private PaymentPlanResponse buildPaymentPlan(Booking booking) {
         boolean isCash = booking.getPaymentMethod() == PaymentMethod.CASH;
         Instant depositDueAt = (!isCash && booking.getStatus() == BookingStatus.PENDING_PAYMENT)
-                ? booking.getCreatedAt().plus(pendingPaymentTtlMinutes, ChronoUnit.MINUTES)
+                ? (booking.getExpiresAt() != null ? booking.getExpiresAt()
+                        : booking.getCreatedAt().plus(pendingPaymentTtlMinutes, ChronoUnit.MINUTES))
                 : null;
         return new PaymentPlanResponse(booking.getAmount(), booking.getDepositAmount(), booking.getBalanceDueOnBoard(),
                 booking.getServiceFee(), booking.getPaymentMethod(), paymentPlanStatus(booking), depositDueAt,
@@ -464,8 +468,7 @@ public class BookingService {
      */
     @Transactional
     public int expireStalePendingBookings() {
-        Instant cutoff = Instant.now().minus(pendingPaymentTtlMinutes, ChronoUnit.MINUTES);
-        List<Booking> stale = bookingRepository.findExpirable(BookingStatus.PENDING_PAYMENT, cutoff);
+        List<Booking> stale = bookingRepository.findExpirable(BookingStatus.PENDING_PAYMENT, Instant.now());
         for (Booking b : stale) {
             b.setStatus(BookingStatus.CANCELLED_BY_PASSENGER);
             bookingRepository.save(b);

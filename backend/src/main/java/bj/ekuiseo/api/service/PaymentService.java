@@ -57,6 +57,7 @@ public class PaymentService {
     private final NotificationService notificationService;
     private final AuditService auditService;
     private final KkiapayGateway kkiapayGateway;
+    private final RefundService refundService;
     private final String publicKey;
     private final String webhookSecret;
     private final boolean sandbox;
@@ -64,7 +65,7 @@ public class PaymentService {
     public PaymentService(PaymentRepository paymentRepository, BookingRepository bookingRepository,
                            DriverSubscriptionRepository driverSubscriptionRepository,
                            NotificationService notificationService, AuditService auditService,
-                           KkiapayGateway kkiapayGateway,
+                           KkiapayGateway kkiapayGateway, RefundService refundService,
                            @Value("${ekuiseo.kkiapay.public-key:}") String publicKey,
                            @Value("${ekuiseo.kkiapay.webhook-secret:}") String webhookSecret,
                            @Value("${ekuiseo.kkiapay.sandbox:true}") boolean sandbox) {
@@ -74,6 +75,7 @@ public class PaymentService {
         this.notificationService = notificationService;
         this.auditService = auditService;
         this.kkiapayGateway = kkiapayGateway;
+        this.refundService = refundService;
         this.publicKey = publicKey;
         this.webhookSecret = webhookSecret;
         this.sandbox = sandbox;
@@ -87,7 +89,14 @@ public class PaymentService {
             throw new ForbiddenException("Cette reservation ne vous appartient pas");
         }
         if (booking.getStatus() != BookingStatus.PENDING_PAYMENT) {
-            throw new BadRequestException("Cette reservation n'est pas en attente de paiement");
+            throw new BadRequestException("Cette reservation n est pas en attente de paiement");
+        }
+        // Le widget USSD peut prendre plus d une minute : si l echeance est proche, on la
+        // prolonge pour que le scheduler d expiration et le paiement ne se croisent plus (F036).
+        Instant now = Instant.now();
+        if (booking.getExpiresAt() != null && booking.getExpiresAt().isBefore(now.plus(5, ChronoUnit.MINUTES))) {
+            booking.setExpiresAt(now.plus(10, ChronoUnit.MINUTES));
+            bookingRepository.save(booking);
         }
         String transactionRef = "ekuiseo-booking-" + UUID.randomUUID();
         // Regle metier n.21 : on initie ici deposit_amount, pas amount - c'est la partie
@@ -233,13 +242,15 @@ public class PaymentService {
         paymentRepository.save(payment);
 
         if (verified.success() && !amountOk) {
-            log.error("Paiement Kkiapay {} d'un montant insuffisant ({} F verifies pour {} F attendus) sur le "
-                            + "paiement {} : non confirme, remboursement manuel a traiter.",
-                    txId, verified.amountFcfa(), payment.getAmount(), payment.getId());
+            // L argent a ete encaisse mais ne couvre pas l attendu : il repart au passager (F105).
+            log.warn("Paiement Kkiapay {} d un montant insuffisant ({} F verifies pour {} F attendus) : non confirme, remboursement demande.",
+                    txId, verified.amountFcfa(), payment.getAmount());
+            refundService.requestForOrphanPayment(payment, booking != null ? booking.getPassenger() : null,
+                    RefundService.REASON_AMOUNT_INSUFFICIENT, verified.amountFcfa());
         }
         if (!stillPending) {
             if (booking != null) {
-                handleBookingPaymentResult(booking, succeeded);
+                handleBookingPaymentResult(payment, booking, succeeded);
             } else if (subscription != null) {
                 handleSubscriptionPaymentResult(subscription, succeeded);
             }
@@ -283,8 +294,12 @@ public class PaymentService {
         return switch (payment.getStatus()) {
             case INITIATED -> booking != null && (booking.getStatus() == BookingStatus.CANCELLED_BY_PASSENGER
                     || booking.getStatus() == BookingStatus.CANCELLED_BY_DRIVER) ? "EXPIRED" : "PROCESSING";
-            case SUCCEEDED, REFUNDED -> "SUCCEEDED";
+            case SUCCEEDED -> "SUCCEEDED";
             case FAILED -> "FAILED";
+            // Argent encaisse mais reservation perdue (ou annulee) : le client doit voir le
+            // remboursement, pas une place confirmee (F105).
+            case REFUND_PENDING, REFUND_MANUAL -> "REFUND_PENDING";
+            case REFUNDED -> "REFUNDED";
         };
     }
 
@@ -415,11 +430,7 @@ public class PaymentService {
         // confirme rien (journalise pour remboursement manuel).
         boolean amountOk = isAmountSufficient(verified, expectedAmount);
         boolean succeeded = verified.success() && amountOk;
-        if (verified.success() && !amountOk) {
-            log.error("Webhook Kkiapay {} d'un montant insuffisant ({} F verifies pour {} F attendus) : "
-                    + "non confirme, remboursement manuel a traiter.", payload.transactionId(),
-                    verified.amountFcfa(), expectedAmount);
-        }
+        boolean insufficient = verified.success() && !amountOk;
 
         PaymentChannel channel = parseChannel(payload.method());
         if (channel != null) {
@@ -436,27 +447,38 @@ public class PaymentService {
                 "amountSufficient", String.valueOf(amountOk)));
         payment.setStatus(succeeded ? PaymentStatus.SUCCEEDED : PaymentStatus.FAILED);
         paymentRepository.save(payment);
+        if (insufficient) {
+            log.warn("Webhook Kkiapay {} d un montant insuffisant ({} F verifies pour {} F attendus) : non confirme, remboursement demande.",
+                    payload.transactionId(), verified.amountFcfa(), expectedAmount);
+            refundService.requestForOrphanPayment(payment,
+                    payment.getBooking() != null ? payment.getBooking().getPassenger() : null,
+                    RefundService.REASON_AMOUNT_INSUFFICIENT, verified.amountFcfa());
+        }
 
         if (payment.getBooking() != null) {
-            handleBookingPaymentResult(payment.getBooking(), succeeded);
+            handleBookingPaymentResult(payment, payment.getBooking(), succeeded);
         } else {
             handleSubscriptionPaymentResult(payment.getSubscription(), succeeded);
         }
     }
 
-    private void handleBookingPaymentResult(Booking booking, boolean success) {
+    private void handleBookingPaymentResult(Payment payment, Booking booking, boolean success) {
         if (success) {
             if (booking.getStatus() == BookingStatus.CONFIRMED) {
                 return; // deja confirmee (webhook et widget se sont croises)
             }
             if (booking.getStatus() != BookingStatus.PENDING_PAYMENT) {
-                // Les places ont deja ete liberees (expiration au bout de 20 min, regle metier n.6,
-                // ou annulation) : on ne peut pas re-confirmer sans risquer une surreservation.
-                log.error("Paiement Kkiapay recu pour la reservation {} en etat {} : non confirmee, "
-                        + "remboursement manuel a traiter.", booking.getId(), booking.getStatus());
+                // Les places ont deja ete liberees (expiration, annulation) : on ne peut pas
+                // re-confirmer sans risquer une surreservation. L argent encaisse repart au
+                // passager automatiquement (F036/F105), avec audit et notification.
+                log.warn("Paiement Kkiapay recu pour la reservation {} en etat {} : non confirmee, remboursement demande.",
+                        booking.getId(), booking.getStatus());
+                refundService.requestForOrphanPayment(payment, booking.getPassenger(), RefundService.REASON_ORPHAN,
+                        payment.getAmount());
                 return;
             }
             booking.setStatus(BookingStatus.CONFIRMED);
+            booking.setExpiresAt(null);
             bookingRepository.save(booking);
             notificationService.notifyCritical(booking.getPassenger(), NotificationType.PAYMENT_SUCCEEDED,
                     Map.of("bookingId", booking.getId().toString()),
@@ -500,45 +522,22 @@ public class PaymentService {
      * MANUAL_REQUIRED et doit etre traite manuellement par le back-office (a fiabiliser avec Kkiapay
      * avant production : voir si un montant partiel est en realite accepte par l'API reelle).</p>
      */
+    /**
+     * Remboursement declenche a l annulation (passager ou conducteur, voir BookingService) :
+     * delegue a {@link RefundService}, qui marque le paiement a rembourser DANS la transaction
+     * d annulation et n appelle Kkiapay qu apres validation (lot 1.2 de l audit, F004/F106).
+     * Le montant porte sur booking.depositAmount (regle metier n.21), seul montant encaisse.
+     */
     @Transactional
     public RefundOutcome refundBooking(Booking booking, long refundAmountFcfa, String reason) {
-        long totalPaid = booking.getDepositAmount();
-        if (booking.getPaymentMethod() == PaymentMethod.CASH) {
-            return new RefundOutcome(RefundOutcome.Status.NOT_APPLICABLE, "Paiement especes : aucun remboursement electronique necessaire");
-        }
-        if (refundAmountFcfa <= 0) {
-            return new RefundOutcome(RefundOutcome.Status.NOT_APPLICABLE, "Aucun montant a rembourser");
-        }
-        Optional<Payment> succeeded = paymentRepository.findFirstByBookingIdAndStatusOrderByCreatedAtDesc(
-                booking.getId(), PaymentStatus.SUCCEEDED);
-        if (succeeded.isEmpty()) {
-            log.warn("Remboursement demande pour la reservation {} mais aucun paiement SUCCEEDED trouve", booking.getId());
-            auditService.log(null, "REFUND_NO_PAYMENT_FOUND", "booking", booking.getId(), Map.of("reason", reason));
-            return new RefundOutcome(RefundOutcome.Status.FAILED, "Aucun paiement reussi trouve pour cette reservation");
-        }
-        Payment payment = succeeded.get();
-
-        if (refundAmountFcfa < totalPaid) {
-            log.warn("Remboursement partiel ({} sur {} FCFA) demande pour la reservation {} : non automatise "
-                    + "(l'API Kkiapay confirmee ne rembourse que le montant total), traitement manuel requis",
-                    refundAmountFcfa, totalPaid, booking.getId());
-            auditService.log(null, "REFUND_PARTIAL_MANUAL_REQUIRED", "booking", booking.getId(),
-                    Map.of("reason", reason, "refundAmountFcfa", refundAmountFcfa, "totalPaidFcfa", totalPaid));
-            return new RefundOutcome(RefundOutcome.Status.MANUAL_REQUIRED,
-                    "Remboursement partiel (" + refundAmountFcfa + "/" + totalPaid + " FCFA) a traiter manuellement");
-        }
-
-        KkiapayGateway.RefundResult result = kkiapayGateway.refundTransaction(payment.getProviderTxId());
-        if (result.success()) {
-            payment.setStatus(PaymentStatus.REFUNDED);
-            paymentRepository.save(payment);
-        }
-        auditService.log(null, "PAYMENT_REFUND", "booking", booking.getId(),
-                Map.of("reason", reason, "amountFcfa", refundAmountFcfa, "gatewaySuccess", result.success(),
-                        "gatewayMessage", String.valueOf(result.message())));
-        return result.success()
-                ? new RefundOutcome(RefundOutcome.Status.SUCCEEDED, result.message())
-                : new RefundOutcome(RefundOutcome.Status.FAILED, result.message());
+        RefundService.RequestOutcome outcome = refundService.requestForBooking(booking, refundAmountFcfa, reason);
+        RefundOutcome.Status status = switch (outcome.status()) {
+            case REQUESTED -> RefundOutcome.Status.REQUESTED;
+            case MANUAL_REQUIRED -> RefundOutcome.Status.MANUAL_REQUIRED;
+            case NOT_APPLICABLE -> RefundOutcome.Status.NOT_APPLICABLE;
+            case NO_PAYMENT -> RefundOutcome.Status.FAILED;
+        };
+        return new RefundOutcome(status, outcome.message());
     }
 
     private PaymentChannel parseChannel(String channel) {
@@ -555,10 +554,10 @@ public class PaymentService {
 
     /** Resultat d'une tentative de remboursement, expose pour audit/notification par l'appelant. */
     public record RefundOutcome(Status status, String message) {
-        public enum Status { SUCCEEDED, FAILED, MANUAL_REQUIRED, NOT_APPLICABLE }
+        public enum Status { REQUESTED, FAILED, MANUAL_REQUIRED, NOT_APPLICABLE }
 
-        public boolean refundedElectronically() {
-            return status == Status.SUCCEEDED;
+        public boolean refundRequested() {
+            return status == Status.REQUESTED;
         }
     }
 }

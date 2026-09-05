@@ -31,8 +31,9 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
 
     boolean existsByTripIdAndPassengerIdAndStatusIn(UUID tripId, UUID passengerId, List<BookingStatus> statuses);
 
-    @Query("select b from Booking b where b.status = :status and b.createdAt < :cutoff")
-    List<Booking> findExpirable(@Param("status") BookingStatus status, @Param("cutoff") Instant cutoff);
+    /** Reservations en attente dont l echeance d acompte (expires_at, V12) est depassee. */
+    @Query("select b from Booking b where b.status = :status and b.expiresAt is not null and b.expiresAt < :now")
+    List<Booking> findExpirable(@Param("status") BookingStatus status, @Param("now") Instant now);
 
     /**
      * Reservations encaissees (au moins en partie) par la plateforme via Kkiapay -
@@ -42,16 +43,22 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
      * differe entre les deux modes MoMo).
      */
     @Query("select b from Booking b where b.trip.driver.id = :driverId and b.status in :statuses "
-            + "and b.paymentMethod in :methods and b.id not in (select i.bookingId from DriverPayoutItem i)")
+            + "and b.paymentMethod in :methods and b.trip.departureAt < :cutoff "
+            + "and exists (select p from Payment p where p.booking = b and p.status = bj.ekuiseo.api.domain.enums.PaymentStatus.SUCCEEDED) "
+            + "and b.id not in (select i.bookingId from DriverPayoutItem i)")
     List<Booking> findPayableForDriver(@Param("driverId") UUID driverId,
                                         @Param("statuses") List<BookingStatus> statuses,
-                                        @Param("methods") List<PaymentMethod> methods);
+                                        @Param("methods") List<PaymentMethod> methods,
+                                        @Param("cutoff") Instant cutoff);
 
     /** Identifiants distincts des conducteurs ayant au moins une reservation reversable. */
     @Query("select distinct b.trip.driver.id from Booking b where b.status in :statuses "
-            + "and b.paymentMethod in :methods and b.id not in (select i.bookingId from DriverPayoutItem i)")
+            + "and b.paymentMethod in :methods and b.trip.departureAt < :cutoff "
+            + "and exists (select p from Payment p where p.booking = b and p.status = bj.ekuiseo.api.domain.enums.PaymentStatus.SUCCEEDED) "
+            + "and b.id not in (select i.bookingId from DriverPayoutItem i)")
     List<UUID> findDriverIdsWithPayableBookings(@Param("statuses") List<BookingStatus> statuses,
-                                                 @Param("methods") List<PaymentMethod> methods);
+                                                 @Param("methods") List<PaymentMethod> methods,
+                                                 @Param("cutoff") Instant cutoff);
 
     long countByCreatedAtBetween(Instant from, Instant to);
 

@@ -47,9 +47,9 @@ import type { InitiatePaymentResponse } from '@/api/types'
 /** Delai laisse au passager pour honorer l'acompte (aligne sur le backend). */
 const DEPOSIT_WINDOW_MS = 20 * 60 * 1000
 
-type Step = 'recap' | 'payment' | 'waiting' | 'confirmed' | 'expired'
+type Step = 'recap' | 'payment' | 'waiting' | 'confirmed' | 'expired' | 'refund'
 
-const STEP_INDEX: Record<Step, number> = { recap: 0, payment: 1, waiting: 2, confirmed: 3, expired: 1 }
+const STEP_INDEX: Record<Step, number> = { recap: 0, payment: 1, waiting: 2, confirmed: 3, expired: 1, refund: 2 }
 
 export function BookingPage() {
   const { tripId } = useParams<{ tripId: string }>()
@@ -110,6 +110,7 @@ export function BookingPage() {
   useEffect(() => {
     const status = paymentStatus.data?.status
     if (status === 'SUCCEEDED') setStep('confirmed')
+    else if (status === 'REFUNDED' || status === 'REFUND_PENDING') setStep('refund')
     else if (status === 'FAILED' || status === 'EXPIRED') setStep('expired')
   }, [paymentStatus.data])
 
@@ -625,6 +626,36 @@ export function BookingPage() {
         ) : null}
 
         {/* ------------------------------------------------------- Expiration */}
+        {step === 'refund' ? (
+          <motion.div key="refund" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+            <Card className="flex flex-col items-center gap-3 px-5 py-8 text-center">
+              <span className="flex size-16 items-center justify-center rounded-full bg-[var(--ocre-soft)] text-[var(--ocre-ink)]">
+                <AlertTriangle className="size-7" aria-hidden />
+              </span>
+              <div>
+                <h2 className="font-display text-[20px] font-bold tracking-[-0.02em]">Paiement reçu trop tard</h2>
+                <p className="mx-auto mt-1 max-w-sm text-[14px] leading-relaxed text-ink-2">
+                  Votre acompte est arrivé après l'expiration de la réservation : la place n'a pas pu être confirmée.
+                  {paymentStatus.data?.status === 'REFUNDED'
+                    ? ' Il vous a été intégralement remboursé.'
+                    : ' Il vous est remboursé automatiquement sous quelques minutes ; vous serez prévenu.'}
+                </p>
+              </div>
+            </Card>
+            <Button
+              size="lg"
+              block
+              onClick={() => {
+                setDeadline(Date.now() + DEPOSIT_WINDOW_MS)
+                setPaymentId(undefined)
+                setStep('recap')
+              }}
+            >
+              Réserver à nouveau
+            </Button>
+          </motion.div>
+        ) : null}
+
         {step === 'expired' ? (
           <motion.div
             key="expired"
