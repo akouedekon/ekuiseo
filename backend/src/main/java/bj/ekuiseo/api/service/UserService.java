@@ -136,7 +136,6 @@ public class UserService {
         User user = findUser(userId);
         if (req.firstName() != null) user.setFirstName(req.firstName());
         if (req.lastName() != null) user.setLastName(req.lastName());
-        if (req.email() != null) user.setEmail(req.email());
         if (req.bio() != null) user.setBio(req.bio());
         if (req.photoUrl() != null) user.setPhotoUrl(req.photoUrl());
         return userMapper.toResponse(userRepository.save(user));

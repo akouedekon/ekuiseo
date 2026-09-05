@@ -154,6 +154,19 @@ export function useToggleUserSuspension() {
   })
 }
 
+/**
+ * PATCH /api/v1/admin/users/{id}/contact { email?, phone?, reason } : correction de
+ * contact apres verification hors ligne de l'identite. Journalisee, sessions revoquees.
+ */
+export function useUpdateUserContact() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...input }: { id: string; email?: string; phone?: string; reason: string }) =>
+      apiClient.patch<AdminUserResponse>(`/api/v1/admin/users/${id}/contact`, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'users'] }),
+  })
+}
+
 /* ------------------------------------------------------------ Journal d'audit */
 
 /** GET /api/v1/admin/audit-log?page=&size= */

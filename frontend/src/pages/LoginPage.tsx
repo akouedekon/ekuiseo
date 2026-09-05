@@ -18,6 +18,8 @@ import { formatCountdown, formatPhone } from '@/lib/format'
 import { emailSchema, phoneSchema } from '@/lib/validation'
 
 const RESEND_DELAY_MS = 45_000
+/** Adresse de support affichee pour la recuperation de compte (VITE_SUPPORT_EMAIL). */
+const SUPPORT_EMAIL = import.meta.env.VITE_SUPPORT_EMAIL || 'contact@ekuiseo.com'
 
 /** Seuls les chemins internes sont acceptes comme destination de retour. */
 function safeNext(value: string | null): string {
@@ -254,6 +256,16 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
                 Votre numéro n'est jamais affiché publiquement. Il sert à vous identifier et à joindre le conducteur
                 le jour du trajet.
               </p>
+              {mode === 'login' ? (
+                <p className="mt-2 text-[12px] leading-relaxed text-muted">
+                  Vous n'avez plus accès à l'adresse e-mail de votre compte ? Écrivez à{' '}
+                  <a href={`mailto:${SUPPORT_EMAIL}`} className="font-medium text-[var(--indigo)] underline-offset-4 hover:underline">
+                    {SUPPORT_EMAIL}
+                  </a>{' '}
+                  depuis une autre adresse en indiquant votre numéro : après vérification de votre identité, nous
+                  corrigerons votre contact.
+                </p>
+              ) : null}
             </Card>
 
             <p className="mt-4 text-center text-[14px] text-muted">

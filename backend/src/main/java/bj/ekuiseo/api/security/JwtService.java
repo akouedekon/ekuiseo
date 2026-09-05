@@ -15,7 +15,11 @@ import java.util.Date;
 import java.util.Map;
 import java.util.UUID;
 
-/** Emission et validation des jetons JWT (access + refresh). */
+/**
+ * Emission et validation des jetons JWT (access + refresh). Les deux partagent la cle
+ * de signature ; la claim {@code type} les distingue, et le refresh porte un {@code jti}
+ * enregistre en base (RefreshTokenService : rotation, revocation, duree absolue).
+ */
 @Service
 public class JwtService {
 
@@ -60,15 +64,22 @@ public class JwtService {
                 .compact();
     }
 
-    public String generateRefreshToken(UUID userId) {
+    /** Refresh token enregistre : {@code jti} = identifiant de la ligne refresh_tokens, expiration fournie par le service. */
+    public String generateRefreshToken(UUID userId, UUID jti, Instant expiresAt) {
         Instant now = Instant.now();
         return Jwts.builder()
                 .subject(userId.toString())
+                .id(jti.toString())
                 .claims(Map.of("type", "refresh"))
                 .issuedAt(Date.from(now))
-                .expiration(Date.from(now.plus(refreshTtlDays, ChronoUnit.DAYS)))
+                .expiration(Date.from(expiresAt))
                 .signWith(key)
                 .compact();
+    }
+
+    /** Refresh token non enregistre (tests, outillage) : jti aleatoire, duree glissante par defaut. */
+    public String generateRefreshToken(UUID userId) {
+        return generateRefreshToken(userId, UUID.randomUUID(), Instant.now().plus(refreshTtlDays, ChronoUnit.DAYS));
     }
 
     public Claims parse(String token) throws JwtException {
@@ -94,5 +105,20 @@ public class JwtService {
             throw new JwtException("Ce jeton n est pas un jeton d acces");
         }
         return UUID.fromString(claims.getSubject());
+    }
+
+    /** Claims d un refresh token : sujet et jti, apres verification de la signature, de l expiration et du type. */
+    public RefreshClaims extractRefreshClaims(String token) {
+        Claims claims = parse(token);
+        if (!"refresh".equals(claims.get("type", String.class))) {
+            throw new JwtException("Ce jeton n est pas un jeton de rafraichissement");
+        }
+        if (claims.getId() == null) {
+            throw new JwtException("Jeton de rafraichissement sans identifiant (ancien format)");
+        }
+        return new RefreshClaims(UUID.fromString(claims.getSubject()), UUID.fromString(claims.getId()));
+    }
+
+    public record RefreshClaims(UUID userId, UUID jti) {
     }
 }

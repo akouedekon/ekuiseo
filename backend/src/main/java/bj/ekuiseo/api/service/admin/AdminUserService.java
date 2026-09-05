@@ -1,5 +1,8 @@
 package bj.ekuiseo.api.service.admin;
 
+import bj.ekuiseo.api.common.PhoneNumbers;
+import bj.ekuiseo.api.common.exception.BadRequestException;
+import bj.ekuiseo.api.common.exception.ConflictException;
 import bj.ekuiseo.api.common.exception.NotFoundException;
 import bj.ekuiseo.api.domain.User;
 import bj.ekuiseo.api.domain.Vehicle;
@@ -10,6 +13,7 @@ import bj.ekuiseo.api.repository.TripRepository;
 import bj.ekuiseo.api.repository.UserRepository;
 import bj.ekuiseo.api.repository.VehicleRepository;
 import bj.ekuiseo.api.service.AuditService;
+import bj.ekuiseo.api.service.RefreshTokenService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -42,10 +46,12 @@ public class AdminUserService {
     private final TripRepository tripRepository;
     private final BookingRepository bookingRepository;
     private final AuditService auditService;
+    private final RefreshTokenService refreshTokenService;
 
     public AdminUserService(UserRepository userRepository, VehicleRepository vehicleRepository,
                              TripRepository tripRepository, BookingRepository bookingRepository,
-                             AuditService auditService) {
+                             AuditService auditService, RefreshTokenService refreshTokenService) {
+        this.refreshTokenService = refreshTokenService;
         this.userRepository = userRepository;
         this.vehicleRepository = vehicleRepository;
         this.tripRepository = tripRepository;
@@ -72,6 +78,9 @@ public class AdminUserService {
         user.setSuspendedReason(reason);
         user.setSuspendedAt(Instant.now());
         user = userRepository.save(user);
+        // Plus aucune session ne doit se prolonger : le filtre JWT coupe les acces en cours
+        // (statut verifie a chaque requete) et la revocation coupe les rafraichissements.
+        refreshTokenService.revokeAll(userId);
         auditService.log(adminId, "USER_SUSPENDED", "user", userId, Map.of("reason", reason));
         return toResponse(user);
     }
@@ -85,6 +94,52 @@ public class AdminUserService {
         user.setSuspendedAt(null);
         user = userRepository.save(user);
         auditService.log(adminId, "USER_REACTIVATED", "user", userId, Map.of());
+        return toResponse(user);
+    }
+
+    /**
+     * Correction de contact par un administrateur (constat F537) : e-mail et/ou numero,
+     * apres verification hors ligne de l identite du demandeur. Le nouveau contact repart
+     * non verifie (le prochain code le validera), les sessions sont revoquees, l ancien et
+     * le nouveau contact ainsi que le motif sont journalises.
+     */
+    @Transactional
+    public AdminUserResponse updateContact(UUID adminId, UUID userId, String email, String phone, String reason) {
+        User user = findUser(userId);
+        Map<String, Object> details = new java.util.LinkedHashMap<>();
+        details.put("reason", reason);
+        boolean changed = false;
+        if (email != null && !email.isBlank() && !email.trim().equalsIgnoreCase(user.getEmail())) {
+            String next = email.trim();
+            if (userRepository.existsByEmailIgnoreCaseAndIdNot(next, userId)) {
+                throw new ConflictException("Cette adresse e-mail est deja utilisee par un autre compte");
+            }
+            details.put("previousEmail", user.getEmail() == null ? "" : user.getEmail());
+            details.put("nextEmail", next);
+            user.setEmail(next);
+            user.setPendingEmail(null);
+            user.setEmailVerified(false);
+            changed = true;
+        }
+        if (phone != null && !phone.isBlank()) {
+            String next = PhoneNumbers.normalize(phone);
+            if (!next.equals(user.getPhone())) {
+                if (userRepository.existsByPhoneAndIdNot(next, userId)) {
+                    throw new ConflictException("Ce numero est deja utilise par un autre compte");
+                }
+                details.put("previousPhone", user.getPhone());
+                details.put("nextPhone", next);
+                user.setPhone(next);
+                user.setPhoneVerified(false);
+                changed = true;
+            }
+        }
+        if (!changed) {
+            throw new BadRequestException("Aucun changement : indiquez un nouvel e-mail ou un nouveau numero");
+        }
+        user = userRepository.save(user);
+        refreshTokenService.revokeAll(userId);
+        auditService.log(adminId, "USER_CONTACT_CHANGED", "user", userId, details);
         return toResponse(user);
     }
 

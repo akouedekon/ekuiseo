@@ -94,6 +94,8 @@ ekuiseo:
     secret: ${JWT_SECRET:}
     access-token-ttl-minutes: ${JWT_ACCESS_TTL_MIN:60}
     refresh-token-ttl-days: ${JWT_REFRESH_TTL_DAYS:30}
+    # Borne dure d une session : au-dela, plus aucune rotation du refresh token (V11).
+    refresh-absolute-ttl-days: ${JWT_REFRESH_ABSOLUTE_TTL_DAYS:90}
   booking:
     pending-payment-ttl-minutes: 20
     # Acompte de base du mode MOMO_DEPOSIT (regle metier n.21), injecte dans FeePolicy.
@@ -146,6 +148,9 @@ ekuiseo:
       rate-limit:
         max-requests: ${OTP_RATE_LIMIT_MAX_REQUESTS:3}
         window-minutes: ${OTP_RATE_LIMIT_WINDOW_MINUTES:10}
+  auth:
+    # Comptes crees a l inscription et jamais verifies : purges apres ce delai, le numero redevient libre.
+    pending-account-ttl-hours: ${PENDING_ACCOUNT_TTL_HOURS:24}
   mail:
     # "log" (par defaut) : journalise l e-mail au lieu de l envoyer (dev/tests, code lisible
     # dans les logs sous [MAIL-STUB]). "smtp" : envoi reel via spring.mail.* ci-dessus.
@@ -184,6 +189,11 @@ ekuiseo:
     webhook:
       max-requests: ${RATE_LIMIT_WEBHOOK_MAX:120}
       window-seconds: ${RATE_LIMIT_WEBHOOK_WINDOW_SECONDS:60}
+    # Demandes de code (/otp/request, /otp/register) : envoi reel d e-mails et enumeration
+    # de numeros, quota par IP plus strict en plus du quota auth.
+    otp:
+      max-requests: ${RATE_LIMIT_OTP_MAX:10}
+      window-seconds: ${RATE_LIMIT_OTP_WINDOW_SECONDS:600}
 
 logging:
   level:

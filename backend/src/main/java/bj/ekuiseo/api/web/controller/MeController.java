@@ -3,12 +3,16 @@ package bj.ekuiseo.api.web.controller;
 import bj.ekuiseo.api.dto.conversation.ConversationSummary;
 import bj.ekuiseo.api.dto.trip.RecurringTripResponse;
 import bj.ekuiseo.api.dto.trip.TripResponse;
+import bj.ekuiseo.api.dto.auth.OtpRequestResponse;
+import bj.ekuiseo.api.dto.user.EmailChangeConfirmRequest;
+import bj.ekuiseo.api.dto.user.EmailChangeRequest;
 import bj.ekuiseo.api.dto.user.UpdateMeRequest;
 import bj.ekuiseo.api.dto.user.UserResponse;
 import bj.ekuiseo.api.dto.user.VehicleRequest;
 import bj.ekuiseo.api.dto.user.VehicleResponse;
 import bj.ekuiseo.api.security.CurrentUser;
 import bj.ekuiseo.api.service.BookingService;
+import bj.ekuiseo.api.service.EmailChangeService;
 import bj.ekuiseo.api.service.MessageService;
 import bj.ekuiseo.api.service.TripService;
 import bj.ekuiseo.api.service.UserService;
@@ -31,10 +35,12 @@ public class MeController {
     private final TripService tripService;
     private final BookingService bookingService;
     private final MessageService messageService;
+    private final EmailChangeService emailChangeService;
     private final CurrentUser currentUser;
 
     public MeController(UserService userService, TripService tripService, BookingService bookingService,
-                         MessageService messageService, CurrentUser currentUser) {
+                         MessageService messageService, EmailChangeService emailChangeService, CurrentUser currentUser) {
+        this.emailChangeService = emailChangeService;
         this.userService = userService;
         this.tripService = tripService;
         this.bookingService = bookingService;
@@ -48,10 +54,22 @@ public class MeController {
         return userService.getMe(currentUser.id());
     }
 
-    @Operation(summary = "Mettre a jour mon profil")
+    @Operation(summary = "Mettre a jour mon profil", description = "Prenom, nom, presentation, photo. L e-mail se change par /me/email/request puis /me/email/confirm.")
     @PatchMapping
-    public UserResponse updateMe(@RequestBody UpdateMeRequest req) {
+    public UserResponse updateMe(@Valid @RequestBody UpdateMeRequest req) {
         return userService.updateMe(currentUser.id(), req);
+    }
+
+    @Operation(summary = "Changer d adresse e-mail (etape 1)", description = "Verifie l unicite, enregistre l adresse en attente et envoie un code a 6 chiffres a la NOUVELLE adresse. 409 si elle est deja prise, 429 au-dela de 3 demandes / 10 min.")
+    @PostMapping("/email/request")
+    public ResponseEntity<OtpRequestResponse> requestEmailChange(@Valid @RequestBody EmailChangeRequest req) {
+        return ResponseEntity.accepted().body(emailChangeService.request(currentUser.id(), req.email()));
+    }
+
+    @Operation(summary = "Changer d adresse e-mail (etape 2)", description = "Le code recu sur la nouvelle adresse bascule le compte, marque l e-mail verifie, journalise et previent l ancienne adresse.")
+    @PostMapping("/email/confirm")
+    public UserResponse confirmEmailChange(@Valid @RequestBody EmailChangeConfirmRequest req) {
+        return emailChangeService.confirm(currentUser.id(), req.code());
     }
 
     @Operation(summary = "Ajouter un vehicule")

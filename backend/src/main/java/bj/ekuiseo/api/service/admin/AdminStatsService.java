@@ -4,7 +4,6 @@ import bj.ekuiseo.api.domain.Booking;
 import bj.ekuiseo.api.domain.Trip;
 import bj.ekuiseo.api.domain.enums.BookingStatus;
 import bj.ekuiseo.api.dto.admin.AdminStatsResponse;
-import bj.ekuiseo.api.dto.admin.StatsResponse;
 import bj.ekuiseo.api.repository.BookingRepository;
 import bj.ekuiseo.api.repository.TripRepository;
 import bj.ekuiseo.api.repository.UserRepository;
@@ -41,17 +40,6 @@ public class AdminStatsService {
         this.tripRepository = tripRepository;
         this.bookingRepository = bookingRepository;
         this.userRepository = userRepository;
-    }
-
-    /** Forme historique (from/to explicites), conservee pour compatibilite - voir {@link #computeStats(int)} pour le contrat front (?days=N). */
-    @Transactional(readOnly = true)
-    public StatsResponse computeStats(Instant from, Instant to) {
-        long tripsCreated = tripRepository.countByCreatedAtBetween(from, to);
-        long bookingsCreated = bookingRepository.countByCreatedAtBetween(from, to);
-        long newUsers = userRepository.countByCreatedAtBetween(from, to);
-        long grossVolume = bookingRepository.sumAmountBetween(from, to, COUNTED_STATUSES);
-        long platformRevenue = bookingRepository.sumServiceFeeBetween(from, to, COUNTED_STATUSES);
-        return new StatsResponse(from, to, tripsCreated, bookingsCreated, newUsers, grossVolume, platformRevenue);
     }
 
     /**

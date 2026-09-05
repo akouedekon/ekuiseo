@@ -168,6 +168,7 @@ services:
         # Vite ne verrait jamais ces valeurs au build (le frontend garderait son
         # comportement par defaut - bascule demo DESACTIVEE, carte schematique).
         VITE_MAP_STYLE_URL: ${VITE_MAP_STYLE_URL:-}
+        VITE_SUPPORT_EMAIL: ${VITE_SUPPORT_EMAIL:-contact@ekuiseo.com}
     image: ekuiseo-frontend:latest
     container_name: ekuiseo-frontend
     restart: unless-stopped

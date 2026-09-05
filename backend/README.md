@@ -96,7 +96,7 @@ Points structurants :
 - `GET /api/v1/me/subscription`, `POST /api/v1/me/subscription` — statut / souscription à l'abonnement conducteur
 
 ### Admin (`/api/v1/admin/**`, `ROLE_ADMIN`)
-- `GET/POST /api/v1/admin/users`, `/{id}/suspend`, `/{id}/activate`, `/{id}/verify-identity`
+- `GET/POST /api/v1/admin/users`, `/{id}/suspend`, `/{id}/reinstate`, `/{id}/verify-identity`, `PATCH /{id}/contact`
 - `POST /api/v1/admin/vehicles/{id}/verify`
 - `GET /api/v1/admin/reports`, `POST /api/v1/admin/reports/{id}/resolve`
 - `GET /api/v1/admin/payouts`, `POST /api/v1/admin/payouts/run`, `POST /api/v1/admin/payouts/{id}/settle`
@@ -145,6 +145,9 @@ Le front (`frontend/src/api/extended.ts`, `types.ts`, hooks) appelait des endpoi
 | `GET /api/v1/trips/{id}/stops` | Arrêts intermédiaires avec prix par tronçon depuis l'origine. Même règle de visibilité que `GET /api/v1/trips/{id}` (public si `PUBLISHED`, 404 sinon pour un tiers). |
 | `POST /api/v1/bookings/{id}/payments/deposit` | Initie l'acompte mobile money pour cette réservation ; renvoie la même charge utile que `POST /api/v1/payments/kkiapay/initiate` (conservé, devient l'alias historique). |
 | `POST /api/v1/auth/otp/register` | Inscription sans mot de passe : crée le compte (prénom, nom, e-mail **obligatoire**) avec un mot de passe aléatoire inutilisable et envoie le code de connexion à l e-mail ; 202 avec `{channel, destination}` (destination masquée), la session s ouvre ensuite via `/otp/verify`. 409 si le numéro ou l e-mail existe déjà. `POST /auth/otp/request` renvoie la même réponse, 404 si le numéro est inconnu. Un compte suspendu est refusé à la vérification OTP, au rafraîchissement **et à chaque requête** (filtre JWT). |
+| `POST /api/v1/auth/refresh` | Rotation du refresh token (V11, `RefreshTokenService`) : l ancien est révoqué, un jeton déjà tourné présenté à nouveau révoque toute la chaîne (401), durée absolue 90 jours. |
+| `POST /api/v1/auth/logout` | Révoque le refresh token présenté et sa chaîne ; toujours 204. |
+| `POST /api/v1/me/email/request`, `POST /api/v1/me/email/confirm` | Changement d adresse e-mail en deux temps (code reçu sur la nouvelle adresse, unicité `lower(email)`, avis à l ancienne adresse, journal `USER_EMAIL_CHANGED`). `PATCH /me` ne touche plus à l e-mail. |
 | `GET /api/v1/bookings` (champ `reviewedByMe`) | Vrai si le passager a déjà noté le conducteur de ce trajet : le front n'affiche alors plus « Noter le conducteur ». |
 | `POST /api/v1/trips/{id}/bookings`, `/booking-quote` (tarif par tronçon) | Avec `dropoffStopId`, le prix unitaire est celui de l'arrêt (`trip_stops.price_from_origin`), pas celui du trajet complet ; un arrêt étranger au trajet renvoie 400. |
 | Réponses de sécurité | 401 (non authentifié) et 403 (rôle insuffisant) sont écrits directement en RFC 7807 par `SecurityConfig` ; le dispatch `/error` de Tomcat est autorisé, sinon un 403 ressortait en 401 anonyme. `CORS_ALLOWED_ORIGINS` (liste, `*` par défaut) remplace l'origine `*` en dur. |
@@ -166,7 +169,7 @@ Le front (`frontend/src/api/extended.ts`, `types.ts`, hooks) appelait des endpoi
 |---|---|
 | `GET /api/v1/admin/verifications?status=PENDING`, `POST /{id}/approve`, `POST /{id}/reject` (motif optionnel) | `POST /api/v1/admin/users/{id}/verify-identity` (conservé tel quel, chemin distinct — pas un simple alias, voir §10) |
 | `POST /api/v1/admin/payouts/{id}/pay` | `POST /api/v1/admin/payouts/{id}/settle` (alias, même méthode de service) |
-| `POST /api/v1/admin/users/{id}/reinstate` | `POST /api/v1/admin/users/{id}/activate` (alias, même méthode de service) |
+| `POST /api/v1/admin/users/{id}/reinstate` | Réactivation d un compte suspendu (l alias historique `/activate` a été retiré, lot 1.1). |
 | `PATCH /api/v1/admin/reports/{id}` (`{status}`) | `POST /api/v1/admin/reports/{id}/resolve` (conservé, sémantique legèrement différente : `resolve` prend une note de résolution, `PATCH` change juste le statut) |
 | `GET /api/v1/admin/stats?days=N` | `GET /api/v1/admin/stats?from=...&to=...` (conservé ; les deux formes coexistent sur le même chemin, distinguées par les paramètres de requête présents) |
 

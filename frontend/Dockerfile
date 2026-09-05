@@ -17,6 +17,8 @@ ENV VITE_API_URL=$VITE_API_URL
 # Fond de carte MapLibre. Vide => trace schematique au lieu d'une carte cassee.
 ARG VITE_MAP_STYLE_URL=
 ENV VITE_MAP_STYLE_URL=$VITE_MAP_STYLE_URL
+ARG VITE_SUPPORT_EMAIL=contact@ekuiseo.com
+ENV VITE_SUPPORT_EMAIL=$VITE_SUPPORT_EMAIL
 
 RUN npm run build
 

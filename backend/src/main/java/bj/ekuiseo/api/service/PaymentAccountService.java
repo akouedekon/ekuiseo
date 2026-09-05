@@ -1,5 +1,6 @@
 package bj.ekuiseo.api.service;
 
+import bj.ekuiseo.api.common.PhoneNumbers;
 import bj.ekuiseo.api.common.exception.ForbiddenException;
 import bj.ekuiseo.api.common.exception.NotFoundException;
 import bj.ekuiseo.api.domain.PaymentAccount;
@@ -44,7 +45,7 @@ public class PaymentAccountService {
         PaymentAccount account = PaymentAccount.builder()
                 .user(user)
                 .provider(req.provider())
-                .phone(req.phone())
+                .phone(PhoneNumbers.normalize(req.phone()))
                 .label(req.label())
                 .isDefault(makeDefault)
                 .build();

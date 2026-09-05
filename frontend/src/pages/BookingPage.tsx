@@ -40,7 +40,7 @@ import { useTrip, useTripStops } from '@/hooks/useTrips'
 import { estimateDurationMinutes, haversineKm } from '@/lib/cities'
 import { describeError } from '@/lib/errors'
 import { formatFcfa, formatPhone, formatRelativeDay, formatTime } from '@/lib/format'
-import { phoneSchema } from '@/lib/validation'
+import { phoneSchema, toE164 } from '@/lib/validation'
 import type { PaymentMode, PaymentProvider } from '@/api/extended'
 import type { InitiatePaymentResponse } from '@/api/types'
 
@@ -208,7 +208,7 @@ export function BookingPage() {
     }
     setPhoneError(undefined)
     initiateDeposit.mutate(
-      { provider, phone },
+      { provider, phone: toE164(phone) ?? phone },
       {
         onSuccess: (payment) => {
           setPaymentId(payment.paymentId)

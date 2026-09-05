@@ -44,38 +44,38 @@ BEGIN;
 INSERT INTO users (id, phone, email, first_name, last_name, password_hash, bio, birth_date, phone_verified, identity_verified, status)
 VALUES
   -- --- Conducteurs -----------------------------------------------------
-  ('a0000000-0000-0000-0000-000000000001', '+22997001001', 'sylvestre.zannou@example.bj', 'Sylvestre', 'Zannou',   '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Conducteur regulier Cotonou-Bohicon depuis 3 ans, vehicule climatise.', '1985-03-12', TRUE, TRUE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000002', '+22997001002', 'moucharafou.gomina@example.bj', 'Moucharafou', 'Gomina', '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Minibus Cotonou-Parakou, 3 rotations par semaine.', '1979-11-02', TRUE, TRUE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000003', '+22997001003', 'boni.kora@example.bj', 'Boni', 'Kora',                  '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Trajet Cotonou-Natitingou, depart tot le matin.', '1982-06-20', TRUE, TRUE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000004', '+22997001004', 'rene.vodounnon@example.bj', 'Rene', 'Vodounnon',        '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Navette quotidienne Cotonou-Porto-Novo.', '1990-01-15', TRUE, TRUE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000005', '+22997001005', 'seraphin.kpossou@example.bj', 'Seraphin', 'Kpossou',   '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Liaison transfrontaliere Cotonou-Lome, papiers en regle.', '1984-09-08', TRUE, TRUE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000006', '+22997001006', 'marcellin.sagbo@example.bj', 'Marcellin', 'Sagbo',      '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Base a Bohicon, trajets vers Cotonou tous les jours de marche.', '1988-04-27', TRUE, TRUE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000007', '+22997001007', 'gildas.codjo@example.bj', 'Gildas', 'Codjo',           '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Nouveau conducteur, trajet Cotonou-Parakou en preparation.', '1993-12-30', TRUE, FALSE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000008', '+22997001008', 'wilfried.tossou@example.bj', 'Wilfried', 'Tossou',      '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Navette domicile-travail Abomey-Calavi-Cotonou, depart 7h.', '1991-07-19', TRUE, TRUE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000009', '+22997001009', 'judicael.gbedjinou@example.bj', 'Judicael', 'Gbedjinou', '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Navette Abomey-Calavi-Cotonou, depart 6h30, place pour 4.', '1987-02-11', TRUE, TRUE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000001', '+2290197001001', 'sylvestre.zannou@example.bj', 'Sylvestre', 'Zannou',   '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Conducteur regulier Cotonou-Bohicon depuis 3 ans, vehicule climatise.', '1985-03-12', TRUE, TRUE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000002', '+2290197001002', 'moucharafou.gomina@example.bj', 'Moucharafou', 'Gomina', '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Minibus Cotonou-Parakou, 3 rotations par semaine.', '1979-11-02', TRUE, TRUE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000003', '+2290197001003', 'boni.kora@example.bj', 'Boni', 'Kora',                  '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Trajet Cotonou-Natitingou, depart tot le matin.', '1982-06-20', TRUE, TRUE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000004', '+2290197001004', 'rene.vodounnon@example.bj', 'Rene', 'Vodounnon',        '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Navette quotidienne Cotonou-Porto-Novo.', '1990-01-15', TRUE, TRUE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000005', '+2290197001005', 'seraphin.kpossou@example.bj', 'Seraphin', 'Kpossou',   '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Liaison transfrontaliere Cotonou-Lome, papiers en regle.', '1984-09-08', TRUE, TRUE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000006', '+2290197001006', 'marcellin.sagbo@example.bj', 'Marcellin', 'Sagbo',      '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Base a Bohicon, trajets vers Cotonou tous les jours de marche.', '1988-04-27', TRUE, TRUE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000007', '+2290197001007', 'gildas.codjo@example.bj', 'Gildas', 'Codjo',           '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Nouveau conducteur, trajet Cotonou-Parakou en preparation.', '1993-12-30', TRUE, FALSE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000008', '+2290197001008', 'wilfried.tossou@example.bj', 'Wilfried', 'Tossou',      '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Navette domicile-travail Abomey-Calavi-Cotonou, depart 7h.', '1991-07-19', TRUE, TRUE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000009', '+2290197001009', 'judicael.gbedjinou@example.bj', 'Judicael', 'Gbedjinou', '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Navette Abomey-Calavi-Cotonou, depart 6h30, place pour 4.', '1987-02-11', TRUE, TRUE, 'ACTIVE'),
 
   -- --- Passagers ---------------------------------------------------------
-  ('a0000000-0000-0000-0000-000000000010', '+22996002010', NULL, 'Koffi', 'Dossou-Yovo',        '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1995-05-14', TRUE, FALSE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000011', '+22996002011', 'esperance.ahouansou@example.bj', 'Esperance', 'Ahouansou', '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1998-08-03', TRUE, FALSE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000012', '+22996002012', NULL, 'Adjoavi', 'Houngbedji',        '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1996-10-21', TRUE, FALSE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000013', '+22996002013', NULL, 'Bertin', 'Agbodjinou',         '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1992-02-09', TRUE, FALSE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000014', '+22996002014', 'rachidatou.idrissou@example.bj', 'Rachidatou', 'Idrissou', '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Voyage regulierement en famille entre Cotonou et Parakou.', '1989-12-01', TRUE, FALSE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000015', '+22996002015', NULL, 'Fofana', 'Sero',               '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1994-03-17', TRUE, FALSE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000016', '+22996002016', NULL, 'Innocent', 'Hounkpatin',       '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1997-06-25', TRUE, FALSE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000017', '+22996002017', NULL, 'Chimene', 'Dossa',             '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1999-01-30', TRUE, FALSE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000018', '+22996002018', 'nadege.sossou@example.bj', 'Nadege', 'Sossou',            '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Employee de bureau, trajet quotidien Calavi-Cotonou.', '1993-09-09', TRUE, FALSE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000019', '+22996002019', NULL, 'Parfait', 'Akakpo',            '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1991-11-11', TRUE, FALSE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000020', '+22996002020', NULL, 'Bijou', 'Adande',              '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1996-04-04', TRUE, FALSE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000021', '+22996002021', NULL, 'Adeyemi', 'Babatunde',         '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1990-07-07', TRUE, FALSE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000022', '+22996002022', NULL, 'Fasilat', 'Olabisi',           '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1995-02-18', TRUE, FALSE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000023', '+22996002023', NULL, 'Yerima', 'Wabi',               '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1988-10-10', TRUE, FALSE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000024', '+22996002024', NULL, 'Prudence', 'Aina',             '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Nouvelle inscrite, pas encore de reservation.', '2000-05-05', FALSE, FALSE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000025', '+22996002025', 'solange.hounsou@example.bj', 'Solange', 'Hounsou',        '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Trajet quotidien Calavi-Cotonou avec sa collegue.', '1994-08-22', TRUE, FALSE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000026', '+22996002026', NULL, 'Theophile', 'Agossou',         '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1986-03-03', TRUE, FALSE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000027', '+22996002027', NULL, 'Christelle', 'Zinsou',         '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1997-12-12', TRUE, FALSE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000028', '+22996002028', NULL, 'Felicite', 'Dovonou',          '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1992-09-27', TRUE, FALSE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000029', '+22996002029', NULL, 'Yacine', 'Abdoulaye',          '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Commercante, voyage vers Lome pour ses achats.', '1983-01-01', TRUE, FALSE, 'ACTIVE'),
-  ('a0000000-0000-0000-0000-000000000030', '+22996002030', NULL, 'Larissa', 'Amoussou',          '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1999-11-23', TRUE, FALSE, 'ACTIVE')
+  ('a0000000-0000-0000-0000-000000000010', '+2290196002010', NULL, 'Koffi', 'Dossou-Yovo',        '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1995-05-14', TRUE, FALSE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000011', '+2290196002011', 'esperance.ahouansou@example.bj', 'Esperance', 'Ahouansou', '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1998-08-03', TRUE, FALSE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000012', '+2290196002012', NULL, 'Adjoavi', 'Houngbedji',        '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1996-10-21', TRUE, FALSE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000013', '+2290196002013', NULL, 'Bertin', 'Agbodjinou',         '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1992-02-09', TRUE, FALSE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000014', '+2290196002014', 'rachidatou.idrissou@example.bj', 'Rachidatou', 'Idrissou', '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Voyage regulierement en famille entre Cotonou et Parakou.', '1989-12-01', TRUE, FALSE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000015', '+2290196002015', NULL, 'Fofana', 'Sero',               '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1994-03-17', TRUE, FALSE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000016', '+2290196002016', NULL, 'Innocent', 'Hounkpatin',       '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1997-06-25', TRUE, FALSE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000017', '+2290196002017', NULL, 'Chimene', 'Dossa',             '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1999-01-30', TRUE, FALSE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000018', '+2290196002018', 'nadege.sossou@example.bj', 'Nadege', 'Sossou',            '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Employee de bureau, trajet quotidien Calavi-Cotonou.', '1993-09-09', TRUE, FALSE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000019', '+2290196002019', NULL, 'Parfait', 'Akakpo',            '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1991-11-11', TRUE, FALSE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000020', '+2290196002020', NULL, 'Bijou', 'Adande',              '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1996-04-04', TRUE, FALSE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000021', '+2290196002021', NULL, 'Adeyemi', 'Babatunde',         '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1990-07-07', TRUE, FALSE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000022', '+2290196002022', NULL, 'Fasilat', 'Olabisi',           '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1995-02-18', TRUE, FALSE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000023', '+2290196002023', NULL, 'Yerima', 'Wabi',               '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1988-10-10', TRUE, FALSE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000024', '+2290196002024', NULL, 'Prudence', 'Aina',             '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Nouvelle inscrite, pas encore de reservation.', '2000-05-05', FALSE, FALSE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000025', '+2290196002025', 'solange.hounsou@example.bj', 'Solange', 'Hounsou',        '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Trajet quotidien Calavi-Cotonou avec sa collegue.', '1994-08-22', TRUE, FALSE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000026', '+2290196002026', NULL, 'Theophile', 'Agossou',         '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1986-03-03', TRUE, FALSE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000027', '+2290196002027', NULL, 'Christelle', 'Zinsou',         '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1997-12-12', TRUE, FALSE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000028', '+2290196002028', NULL, 'Felicite', 'Dovonou',          '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1992-09-27', TRUE, FALSE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000029', '+2290196002029', NULL, 'Yacine', 'Abdoulaye',          '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', 'Commercante, voyage vers Lome pour ses achats.', '1983-01-01', TRUE, FALSE, 'ACTIVE'),
+  ('a0000000-0000-0000-0000-000000000030', '+2290196002030', NULL, 'Larissa', 'Amoussou',          '$2b$10$1HiIum//2YsrIHjg3wyLkOwtc.julv.abcHg5HYvmf5x36kDVHppS', NULL, '1999-11-23', TRUE, FALSE, 'ACTIVE')
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================
@@ -369,9 +369,9 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO driver_payouts (id, driver_id, amount, status, requested_at, settled_at, destination_msisdn, period_start, period_end)
 VALUES
   -- Lot deja verse (historique) : 0 (d008) + 240 (d009) = 240
-  ('22000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000002', 240, 'SETTLED', now() - interval '7 days', now() - interval '5 days', '+22997001002', now() - interval '14 days', now() - interval '7 days'),
+  ('22000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000002', 240, 'SETTLED', now() - interval '7 days', now() - interval '5 days', '+2290197001002', now() - interval '14 days', now() - interval '7 days'),
   -- Lot en attente de traitement par le back-office (d012, MOMO_FULL : inchange)
-  ('22000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000003', 37260, 'PENDING', now() - interval '13 days', NULL, '+22997001003', now() - interval '21 days', now() - interval '14 days')
+  ('22000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000003', 37260, 'PENDING', now() - interval '13 days', NULL, '+2290197001003', now() - interval '21 days', now() - interval '14 days')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO driver_payout_items (id, payout_id, booking_id, net_amount)

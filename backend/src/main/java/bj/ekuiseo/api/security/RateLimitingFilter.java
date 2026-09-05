@@ -52,19 +52,33 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(RateLimitingFilter.class);
     private static final String WEBHOOK_PATH = "/api/v1/payments/kkiapay/webhook";
     private static final String AUTH_PREFIX = "/api/v1/auth/";
+    /** Demandes de code : envoi reel d e-mails, enumeration de numeros -> quota propre, plus strict. */
+    private static final java.util.Set<String> OTP_PATHS = java.util.Set.of("/api/v1/auth/otp/request", "/api/v1/auth/otp/register");
     private static final long IDLE_ENTRY_TTL_MILLIS = 3_600_000L; // 1h : purge des cles inactives
 
     private final int authMaxRequests;
     private final long authWindowMillis;
     private final int webhookMaxRequests;
     private final long webhookWindowMillis;
+    private final int otpMaxRequests;
+    private final long otpWindowMillis;
 
     private final ConcurrentMap<String, Deque<Long>> hits = new ConcurrentHashMap<>();
 
+    /** Constructeur de test : quotas auth/webhook explicites, quota OTP par defaut (10 / 10 min). */
+    public RateLimitingFilter(int authMaxRequests, long authWindowSeconds, int webhookMaxRequests, long webhookWindowSeconds) {
+        this(authMaxRequests, authWindowSeconds, webhookMaxRequests, webhookWindowSeconds, 10, 600);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
     public RateLimitingFilter(@Value("${ekuiseo.rate-limit.auth.max-requests:20}") int authMaxRequests,
                               @Value("${ekuiseo.rate-limit.auth.window-seconds:60}") long authWindowSeconds,
                               @Value("${ekuiseo.rate-limit.webhook.max-requests:120}") int webhookMaxRequests,
-                              @Value("${ekuiseo.rate-limit.webhook.window-seconds:60}") long webhookWindowSeconds) {
+                              @Value("${ekuiseo.rate-limit.webhook.window-seconds:60}") long webhookWindowSeconds,
+                              @Value("${ekuiseo.rate-limit.otp.max-requests:10}") int otpMaxRequests,
+                              @Value("${ekuiseo.rate-limit.otp.window-seconds:600}") long otpWindowSeconds) {
+        this.otpMaxRequests = otpMaxRequests;
+        this.otpWindowMillis = otpWindowSeconds * 1000L;
         this.authMaxRequests = authMaxRequests;
         this.authWindowMillis = authWindowSeconds * 1000L;
         this.webhookMaxRequests = webhookMaxRequests;
@@ -86,7 +100,11 @@ public class RateLimitingFilter extends OncePerRequestFilter {
         long windowMillis = isWebhook ? webhookWindowMillis : authWindowMillis;
         String key = (isWebhook ? "webhook:" : "auth:") + clientIp(request);
 
-        if (!tryAcquire(key, max, windowMillis)) {
+        boolean limited = !tryAcquire(key, max, windowMillis);
+        if (!limited && OTP_PATHS.contains(path)) {
+            limited = !tryAcquire("otp:" + clientIp(request), otpMaxRequests, otpWindowMillis);
+        }
+        if (limited) {
             log.warn("Rate limit depasse pour {} sur {}", key, path);
             response.setStatus(429);
             response.setContentType("application/problem+json");

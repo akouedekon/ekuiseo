@@ -39,12 +39,6 @@ public class AdminPayoutController {
     }
 
     @Operation(summary = "Marquer un reversement comme regle", description = "A appeler apres execution manuelle du virement mobile money (aucune API de decaissement Kkiapay confirmee, voir PayoutService).")
-    @PostMapping("/{id}/settle")
-    public PayoutResponse settle(@PathVariable UUID id) {
-        return payoutService.settle(currentUser.id(), id);
-    }
-
-    @Operation(summary = "Marquer un reversement comme regle (alias)", description = "Meme effet que /settle ; nom attendu par le contrat front (extended.ts).")
     @PostMapping("/{id}/pay")
     public PayoutResponse pay(@PathVariable UUID id) {
         return payoutService.settle(currentUser.id(), id);

@@ -1,5 +1,6 @@
 package bj.ekuiseo.api.service;
 
+import bj.ekuiseo.api.common.PhoneNumbers;
 import bj.ekuiseo.api.common.exception.BadRequestException;
 import bj.ekuiseo.api.common.exception.ConflictException;
 import bj.ekuiseo.api.common.exception.NotFoundException;
@@ -14,66 +15,64 @@ import bj.ekuiseo.api.dto.auth.OtpRequestResponse;
 import bj.ekuiseo.api.dto.auth.OtpVerifyRequest;
 import bj.ekuiseo.api.dto.auth.RefreshRequest;
 import bj.ekuiseo.api.mapper.UserMapper;
-import bj.ekuiseo.api.repository.OtpCodeRepository;
 import bj.ekuiseo.api.repository.UserRepository;
 import bj.ekuiseo.api.security.JwtService;
-import io.jsonwebtoken.JwtException;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.security.SecureRandom;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.Optional;
 import java.util.UUID;
 
+/**
+ * Inscription et connexion par code (aucun mot de passe). Le numero de telephone est
+ * l identifiant, le code part a l adresse e-mail du compte (SMS en repli si configure).
+ *
+ * <p>Cycle d un compte : cree en {@code PENDING_VERIFICATION} a l inscription, il
+ * devient {@code ACTIVE} a la premiere verification de code ; jamais verifie, il est
+ * purge apres 24 h (AuthHousekeepingScheduler) et son numero redevient libre.</p>
+ */
 @Service
 public class AuthService {
 
     private final UserRepository userRepository;
-    private final OtpCodeRepository otpCodeRepository;
+    private final OtpCodeService otpCodes;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final RefreshTokenService refreshTokens;
     private final OtpDeliveryService otpDelivery;
     private final UserMapper userMapper;
-    private final int otpMaxAttempts;
-    private final SecureRandom random = new SecureRandom();
 
-    public AuthService(UserRepository userRepository, OtpCodeRepository otpCodeRepository,
-                        PasswordEncoder passwordEncoder, JwtService jwtService, OtpDeliveryService otpDelivery,
-                        UserMapper userMapper,
-                        @Value("${ekuiseo.sms.otp.max-attempts:5}") int otpMaxAttempts) {
+    public AuthService(UserRepository userRepository, OtpCodeService otpCodes, PasswordEncoder passwordEncoder,
+                       JwtService jwtService, RefreshTokenService refreshTokens, OtpDeliveryService otpDelivery,
+                       UserMapper userMapper) {
         this.userRepository = userRepository;
-        this.otpCodeRepository = otpCodeRepository;
+        this.otpCodes = otpCodes;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.refreshTokens = refreshTokens;
         this.otpDelivery = otpDelivery;
         this.userMapper = userMapper;
-        this.otpMaxAttempts = otpMaxAttempts;
     }
 
     /**
-     * Inscription par OTP (sans mot de passe) : cree le compte avec un mot de passe
-     * aleatoire inutilisable, puis envoie le code a l adresse e-mail (obligatoire). Aucun
-     * jeton n est remis ici : seule la verification du code (donc l acces a la boite
-     * e-mail) ouvre la session.
-     * Un numero deja inscrit renvoie 409, comme pour l'inscription classique.
+     * Inscription : cree le compte en attente de verification (mot de passe aleatoire
+     * inutilisable, aucun jeton remis) et envoie le code a l adresse e-mail obligatoire.
+     * Un numero deja verifie renvoie 409 ; un numero jamais verifie est repris avec les
+     * nouvelles informations (anti-squat, constat F023).
      */
     @Transactional
     public OtpRequestResponse registerWithOtp(OtpRegisterRequest req) {
+        String phone = PhoneNumbers.normalize(req.phone());
         String email = req.email().trim();
-        Optional<User> existing = userRepository.findByPhone(req.phone());
+        Optional<User> existing = userRepository.findByPhone(phone);
         if (existing.isPresent()) {
             User pending = existing.get();
-            if (pending.isEmailVerified() || pending.isPhoneVerified()) {
+            if (pending.getStatus() != UserStatus.PENDING_VERIFICATION
+                    && (pending.isEmailVerified() || pending.isPhoneVerified())) {
                 throw new ConflictException("Un compte existe deja avec ce numero de telephone");
             }
-            // Compte cree mais jamais verifie : n importe qui a pu saisir ce numero. Plutot que
-            // de le bloquer definitivement (squat), on reprend l inscription avec les nouvelles
-            // informations ; seule la verification du code fera foi.
-            assertActive(pending);
+            assertNotSuspended(pending);
             if (userRepository.existsByEmailIgnoreCaseAndIdNot(email, pending.getId())) {
                 throw new ConflictException("Un compte existe deja avec cette adresse e-mail");
             }
@@ -87,113 +86,90 @@ public class AuthService {
             throw new ConflictException("Un compte existe deja avec cette adresse e-mail");
         }
         User user = User.builder()
-                .phone(req.phone())
+                .phone(phone)
                 .firstName(req.firstName().trim())
                 .lastName(req.lastName().trim())
                 .email(email)
                 .passwordHash(passwordEncoder.encode("otp-only-" + UUID.randomUUID()))
-                .status(UserStatus.ACTIVE)
+                .status(UserStatus.PENDING_VERIFICATION)
                 .build();
         userRepository.save(user);
         return sendCode(user);
     }
 
     /**
-     * Demande de code pour un numero deja inscrit. Le code part a l adresse e-mail du
-     * compte (ou par SMS en repli, voir OtpDeliveryService). Un numero inconnu renvoie
-     * 404 : l interface propose alors l inscription. Un compte suspendu renvoie 401
-     * sans rien envoyer.
+     * Demande de code pour un numero deja inscrit (verifie ou en attente). Un numero
+     * inconnu renvoie 404 : l interface propose alors l inscription. Un compte suspendu
+     * renvoie 401 sans rien envoyer.
      */
     @Transactional
     public OtpRequestResponse requestOtp(OtpRequestRequest req) {
-        User user = userRepository.findByPhone(req.phone())
+        String phone = PhoneNumbers.normalize(req.phone());
+        User user = userRepository.findByPhone(phone)
                 .orElseThrow(() -> new NotFoundException("Aucun compte associe a ce numero, inscrivez-vous d abord"));
-        assertActive(user);
+        assertNotSuspended(user);
         return sendCode(user);
     }
 
-    /**
-     * Genere le code (6 chiffres, hache en base, 5 minutes), choisit le canal et l envoie.
-     * Le canal est memorise sur le code pour poser le bon drapeau a la verification.
-     * L envoi a lieu apres l ecriture du code : si le fournisseur echoue (503), la
-     * transaction est annulee et aucun code fantome ne reste en base.
-     */
+    /** Choisit le canal, enregistre le code (hache) puis l envoie ; un echec d envoi annule l ecriture. */
     private OtpRequestResponse sendCode(User user) {
         OtpDeliveryService.Channel channel = otpDelivery.resolveChannel(user.getEmail());
-        String code = String.format("%06d", random.nextInt(1_000_000));
-        OtpCode otp = OtpCode.builder()
-                .phone(user.getPhone())
-                .codeHash(passwordEncoder.encode(code))
-                .purpose("LOGIN")
-                .channel(channel.name())
-                .expiresAt(Instant.now().plus(5, ChronoUnit.MINUTES))
-                .build();
-        otpCodeRepository.save(otp);
+        String code = otpCodes.issue(user.getPhone(), OtpCodeService.PURPOSE_LOGIN, channel.name());
         return otpDelivery.deliver(user.getPhone(), user.getEmail(), code);
     }
 
-    // noRollbackFor : un code faux DOIT laisser en base l increment de attempts (et la
-    // consommation du code grille) ; sans cela le rollback annulait le compteur et la
-    // limite de 5 essais etait inoperante (constat F536 de l audit).
     @Transactional(noRollbackFor = BadRequestException.class)
     public AuthResponse verifyOtp(OtpVerifyRequest req) {
-        OtpCode otp = otpCodeRepository
-                .findFirstByPhoneAndConsumedAtIsNullAndExpiresAtAfterOrderByCreatedAtDesc(req.phone(), Instant.now())
-                .orElseThrow(() -> new BadRequestException("Aucun code valide pour ce numero, redemandez un OTP"));
-        if (otp.getAttempts() >= otpMaxAttempts) {
-            // Code grille par trop de tentatives incorrectes (regle metier n.8) : on l'invalide
-            // definitivement plutot que de laisser expirer normalement, meme s'il reste valide
-            // dans sa fenetre de 5 minutes.
-            otp.setConsumedAt(Instant.now());
-            otpCodeRepository.save(otp);
-            throw new BadRequestException("Nombre maximal de tentatives atteint pour ce code, redemandez un OTP");
-        }
-        if (!passwordEncoder.matches(req.code(), otp.getCodeHash())) {
-            otp.setAttempts(otp.getAttempts() + 1);
-            otpCodeRepository.save(otp);
-            throw new BadRequestException("Code OTP incorrect");
-        }
-        otp.setConsumedAt(Instant.now());
-        otpCodeRepository.save(otp);
+        String phone = PhoneNumbers.normalize(req.phone());
+        OtpCode otp = otpCodes.consume(phone, OtpCodeService.PURPOSE_LOGIN, req.code());
 
-        User user = userRepository.findByPhone(req.phone())
-                .orElseThrow(() -> new NotFoundException("Aucun compte associe a ce numero, inscrivez-vous d'abord"));
-        assertActive(user);
+        User user = userRepository.findByPhone(phone)
+                .orElseThrow(() -> new NotFoundException("Aucun compte associe a ce numero, inscrivez-vous d abord"));
+        assertNotSuspended(user);
         if ("EMAIL".equals(otp.getChannel())) {
             user.setEmailVerified(true);
         } else {
             user.setPhoneVerified(true);
         }
+        if (user.getStatus() == UserStatus.PENDING_VERIFICATION) {
+            user.setStatus(UserStatus.ACTIVE);
+        }
         userRepository.save(user);
         return tokensFor(user);
     }
 
-    /** Un compte suspendu par la moderation ne peut ouvrir ni prolonger une session, quel que soit le parcours. */
-    private void assertActive(User user) {
+    /** Rotation du jeton de rafraichissement (voir RefreshTokenService) ; 401 pour un compte suspendu. */
+    @Transactional
+    public AuthResponse refresh(RefreshRequest req) {
+        RefreshTokenService.Rotation rotation = refreshTokens.rotate(req.refreshToken());
+        User user = userRepository.findById(rotation.userId())
+                .orElseThrow(() -> new UnauthorizedException("Utilisateur introuvable"));
         if (user.getStatus() != UserStatus.ACTIVE) {
+            refreshTokens.revokeAll(user.getId());
             throw new UnauthorizedException("Compte suspendu");
+        }
+        return new AuthResponse(jwtService.generateAccessToken(user.getId()), rotation.refreshToken(),
+                userMapper.toResponse(user));
+    }
+
+    /** Deconnexion : revoque la chaine du jeton presente. Toujours silencieux (jeton absent ou deja invalide). */
+    @Transactional
+    public void logout(String refreshToken) {
+        if (refreshToken != null && !refreshToken.isBlank()) {
+            refreshTokens.revoke(refreshToken);
         }
     }
 
-    @Transactional(readOnly = true)
-    public AuthResponse refresh(RefreshRequest req) {
-        try {
-            if (!jwtService.isRefreshToken(req.refreshToken())) {
-                throw new UnauthorizedException("Jeton de rafraichissement invalide");
-            }
-            var userId = jwtService.extractUserId(req.refreshToken());
-            User user = userRepository.findById(userId)
-                    .orElseThrow(() -> new UnauthorizedException("Utilisateur introuvable"));
-            assertActive(user);
-            return tokensFor(user);
-        } catch (JwtException ex) {
-            throw new UnauthorizedException("Jeton de rafraichissement invalide ou expire");
+    /** Un compte suspendu par la moderation ne peut ni recevoir de code ni ouvrir de session. */
+    private void assertNotSuspended(User user) {
+        if (user.getStatus() == UserStatus.SUSPENDED) {
+            throw new UnauthorizedException("Compte suspendu");
         }
     }
 
     private AuthResponse tokensFor(User user) {
         String access = jwtService.generateAccessToken(user.getId());
-        String refresh = jwtService.generateRefreshToken(user.getId());
+        String refresh = refreshTokens.issue(user.getId());
         return new AuthResponse(access, refresh, userMapper.toResponse(user));
     }
 }

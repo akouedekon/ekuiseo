@@ -6,20 +6,54 @@ import { z } from 'zod'
  * « Indiquez votre prénom », pas « firstName is required ».
  */
 
-const PHONE_MIN_DIGITS = 8
-const PHONE_MAX_DIGITS = 15
-
 export function phoneDigits(value: string): string {
   return value.replace(/\D/g, '')
 }
 
-/** Numero de telephone mobile (Benin +229, Togo, Nigeria acceptes). */
+const LEGACY_BENIN_MESSAGE = 'Depuis 2024, les numéros béninois ont 10 chiffres et commencent par 01'
+
+/**
+ * Normalise une saisie en E.164, meme regle que le serveur (PhoneNumbers.java) :
+ * espaces, points, tirets et parentheses ignores ; « 00 » initial -> « + » ; un numero
+ * sans indicatif n'est accepte que s'il est beninois a 10 chiffres commencant par 01
+ * (plan de numerotation du 30/11/2024) ; les anciens numeros a 8 chiffres sont refuses.
+ * Renvoie null si la saisie n'est pas un numero valide.
+ */
+export function toE164(raw: string): string | null {
+  let s = raw.trim().replace(/[\s().-]/g, '')
+  if (s.startsWith('00')) s = `+${s.slice(2)}`
+  const international = s.startsWith('+')
+  let digits = international ? s.slice(1) : s
+  if (digits.length === 0 || !/^\d+$/.test(digits)) return null
+  if (!international) {
+    if (digits.length === 10 && digits.startsWith('01')) digits = `229${digits}`
+    else return null
+  }
+  if (digits.startsWith('229')) {
+    if (!/^01\d{8}$/.test(digits.slice(3))) return null
+  } else if (!/^[1-9]\d{7,14}$/.test(digits)) {
+    return null
+  }
+  return `+${digits}`
+}
+
+/** Numero de telephone mobile (Benin +229 a 10 chiffres, Togo, Nigeria... en E.164). */
 export const phoneSchema = z
   .string()
   .trim()
   .min(1, 'Indiquez un numéro de téléphone')
-  .refine((value) => phoneDigits(value).length >= PHONE_MIN_DIGITS, 'Numéro de téléphone incomplet')
-  .refine((value) => phoneDigits(value).length <= PHONE_MAX_DIGITS, 'Numéro de téléphone trop long')
+  .superRefine((value, ctx) => {
+    if (toE164(value)) return
+    const compact = value.replace(/[\s().-]/g, '')
+    const digits = phoneDigits(compact)
+    const benin = compact.startsWith('+229') || compact.startsWith('00229') || !/^(\+|00)/.test(compact)
+    const national = compact.startsWith('+229') ? digits.slice(3) : compact.startsWith('00229') ? digits.slice(5) : digits
+    let message = 'Numéro de téléphone invalide'
+    if (benin && national.length === 8) message = LEGACY_BENIN_MESSAGE
+    else if (digits.length < 8) message = 'Numéro de téléphone incomplet'
+    else if (!/^(\+|00)/.test(compact)) message = "Ajoutez l'indicatif, ex. +229 01 97 00 00 00"
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message })
+  })
 
 /** E-mail obligatoire (inscription : le code de connexion y est envoye). */
 export const emailSchema = z
@@ -31,10 +65,10 @@ export const emailSchema = z
 /** E-mail facultatif : vide accepte, sinon doit etre valide. */
 export const optionalEmailSchema = z.union([z.literal(''), z.string().trim().email('Adresse e-mail invalide')])
 
+/** Profil : l'e-mail n'en fait pas partie, il se change par le parcours verifie (EmailChangeDialog). */
 export const profileSchema = z.object({
   firstName: z.string().trim().min(2, 'Indiquez votre prénom').max(60, '60 caractères maximum'),
   lastName: z.string().trim().min(2, 'Indiquez votre nom').max(60, '60 caractères maximum'),
-  email: optionalEmailSchema,
   bio: z.string().trim().max(300, '300 caractères maximum'),
 })
 export type ProfileValues = z.infer<typeof profileSchema>

@@ -1,4 +1,4 @@
-import { Ban, RotateCcw, Search, ShieldCheck, Star, UserX } from 'lucide-react'
+import { Ban, Contact, RotateCcw, Search, ShieldCheck, Star, UserX } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { toast } from 'sonner'
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Input, Textarea } from '@/components/ui/input'
 import { Avatar } from '@/components/ui/misc'
 import { EmptyState, ErrorState } from '@/components/ui/states'
+import { ContactCorrectionDialog } from '@/features/admin/ContactCorrectionDialog'
 import { useAdminUsers, useToggleUserSuspension } from '@/hooks/useAdmin'
 import { describeError } from '@/lib/errors'
 import { formatDayShort, formatPhone } from '@/lib/format'
@@ -107,6 +108,7 @@ export function AdminUsers() {
   const [input, setInput] = useState('')
   const [query, setQuery] = useState('')
   const [target, setTarget] = useState<AdminUserResponse | null>(null)
+  const [contactTarget, setContactTarget] = useState<AdminUserResponse | null>(null)
   const [reason, setReason] = useState('')
   const users = useAdminUsers(query)
   const toggle = useToggleUserSuspension()
@@ -182,27 +184,35 @@ export function AdminUsers() {
             />
           }
           rowActions={(user) => (
-            <Button
-              size="sm"
-              variant={user.suspended ? 'secondary' : 'ghost'}
-              className={user.suspended ? undefined : 'text-[var(--vermillon)]'}
-              onClick={() => setTarget(user)}
-            >
-              {user.suspended ? (
-                <>
-                  <RotateCcw className="size-4" aria-hidden />
-                  Réactiver
-                </>
-              ) : (
-                <>
-                  <Ban className="size-4" aria-hidden />
-                  Suspendre
-                </>
-              )}
-            </Button>
+            <span className="flex flex-wrap justify-end gap-1">
+              <Button size="sm" variant="ghost" onClick={() => setContactTarget(user)}>
+                <Contact className="size-4" aria-hidden />
+                Contact
+              </Button>
+              <Button
+                size="sm"
+                variant={user.suspended ? 'secondary' : 'ghost'}
+                className={user.suspended ? undefined : 'text-[var(--vermillon)]'}
+                onClick={() => setTarget(user)}
+              >
+                {user.suspended ? (
+                  <>
+                    <RotateCcw className="size-4" aria-hidden />
+                    Réactiver
+                  </>
+                ) : (
+                  <>
+                    <Ban className="size-4" aria-hidden />
+                    Suspendre
+                  </>
+                )}
+              </Button>
+            </span>
           )}
         />
       )}
+
+      <ContactCorrectionDialog user={contactTarget} onOpenChange={(open) => !open && setContactTarget(null)} />
 
       <ConfirmDialog
         open={target !== null}

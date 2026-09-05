@@ -3,8 +3,8 @@
 Session du 2026-09-05. Point de départ : `docs/AUDIT-FONCTIONNEL.md` (audit avant
 modification). Tout ce qui suit a été **exécuté contre la production**
 (https://ekuiseo.com, backend réel, base PostGIS réelle, Kkiapay en bac à sable) avec
-deux comptes de test créés pour l'occasion : `+22997000322` (Afi Testeur, conducteur)
-et `+22997000321` (Test Kkiapay, passager), plus le compte administrateur de démonstration.
+deux comptes de test créés pour l'occasion : `+2290197000322` (Afi Testeur, conducteur)
+et `+2290197000321` (Test Kkiapay, passager), plus le compte administrateur de démonstration.
 
 ## ✅ Fonctionnalités vérifiées de bout en bout
 

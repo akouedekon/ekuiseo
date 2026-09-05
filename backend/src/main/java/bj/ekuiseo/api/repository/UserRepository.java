@@ -5,6 +5,7 @@ import bj.ekuiseo.api.domain.enums.UserStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -17,6 +18,12 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     boolean existsByPhone(String phone);
     boolean existsByEmailIgnoreCase(String email);
     boolean existsByEmailIgnoreCaseAndIdNot(String email, UUID id);
+    boolean existsByPhoneAndIdNot(String phone, UUID id);
+
+    /** Purge des comptes jamais verifies (AuthHousekeepingScheduler) ; aucune donnee liee n existe encore. */
+    @Modifying
+    @Query("delete from User u where u.status = :status and u.createdAt < :before")
+    int deleteByStatusAndCreatedAtBefore(@Param("status") UserStatus status, @Param("before") Instant before);
     Page<User> findByStatus(UserStatus status, Pageable pageable);
     long countByCreatedAtBetween(Instant from, Instant to);
 

@@ -9,7 +9,8 @@ import type {
   SubscriptionResponse,
   UserPreferencesResponse,
 } from '@/api/extended'
-import type { InitiatePaymentResponse, UserResponse, VehicleRequest, VehicleResponse } from '@/api/types'
+import type { InitiatePaymentResponse, OtpRequestResponse, UserResponse, VehicleRequest, VehicleResponse } from '@/api/types'
+import { toE164 } from '@/lib/validation'
 
 /* ------------------------------------------------------------- Vehicules */
 
@@ -61,16 +62,37 @@ export function useDeleteVehicle() {
 export interface UpdateProfileInput {
   firstName?: string
   lastName?: string
-  email?: string | null
   bio?: string | null
   photoUrl?: string | null
 }
 
-/** PATCH /api/v1/me */
+/** PATCH /api/v1/me (l'e-mail se change par useRequestEmailChange / useConfirmEmailChange). */
 export function useUpdateProfile() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (input: UpdateProfileInput) => apiClient.patch<UserResponse>('/api/v1/me', input),
+    onSuccess: (user) => {
+      queryClient.setQueryData<UserResponse>(['me'], user)
+    },
+  })
+}
+
+/**
+ * POST /api/v1/me/email/request : enregistre la nouvelle adresse en attente et y envoie
+ * un code. 409 si elle appartient deja a un autre compte.
+ */
+export function useRequestEmailChange() {
+  return useMutation({
+    mutationFn: (email: string) =>
+      apiClient.post<OtpRequestResponse>('/api/v1/me/email/request', { email: email.trim() }),
+  })
+}
+
+/** POST /api/v1/me/email/confirm : le code recu sur la nouvelle adresse bascule le compte. */
+export function useConfirmEmailChange() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (code: string) => apiClient.post<UserResponse>('/api/v1/me/email/confirm', { code }),
     onSuccess: (user) => {
       queryClient.setQueryData<UserResponse>(['me'], user)
     },
@@ -128,7 +150,10 @@ export function useAddPaymentMethod() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (input: { provider: PaymentProvider; phone: string; label?: string }) =>
-      apiClient.post<PaymentMethodResponse>('/api/v1/me/payment-methods', input),
+      apiClient.post<PaymentMethodResponse>('/api/v1/me/payment-methods', {
+        ...input,
+        phone: toE164(input.phone) ?? input.phone,
+      }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['me', 'payment-methods'] }),
   })
 }

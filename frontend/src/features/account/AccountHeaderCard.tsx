@@ -1,4 +1,4 @@
-import { Check, UserCog } from 'lucide-react'
+import { Check, Mail, UserCog } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
@@ -11,6 +11,7 @@ import { describeError } from '@/lib/errors'
 import { formatPhone } from '@/lib/format'
 import type { IdentityVerificationStatus } from '@/api/extended'
 import type { UserResponse } from '@/api/types'
+import { EmailChangeDialog } from './EmailChangeDialog'
 import { PROFILE_FORM_ID, ProfileForm } from './forms/ProfileForm'
 import { IDENTITY_PRESENTATION } from './identity'
 
@@ -24,6 +25,7 @@ export function AccountHeaderCard({
   identityStatus?: IdentityVerificationStatus
 }) {
   const [open, setOpen] = useState(false)
+  const [emailOpen, setEmailOpen] = useState(false)
   const updateProfile = useUpdateProfile()
   const identity = identityStatus ? IDENTITY_PRESENTATION[identityStatus] : null
   const IdentityIcon = identity?.icon
@@ -71,6 +73,22 @@ export function AccountHeaderCard({
       </div>
       {user.bio ? <p className="mt-3 text-body leading-relaxed text-ink-2">{user.bio}</p> : null}
 
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)] px-3 py-2">
+        <span className="flex min-w-0 items-center gap-2 text-[13px] text-ink-2">
+          <Mail className="size-4 shrink-0 text-muted" aria-hidden />
+          <span className="truncate">{user.email ?? 'Aucune adresse e-mail'}</span>
+        </span>
+        <Button variant="ghost" size="sm" onClick={() => setEmailOpen(true)}>
+          {user.email ? "Changer l'adresse" : 'Ajouter une adresse'}
+        </Button>
+      </div>
+      <p className="mt-1.5 text-[12px] text-muted">
+        Vos codes de connexion sont envoyés à cette adresse. Tout changement est confirmé par un code reçu sur la
+        nouvelle adresse.
+      </p>
+
+      <EmailChangeDialog open={emailOpen} onOpenChange={setEmailOpen} currentEmail={user.email} />
+
       <Sheet
         open={open}
         onOpenChange={setOpen}
@@ -86,7 +104,6 @@ export function AccountHeaderCard({
           initial={{
             firstName: user.firstName,
             lastName: user.lastName,
-            email: user.email ?? '',
             bio: user.bio ?? '',
           }}
           onSubmit={(values) =>
@@ -94,7 +111,6 @@ export function AccountHeaderCard({
               {
                 firstName: values.firstName,
                 lastName: values.lastName,
-                email: values.email || null,
                 bio: values.bio || null,
               },
               {

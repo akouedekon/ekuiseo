@@ -139,6 +139,27 @@ class RateLimitingFilterTest {
         assertThat(RateLimitingFilter.clientIp(direct)).isEqualTo("41.85.10.7");
     }
 
+    @Test
+    void otpEndpoints_haveAStricterQuotaThanTheRestOfAuth() throws Exception {
+        // auth : 100/min, otp : 2 / 10 min -> la 3e demande de code est refusee alors que /refresh passe encore.
+        RateLimitingFilter filter = new RateLimitingFilter(100, 60, 120, 60, 2, 600);
+        FilterChain chain = mock(FilterChain.class);
+        for (int i = 0; i < 2; i++) {
+            MockHttpServletResponse res = new MockHttpServletResponse();
+            filter.doFilterInternal(authRequest("10.0.0.42"), res, chain);
+            assertThat(res.getStatus()).isEqualTo(200);
+        }
+        MockHttpServletResponse third = new MockHttpServletResponse();
+        filter.doFilterInternal(authRequest("10.0.0.42"), third, chain);
+        assertThat(third.getStatus()).isEqualTo(429);
+
+        MockHttpServletRequest refresh = new MockHttpServletRequest("POST", "/api/v1/auth/refresh");
+        refresh.setRemoteAddr("10.0.0.42");
+        MockHttpServletResponse refreshRes = new MockHttpServletResponse();
+        filter.doFilterInternal(refresh, refreshRes, chain);
+        assertThat(refreshRes.getStatus()).isEqualTo(200);
+    }
+
     private MockHttpServletRequest authRequest(String remoteAddr) {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/auth/otp/request");
         request.setRemoteAddr(remoteAddr);

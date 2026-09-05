@@ -2,6 +2,7 @@ package bj.ekuiseo.api.web.controller.admin;
 
 import bj.ekuiseo.api.dto.admin.AdminUserResponse;
 import bj.ekuiseo.api.dto.admin.SuspendUserRequest;
+import bj.ekuiseo.api.dto.admin.UpdateContactRequest;
 import bj.ekuiseo.api.security.CurrentUser;
 import bj.ekuiseo.api.service.admin.AdminUserService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -39,15 +40,15 @@ public class AdminUserController {
     }
 
     @Operation(summary = "Reactiver un utilisateur suspendu")
-    @PostMapping("/{id}/activate")
-    public AdminUserResponse activate(@PathVariable UUID id) {
-        return adminUserService.activate(currentUser.id(), id);
-    }
-
-    @Operation(summary = "Reactiver un utilisateur suspendu (alias)", description = "Meme effet que /activate ; nom attendu par le contrat front (extended.ts).")
     @PostMapping("/{id}/reinstate")
     public AdminUserResponse reinstate(@PathVariable UUID id) {
         return adminUserService.activate(currentUser.id(), id);
+    }
+
+    @Operation(summary = "Corriger le contact d un utilisateur", description = "E-mail et/ou numero (normalise en E.164), motif obligatoire. Reserve aux demandes dont l identite a ete verifiee hors ligne. Le contact corrige repart non verifie, les sessions de l utilisateur sont revoquees, l operation est journalisee (USER_CONTACT_CHANGED). 409 si le contact est deja pris.")
+    @PatchMapping("/{id}/contact")
+    public AdminUserResponse updateContact(@PathVariable UUID id, @Valid @RequestBody UpdateContactRequest req) {
+        return adminUserService.updateContact(currentUser.id(), id, req.email(), req.phone(), req.reason());
     }
 
     @Operation(summary = "Valider la verification d'identite", description = "Suppose qu'une verification manuelle hors-ligne a deja eu lieu (aucun sous-systeme de stockage de documents d'identite n'est implemente, voir README). Voir aussi /api/v1/admin/verifications pour la file de moderation dediee.")

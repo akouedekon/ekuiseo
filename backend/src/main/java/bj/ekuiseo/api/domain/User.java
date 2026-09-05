@@ -67,6 +67,10 @@ public class User {
     @Builder.Default
     private boolean emailVerified = false;
 
+    /** Nouvelle adresse en attente du code de confirmation (V11, EmailChangeService). */
+    @Column(name = "pending_email")
+    private String pendingEmail;
+
     @Column(name = "identity_verified", nullable = false)
     @Builder.Default
     private boolean identityVerified = false;

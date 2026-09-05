@@ -2,12 +2,10 @@ package bj.ekuiseo.api.web.controller.admin;
 
 import bj.ekuiseo.api.dto.admin.AdminLiquidityResponse;
 import bj.ekuiseo.api.dto.admin.AdminStatsResponse;
-import bj.ekuiseo.api.dto.admin.StatsResponse;
 import bj.ekuiseo.api.service.admin.AdminLiquidityService;
 import bj.ekuiseo.api.service.admin.AdminStatsService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -61,10 +59,4 @@ public class AdminStatsController {
         return adminStatsService.computeStats(days);
     }
 
-    @Operation(summary = "Statistiques agregees sur une periode explicite (forme historique)", description = "from/to au format ISO-8601 (ex: 2026-09-01T00:00:00Z). Conserve pour compatibilite ; voir ?days=N pour le contrat front actuel.")
-    @GetMapping(params = {"from", "to"})
-    public StatsResponse statsByRange(@RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
-                                       @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to) {
-        return adminStatsService.computeStats(from, to);
-    }
 }

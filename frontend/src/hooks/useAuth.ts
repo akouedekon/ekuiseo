@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSyncExternalStore } from 'react'
 import { apiClient, authStore } from '@/api/client'
 import { clearPersistedCache } from '@/lib/queryClient'
+import { toE164 } from '@/lib/validation'
 import type { AuthResponse, OtpRequestResponse, UserResponse } from '@/api/types'
 
 interface OtpVerifyInput {
@@ -52,8 +53,14 @@ export function useMe() {
  */
 export function useRequestOtp() {
   return useMutation({
-    mutationFn: (phone: string) => apiClient.post<OtpRequestResponse>('/api/v1/auth/otp/request', { phone }, { auth: false }),
+    mutationFn: (phone: string) =>
+      apiClient.post<OtpRequestResponse>('/api/v1/auth/otp/request', { phone: normalizePhone(phone) }, { auth: false }),
   })
+}
+
+/** Le serveur applique la meme regle (PhoneNumbers.java) ; on envoie deja la forme canonique. */
+function normalizePhone(phone: string): string {
+  return toE164(phone) ?? phone.trim()
 }
 
 /**
@@ -64,7 +71,11 @@ export function useRequestOtp() {
 export function useRegisterOtp() {
   return useMutation({
     mutationFn: (input: OtpRegisterInput) =>
-      apiClient.post<OtpRequestResponse>('/api/v1/auth/otp/register', input, { auth: false }),
+      apiClient.post<OtpRequestResponse>(
+        '/api/v1/auth/otp/register',
+        { ...input, phone: normalizePhone(input.phone) },
+        { auth: false },
+      ),
   })
 }
 
@@ -73,19 +84,28 @@ export function useVerifyOtp() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (input: OtpVerifyInput) =>
-      apiClient.post<AuthResponse>('/api/v1/auth/otp/verify', input, { auth: false }),
+      apiClient.post<AuthResponse>(
+        '/api/v1/auth/otp/verify',
+        { ...input, phone: normalizePhone(input.phone) },
+        { auth: false },
+      ),
     onSuccess: (data) => persistAuth(queryClient, data),
   })
 }
 
 /**
- * Deconnexion locale : jetons, cache memoire et cache persiste (donnees
- * personnelles) sont effaces immediatement. Les jetons sont des JWT sans etat
- * cote serveur : il n'existe pas d'appel de revocation, ils expirent seuls.
+ * Deconnexion : le refresh token est revoque cote serveur (POST /auth/logout, toute sa
+ * chaine de rotation), puis jetons, cache memoire et cache persiste (donnees
+ * personnelles) sont effaces immediatement. La revocation est lancee sans attendre :
+ * hors ligne, la session locale disparait quand meme et le jeton expirera seul.
  */
 export function useLogout() {
   const queryClient = useQueryClient()
   return () => {
+    const refreshToken = authStore.getRefreshToken()
+    if (refreshToken) {
+      void apiClient.post<void>('/api/v1/auth/logout', { refreshToken }, { auth: false }).catch(() => undefined)
+    }
     authStore.clear('logout')
     queryClient.clear()
     clearPersistedCache()

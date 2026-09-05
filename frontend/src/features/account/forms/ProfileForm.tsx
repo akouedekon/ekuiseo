@@ -8,6 +8,8 @@ export const PROFILE_FORM_ID = 'profile-form'
 /**
  * Formulaire de profil. Le bouton d'envoi vit dans le pied de la feuille
  * (attribut `form={PROFILE_FORM_ID}`), ce qui laisse le contenu defiler.
+ * L'e-mail n'est pas ici : c'est le canal des codes de connexion, il se change par
+ * un parcours verifie (EmailChangeDialog).
  */
 export function ProfileForm({
   initial,
@@ -34,15 +36,6 @@ export function ProfileForm({
         />
         <Input label="Nom" autoComplete="family-name" error={errors.lastName?.message} {...form.register('lastName')} />
       </div>
-      <Input
-        label="E-mail (facultatif)"
-        type="email"
-        inputMode="email"
-        autoComplete="email"
-        hint="Pour recevoir vos reçus et récapitulatifs."
-        error={errors.email?.message}
-        {...form.register('email')}
-      />
       <Textarea
         label="Présentation"
         hint="Visible par les passagers sur votre profil public. 300 caractères maximum."

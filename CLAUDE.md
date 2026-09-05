@@ -124,7 +124,7 @@ notifications, compte (véhicules, mobile money, identité, réglages, revenus, 
 publication avec arrêts géolocalisés, modification et annulation de trajet (remboursement
 sandbox), avis, signalement, back-office complet (signalements, vérifications, lots de
 reversement, suspension motivée, journal d'audit, export CSV), responsive 375 → 1920.
-Comptes de test en production : `+22997000322` (conducteur), `+22997000321` (passager).
+Comptes de test en production : `+2290197000322` (conducteur), `+2290197000321` (passager).
 
 Il n'existe **plus aucun mode démonstration** : `api/demo.ts` et `api/resilient.ts` ont été
 supprimés, chaque hook appelle l'API et chaque écran affiche un état d'erreur avec réessai.
@@ -139,6 +139,14 @@ rate limiting par IP réelle (X-Real-IP), suppression de la connexion par mot de
 persistant, CORS sans credentials et restreint en production, Swagger et actuator fermés,
 HSTS, arrêt gracieux, cron de sauvegarde installé par le déploiement, exercice de
 restauration consigné dans `docs/EXPLOITATION.md`. Phases 1 à 7 : voir le plan de l audit.
+
+**Phase 1, lot 1.1 (authentification et sessions) livré le 2026-09-05** : normalisation E.164
+partagée (`PhoneNumbers` / `toE164`, numéros béninois à 10 chiffres obligatoires), refresh tokens
+enregistrés avec rotation, détection de réutilisation, révocation à la déconnexion, à la suspension
+et à la correction de contact, durée absolue 90 jours (V11) ; compte créé `PENDING_VERIFICATION`
+et activé au premier code, purgé après 24 h sinon ; changement d e-mail en deux temps ; correction
+de contact par l administration (journalisée) ; quota par IP dédié aux demandes de code ; alias
+admin morts retirés. Le seed et les comptes de test sont au format `+229 01 …`.
 
 ## Commandes
 
