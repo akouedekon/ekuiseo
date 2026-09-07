@@ -87,8 +87,8 @@ updates:
     ignore:
       - dependency-name: "eclipse-temurin"
         update-types: ["version-update:semver-major"]
+      # L image maven:3-eclipse-temurin-N est versionnee par le JDK : toute proposition est ignoree.
       - dependency-name: "maven"
-        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: docker
     directory: /frontend
