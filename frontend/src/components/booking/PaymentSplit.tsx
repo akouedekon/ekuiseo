@@ -103,14 +103,14 @@ export function PaymentSplit({
               ) : fullyOnline ? (
                 <>
                   Annulation gratuite jusqu'à {plan.freeCancellationHours} h avant le départ : vous êtes remboursé
-                  intégralement. Au-delà, seuls les frais de service restent acquis. Si le conducteur annule, vous
-                  êtes remboursé dans tous les cas.
+                  intégralement. Ensuite, la moitié du montant payé en ligne est retenue, et la totalité après l'heure
+                  de départ. Si le conducteur annule, vous êtes remboursé dans tous les cas.
                 </>
               ) : (
                 <>
                   Annulation gratuite jusqu'à {plan.freeCancellationHours} h avant le départ : l'acompte est
-                  remboursé intégralement. Au-delà, il reste acquis au conducteur. Si le conducteur annule, vous êtes
-                  remboursé dans tous les cas.
+                  remboursé intégralement. Ensuite, la moitié de l'acompte est retenue, et la totalité après l'heure de
+                  départ. Si le conducteur annule, vous êtes remboursé dans tous les cas.
                 </>
               )}
             </span>

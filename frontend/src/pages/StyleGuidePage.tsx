@@ -277,7 +277,7 @@ export function StyleGuidePage() {
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         title="Annuler cette réservation ?"
-        description="Si le départ est dans moins de 24 h, l'acompte reste acquis au conducteur."
+        description="Si le départ est dans moins de 24 h, la moitié de l'acompte est retenue ; la totalité après l'heure de départ."
         tone="danger"
         confirmLabel="Confirmer l'annulation"
         onConfirm={() => {

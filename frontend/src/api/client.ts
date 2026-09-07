@@ -113,6 +113,8 @@ interface RequestOptions {
   auth?: boolean
   signal?: AbortSignal
   timeoutMs?: number
+  /** Type attendu en reponse (application/json par defaut ; text/csv pour les exports). */
+  accept?: string
 }
 
 let refreshPromise: Promise<string | null> | null = null
@@ -211,10 +213,10 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
 /** Appel brut avec JWT et rafraichissement automatique en cas de 401 ; ne lit pas le corps. */
 async function authorizedFetch(path: string, options: RequestOptions = {}): Promise<Response> {
-  const { method = 'GET', body, auth = true, signal, timeoutMs = REQUEST_TIMEOUT_MS } = options
+  const { method = 'GET', body, auth = true, signal, timeoutMs = REQUEST_TIMEOUT_MS, accept = 'application/json' } = options
 
   const doFetch = async (token: string | null): Promise<Response> => {
-    const headers: Record<string, string> = { Accept: 'application/json' }
+    const headers: Record<string, string> = { Accept: accept }
     if (body !== undefined) headers['Content-Type'] = 'application/json'
     if (auth && token) headers['Authorization'] = `Bearer ${token}`
     try {
@@ -266,7 +268,9 @@ function isSuspendedProblem(problem: ProblemDetail): boolean {
  * l'en-tete Authorization.
  */
 export async function downloadFile(path: string, filename: string): Promise<void> {
-  const res = await authorizedFetch(path, { timeoutMs: 60_000 })
+  // Un export CSV est servi avec produces=text/csv : un Accept JSON donnerait 406 (constat F451).
+  const accept = filename.endsWith('.csv') ? 'text/csv, application/json' : 'application/json, */*'
+  const res = await authorizedFetch(path, { timeoutMs: 60_000, accept })
   if (!res.ok) throw await toApiError(res)
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)

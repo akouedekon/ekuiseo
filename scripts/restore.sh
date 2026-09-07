@@ -98,6 +98,7 @@ docker compose -f "$COMPOSE_FILE" exec -T -e PGPASSWORD="$DB_PASSWORD" \
 log "Restauration du dump en cours (peut prendre plusieurs minutes selon la taille)..."
 docker compose -f "$COMPOSE_FILE" exec -T -e PGPASSWORD="$DB_PASSWORD" \
   postgis pg_restore -U "$DB_USER" -d "$DB_NAME" --no-owner --role="$DB_USER" \
+  --single-transaction --exit-on-error \
   < "$DUMP_PATH"
 
 log "Restauration terminee. Redemarrez le backend pour repartir sur une connexion propre :"

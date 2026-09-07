@@ -173,6 +173,16 @@ public class BookingService {
                             "passengerName", booking.getPassenger().getFirstName(), "seats", booking.getSeats(),
                             "route", trip.getOriginLabel() + " -> " + trip.getDestLabel(),
                             "departureAt", Objects.toString(trip.getDepartureAt(), "")));
+            // Constat F134 : le passager recoit lui aussi la confirmation (critique : c est son
+            // billet), avec le montant a regler a bord.
+            notificationService.notifyCritical(passenger, NotificationType.BOOKING_CONFIRMED,
+                    NotificationTemplates.payload("bookingId", booking.getId().toString(), "tripId", trip.getId().toString(),
+                            "seats", booking.getSeats(), "balanceDueOnBoardFcfa", booking.getBalanceDueOnBoard(),
+                            "route", trip.getOriginLabel() + " -> " + trip.getDestLabel(),
+                            "departureAt", Objects.toString(trip.getDepartureAt(), ""), "forPassenger", true),
+                    "Ekuiseo : reservation confirmee, " + booking.getSeats() + " place(s) " + trip.getOriginLabel() + " - "
+                            + trip.getDestLabel() + " le " + formatLocal(trip.getDepartureAt()) + ". A regler a bord : "
+                            + booking.getBalanceDueOnBoard() + " F.");
         }
         return bookingMapper.toResponse(booking);
     }

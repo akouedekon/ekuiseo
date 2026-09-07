@@ -67,6 +67,18 @@ public final class NotificationTemplates {
                                 + "\n\nVous pouvez reessayer depuis l'application.",
                         "Ekuiseo : votre paiement n'a pas abouti, reessayez depuis l'application.");
             case BOOKING_CONFIRMED: {
+                if (Boolean.TRUE.equals(p.get("forPassenger"))) {
+                    // Confirmation adressee au passager (reservation en especes, constat F134) : son billet
+                    // et le montant a regler a bord.
+                    String due = has(p, "balanceDueOnBoardFcfa") ? number(p, "balanceDueOnBoardFcfa") + " F" : "";
+                    String pBody = "Votre reservation est confirmee" + (tripLine.isEmpty() ? "" : " sur le trajet " + tripLine) + "."
+                            + (has(p, "seats") ? "\nPlaces reservees : " + number(p, "seats") + "." : "")
+                            + (due.isEmpty() ? "" : "\nA regler au conducteur a bord : " + due + ".")
+                            + "\n\nPresentez-vous a l heure au point de rendez-vous ; la messagerie de l application "
+                            + "vous permet de joindre le conducteur.";
+                    return finish("Reservation confirmee", pBody,
+                            "Ekuiseo : reservation confirmee" + (route.isEmpty() ? "" : " " + route) + (due.isEmpty() ? "" : ", a regler a bord : " + due) + ".");
+                }
                 String passenger = str(p, "passengerName");
                 String seats = has(p, "seats") ? number(p, "seats") + " place(s)" : "";
                 String body = "Nouvelle reservation confirmee sur votre trajet"

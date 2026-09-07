@@ -77,13 +77,13 @@ export const PAYMENT_MODES: {
     label: 'Acompte en mobile money',
     recommended: true,
     cancellation: (h) =>
-      `Votre place est garantie. L'acompte est remboursé si vous annulez plus de ${h} h avant le départ ; au-delà, il reste acquis au conducteur.`,
+      `Votre place est garantie. Acompte remboursé intégralement jusqu'à ${h} h avant le départ ; ensuite la moitié de l'acompte est retenue par la plateforme, et la totalité après l'heure de départ.`,
   },
   {
     value: 'MOMO_FULL',
     label: 'Paiement intégral en ligne',
     cancellation: (h) =>
-      `Rien à régler à bord. Remboursement intégral jusqu'à ${h} h avant le départ ; au-delà, seuls les frais de service restent acquis.`,
+      `Rien à régler à bord. Remboursement intégral jusqu'à ${h} h avant le départ ; ensuite la moitié du montant payé en ligne (le prix complet) est retenue, et la totalité après l'heure de départ.`,
   },
   {
     value: 'CASH',
