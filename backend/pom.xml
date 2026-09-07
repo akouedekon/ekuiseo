@@ -26,6 +26,10 @@
         <jjwt.version>0.12.6</jjwt.version>
         <!-- springdoc 2.8.x est la ligne compatible Spring Boot 3.4/3.5. -->
         <springdoc.version>2.8.17</springdoc.version>
+        <!-- Web Push : derniere 5.x publiee sur Maven Central ; BouncyCastle et jose4j alignes a cote. -->
+        <web-push.version>5.1.2</web-push.version>
+        <bouncycastle.version>1.80</bouncycastle.version>
+        <jose4j.version>0.9.6</jose4j.version>
         <!-- Testcontainers, Flyway, Hibernate, Lombok, Mockito : versions gerees par le parent Spring Boot. -->
     </properties>
 
@@ -100,6 +104,51 @@
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
             <version>${springdoc.version}</version>
+        </dependency>
+
+        <!-- Web Push (VAPID + chiffrement aes128gcm, RFC 8291/8292), voir service/push/WebPushSender.
+             Seul PushService (client Apache synchrone) est utilise : le client Netty (PushAsyncService)
+             et l outil en ligne de commande sont exclus. BouncyCastle et jose4j sont remontes aux
+             lignes maintenues (jdk18on, 0.9.x) a la place des versions anciennes tirees par l artefact. -->
+        <dependency>
+            <groupId>nl.martijndwars</groupId>
+            <artifactId>web-push</artifactId>
+            <version>${web-push.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.asynchttpclient</groupId>
+                    <artifactId>async-http-client</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.beust</groupId>
+                    <artifactId>jcommander</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.bouncycastle</groupId>
+                    <artifactId>bcprov-jdk15on</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.bitbucket.b_c</groupId>
+                    <artifactId>jose4j</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <!-- Client HTTP utilise par PushService (declare en runtime par web-push : rendu explicite
+             pour que le type de reponse org.apache.http.HttpResponse soit compilable). -->
+        <dependency>
+            <groupId>org.apache.httpcomponents</groupId>
+            <artifactId>httpasyncclient</artifactId>
+            <version>4.1.5</version>
+        </dependency>
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk18on</artifactId>
+            <version>${bouncycastle.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.bitbucket.b_c</groupId>
+            <artifactId>jose4j</artifactId>
+            <version>${jose4j.version}</version>
         </dependency>
 
         <dependency>

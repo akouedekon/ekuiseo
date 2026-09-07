@@ -29,7 +29,9 @@ import java.util.function.IntSupplier;
  *       (180 j), hors signalement encore ouvert (voir MessageRepository), puis les conversations
  *       ainsi videes ;</li>
  *   <li>{@code search_alerts} : desactivation des alertes dont la fenetre est passee, suppression
- *       des alertes inactives depuis plus de {@code ekuiseo.retention.search-alerts-days} (90 j).</li>
+ *       des alertes inactives depuis plus de {@code ekuiseo.retention.search-alerts-days} (90 j) ;</li>
+ *   <li>{@code identity_documents} (V20) : pieces des dossiers decides (APPROVED/REJECTED) depuis plus
+ *       de {@code ekuiseo.retention.identity-documents-days} (30 j), fichiers chiffres compris.</li>
  * </ul>
  * Chaque purge tourne dans sa propre transaction et sous son propre try/catch : l echec de
  * l une n annule ni ne bloque les autres, et le nombre de lignes touchees est journalise.
@@ -45,29 +47,35 @@ public class RetentionScheduler {
     private final MessageRepository messageRepository;
     private final ConversationRepository conversationRepository;
     private final SearchAlertRepository searchAlertRepository;
+    private final IdentityDocumentService identityDocumentService;
     private final TransactionTemplate transaction;
     private final long otpRetentionHours;
     private final int notificationsRetentionDays;
     private final int messagesRetentionDays;
     private final int searchAlertsRetentionDays;
+    private final int identityDocumentsRetentionDays;
 
     public RetentionScheduler(OtpCodeRepository otpCodeRepository, NotificationRepository notificationRepository,
                               MessageRepository messageRepository, ConversationRepository conversationRepository,
-                              SearchAlertRepository searchAlertRepository, PlatformTransactionManager transactionManager,
+                              SearchAlertRepository searchAlertRepository, IdentityDocumentService identityDocumentService,
+                              PlatformTransactionManager transactionManager,
                               @Value("${ekuiseo.retention.otp-hours:24}") long otpRetentionHours,
                               @Value("${ekuiseo.retention.notifications-days:180}") int notificationsRetentionDays,
                               @Value("${ekuiseo.retention.messages-days:180}") int messagesRetentionDays,
-                              @Value("${ekuiseo.retention.search-alerts-days:90}") int searchAlertsRetentionDays) {
+                              @Value("${ekuiseo.retention.search-alerts-days:90}") int searchAlertsRetentionDays,
+                              @Value("${ekuiseo.retention.identity-documents-days:30}") int identityDocumentsRetentionDays) {
         this.otpCodeRepository = otpCodeRepository;
         this.notificationRepository = notificationRepository;
         this.messageRepository = messageRepository;
         this.conversationRepository = conversationRepository;
         this.searchAlertRepository = searchAlertRepository;
+        this.identityDocumentService = identityDocumentService;
         this.transaction = new TransactionTemplate(transactionManager);
         this.otpRetentionHours = otpRetentionHours;
         this.notificationsRetentionDays = notificationsRetentionDays;
         this.messagesRetentionDays = messagesRetentionDays;
         this.searchAlertsRetentionDays = searchAlertsRetentionDays;
+        this.identityDocumentsRetentionDays = identityDocumentsRetentionDays;
     }
 
     /** Chaque nuit a 03:30 (heure du serveur), apres la recurrence (03:00) et les traces de recherche (03:15). */
@@ -92,6 +100,10 @@ public class RetentionScheduler {
                 () -> searchAlertRepository.deactivateExpired(LocalDate.ofInstant(now, Tz.BENIN)));
         total += purge("alertes de recherche inactives depuis plus de " + searchAlertsRetentionDays + " jours",
                 () -> searchAlertRepository.deleteInactiveCreatedBefore(now.minus(searchAlertsRetentionDays, ChronoUnit.DAYS)));
+        // V20 : fichiers chiffres et lignes des pieces d identite dont le dossier est decide depuis
+        // plus de N jours (docs/CONFORMITE.md 3.2) ; la purge supprime aussi les fichiers sur disque.
+        total += purge("pieces d identite de dossiers decides depuis plus de " + identityDocumentsRetentionDays + " jours",
+                () -> identityDocumentService.purgeDecidedBefore(now.minus(identityDocumentsRetentionDays, ChronoUnit.DAYS)));
         return total;
     }
 

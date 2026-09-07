@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -39,17 +40,20 @@ public class IdentityVerificationService {
     static final Duration RESUBMIT_COOLDOWN = Duration.ofHours(24);
 
     private static final IdentityVerificationResponse NOT_SUBMITTED =
-            new IdentityVerificationResponse(IdentityVerificationStatus.NOT_SUBMITTED, null, null, null, null);
+            new IdentityVerificationResponse(IdentityVerificationStatus.NOT_SUBMITTED, null, null, null, null, List.of());
 
     private final IdentityVerificationRepository identityVerificationRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
+    private final IdentityDocumentService identityDocumentService;
 
     public IdentityVerificationService(IdentityVerificationRepository identityVerificationRepository,
-                                        UserRepository userRepository, AuditService auditService) {
+                                        UserRepository userRepository, AuditService auditService,
+                                        IdentityDocumentService identityDocumentService) {
         this.identityVerificationRepository = identityVerificationRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
+        this.identityDocumentService = identityDocumentService;
     }
 
     @Transactional(readOnly = true)
@@ -117,6 +121,6 @@ public class IdentityVerificationService {
 
     private IdentityVerificationResponse toResponse(IdentityVerification v) {
         return new IdentityVerificationResponse(v.getStatus(), v.getDocumentType(), v.getSubmittedAt(),
-                v.getReviewedAt(), v.getRejectionReason());
+                v.getReviewedAt(), v.getRejectionReason(), identityDocumentService.summaries(v.getId()));
     }
 }

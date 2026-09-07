@@ -349,11 +349,17 @@ s'interprète pas.
   canal sortant**, aucun fournisseur SMS ne sera branché ; les notifications critiques partent
   toujours à l adresse vérifiée, les autres selon `notify_by_email` (vrai par défaut, V18). Le
   `SmsGateway` reste en mode `log` et n est pas un canal du produit.
-- Le téléversement de la photo de pièce d'identité n'est pas implémenté (stockage sécurisé
-  à décider) ; seul l'état de la vérification existe.
+- Pièces d'identité (V20) : recto, verso et selfie sont téléversés (`/api/v1/me/identity/documents`),
+  chiffrés AES-256-GCM sur le disque du conteneur (`IDENTITY_STORAGE_KEY`, `ekuiseo.storage.identity-dir`
+  = `./data/identity`, à monter sur un volume nommé en production), lus par le back-office avec
+  audit `ADMIN_IDENTITY_DOCUMENT_VIEWED`, purgés 30 jours après la décision. Sans clé, le
+  téléversement répond 503 et l'interface l'explique.
 - Aucun fournisseur de tuiles cartographiques n'est câblé : `RouteMap` dessine un tracé
   schématique tant que `VITE_MAP_STYLE_URL` n'est pas renseignée.
-- Web Push non implémenté ; les notifications critiques passent par e-mail.
+- Web Push (V20) : canal complémentaire de l'e-mail (`WebPushSender`, `nl.martijndwars:web-push`,
+  clés VAPID `PUSH_VAPID_PUBLIC_KEY` / `PUSH_VAPID_PRIVATE_KEY` ; vides = désactivé proprement),
+  service worker maison `src/sw.ts` (`injectManifest`), abonnement par appareil depuis les réglages.
+  Sur iPhone, seul un site installé sur l'écran d'accueil peut s'abonner.
 - Le décaissement effectif des reversements est manuel (référence de virement et échec
   consignés depuis le back-office).
 - Le mode `CASH` confirme immédiatement la réservation sans validation du conducteur ; il

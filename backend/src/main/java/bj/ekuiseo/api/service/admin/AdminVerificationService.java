@@ -10,6 +10,7 @@ import bj.ekuiseo.api.dto.admin.AdminVerificationResponse;
 import bj.ekuiseo.api.repository.IdentityVerificationRepository;
 import bj.ekuiseo.api.repository.UserRepository;
 import bj.ekuiseo.api.service.AuditService;
+import bj.ekuiseo.api.service.IdentityDocumentService;
 import bj.ekuiseo.api.service.NotificationService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,14 +39,17 @@ public class AdminVerificationService {
     private final UserRepository userRepository;
     private final AuditService auditService;
     private final NotificationService notificationService;
+    private final IdentityDocumentService identityDocumentService;
 
     public AdminVerificationService(IdentityVerificationRepository identityVerificationRepository,
                                      UserRepository userRepository, AuditService auditService,
-                                     NotificationService notificationService) {
+                                     NotificationService notificationService,
+                                     IdentityDocumentService identityDocumentService) {
         this.identityVerificationRepository = identityVerificationRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
         this.notificationService = notificationService;
+        this.identityDocumentService = identityDocumentService;
     }
 
     /**
@@ -146,6 +150,6 @@ public class AdminVerificationService {
                 v.getDocumentType(), v.getDocumentNumber(), v.getSubmittedAt(), v.getStatus(),
                 v.getReviewedAt(), v.getRejectionReason(),
                 v.getReviewedBy() != null ? v.getReviewedBy().getId() : null,
-                duplicates);
+                duplicates, identityDocumentService.summaries(v.getId()));
     }
 }

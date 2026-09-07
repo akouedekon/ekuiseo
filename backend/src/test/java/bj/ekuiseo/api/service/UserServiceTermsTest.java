@@ -40,7 +40,8 @@ class UserServiceTermsTest {
             mock(BookingRepository.class), mock(MessageRepository.class), mock(UserPreferencesRepository.class),
             mock(PaymentAccountRepository.class), mock(SearchAlertRepository.class), mock(NotificationRepository.class),
             mock(IdentityVerificationRepository.class), mock(DriverPayoutRepository.class), mock(RefreshTokenService.class),
-            auditService, mock(UserMapper.class), mock(VehicleMapper.class), termsPolicy);
+            auditService, mock(UserMapper.class), mock(VehicleMapper.class), termsPolicy,
+            mock(bj.ekuiseo.api.repository.PushSubscriptionRepository.class), mock(IdentityDocumentService.class));
 
     private final User user = User.builder().id(UUID.randomUUID()).phone("+2290197000322").termsVersion("2025-01").build();
 

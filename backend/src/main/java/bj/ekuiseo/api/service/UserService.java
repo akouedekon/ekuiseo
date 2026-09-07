@@ -27,6 +27,7 @@ import bj.ekuiseo.api.repository.IdentityVerificationRepository;
 import bj.ekuiseo.api.repository.MessageRepository;
 import bj.ekuiseo.api.repository.NotificationRepository;
 import bj.ekuiseo.api.repository.PaymentAccountRepository;
+import bj.ekuiseo.api.repository.PushSubscriptionRepository;
 import bj.ekuiseo.api.repository.SearchAlertRepository;
 import bj.ekuiseo.api.repository.TripRepository;
 import bj.ekuiseo.api.repository.UserPreferencesRepository;
@@ -65,6 +66,8 @@ public class UserService {
     private final UserMapper userMapper;
     private final VehicleMapper vehicleMapper;
     private final TermsPolicy termsPolicy;
+    private final PushSubscriptionRepository pushSubscriptionRepository;
+    private final IdentityDocumentService identityDocumentService;
 
     public UserService(UserRepository userRepository, VehicleRepository vehicleRepository, TripRepository tripRepository,
                         BookingRepository bookingRepository, MessageRepository messageRepository,
@@ -74,8 +77,11 @@ public class UserService {
                         IdentityVerificationRepository identityVerificationRepository,
                         DriverPayoutRepository driverPayoutRepository, RefreshTokenService refreshTokenService,
                         AuditService auditService, UserMapper userMapper, VehicleMapper vehicleMapper,
-                        TermsPolicy termsPolicy) {
+                        TermsPolicy termsPolicy, PushSubscriptionRepository pushSubscriptionRepository,
+                        IdentityDocumentService identityDocumentService) {
         this.termsPolicy = termsPolicy;
+        this.pushSubscriptionRepository = pushSubscriptionRepository;
+        this.identityDocumentService = identityDocumentService;
         this.userRepository = userRepository;
         this.vehicleRepository = vehicleRepository;
         this.tripRepository = tripRepository;
@@ -194,6 +200,10 @@ public class UserService {
         searchAlertRepository.deleteByUserId(userId);
         notificationRepository.deleteByUserId(userId);
         userPreferencesRepository.findByUserId(userId).ifPresent(userPreferencesRepository::delete);
+        // V20 : abonnements push (plus aucune notification vers ses appareils) et fichiers des pieces
+        // d identite (chiffres sur disque : la suppression du dossier en base ne les effacerait pas).
+        pushSubscriptionRepository.deleteByUserId(userId);
+        identityDocumentService.deleteAllForUser(userId);
         identityVerificationRepository.deleteByUserId(userId);
 
         int vehicles = 0;

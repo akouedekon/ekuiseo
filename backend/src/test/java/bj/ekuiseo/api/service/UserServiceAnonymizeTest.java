@@ -18,6 +18,7 @@ import bj.ekuiseo.api.repository.IdentityVerificationRepository;
 import bj.ekuiseo.api.repository.MessageRepository;
 import bj.ekuiseo.api.repository.NotificationRepository;
 import bj.ekuiseo.api.repository.PaymentAccountRepository;
+import bj.ekuiseo.api.repository.PushSubscriptionRepository;
 import bj.ekuiseo.api.repository.SearchAlertRepository;
 import bj.ekuiseo.api.repository.TripRepository;
 import bj.ekuiseo.api.repository.UserPreferencesRepository;
@@ -59,10 +60,13 @@ class UserServiceAnonymizeTest {
     private final DriverPayoutRepository driverPayoutRepository = mock(DriverPayoutRepository.class);
     private final RefreshTokenService refreshTokenService = mock(RefreshTokenService.class);
     private final AuditService auditService = mock(AuditService.class);
+    private final PushSubscriptionRepository pushSubscriptionRepository = mock(PushSubscriptionRepository.class);
+    private final IdentityDocumentService identityDocumentService = mock(IdentityDocumentService.class);
     private final UserService service = new UserService(userRepository, vehicleRepository, tripRepository,
             bookingRepository, messageRepository, userPreferencesRepository, paymentAccountRepository,
             searchAlertRepository, notificationRepository, identityVerificationRepository, driverPayoutRepository,
-            refreshTokenService, auditService, mock(UserMapper.class), mock(VehicleMapper.class), new TermsPolicy("2026-09"));
+            refreshTokenService, auditService, mock(UserMapper.class), mock(VehicleMapper.class), new TermsPolicy("2026-09"),
+            pushSubscriptionRepository, identityDocumentService);
 
     private final UUID userId = UUID.fromString("6f1c2a3e-9b4d-4c5e-8f60-1a2b3c4d5e6f");
     private final User user = User.builder().id(userId).phone("+2290197000322").email("awa@example.bj")
@@ -110,6 +114,9 @@ class UserServiceAnonymizeTest {
         verify(notificationRepository).deleteByUserId(userId);
         verify(userPreferencesRepository).delete(prefs);
         verify(identityVerificationRepository).deleteByUserId(userId);
+        // V20 : appareils abonnes au push et fichiers chiffres des pieces d identite, supprimes avec le dossier.
+        verify(pushSubscriptionRepository).deleteByUserId(userId);
+        verify(identityDocumentService).deleteAllForUser(userId);
         assertThat(vehicle.getPlate()).isEqualTo("********");
         assertThat(vehicle.getPhotoUrl()).isNull();
         assertThat(settled.getDestinationMsisdn()).endsWith("22").startsWith("*");

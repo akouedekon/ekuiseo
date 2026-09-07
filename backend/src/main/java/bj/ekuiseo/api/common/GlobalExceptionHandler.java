@@ -4,6 +4,7 @@ import bj.ekuiseo.api.common.exception.BadRequestException;
 import bj.ekuiseo.api.common.exception.ConflictException;
 import bj.ekuiseo.api.common.exception.ForbiddenException;
 import bj.ekuiseo.api.common.exception.NotFoundException;
+import bj.ekuiseo.api.common.exception.ServiceUnavailableException;
 import bj.ekuiseo.api.common.exception.TooManyRequestsException;
 import bj.ekuiseo.api.common.exception.UnauthorizedException;
 import bj.ekuiseo.api.service.kkiapay.KkiapayUnavailableException;
@@ -32,6 +33,8 @@ import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 import java.net.URI;
 import java.util.concurrent.ThreadLocalRandom;
@@ -181,6 +184,21 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ProblemDetail handleTooLarge(MaxUploadSizeExceededException ex, HttpServletRequest req) {
         return build(HttpStatus.PAYLOAD_TOO_LARGE, "payload-too-large", "La requete est trop volumineuse", req);
+    }
+
+    /** Multipart sans la partie attendue, ou corps multipart illisible (televersement des pieces d identite, V20). */
+    @ExceptionHandler({MissingServletRequestPartException.class, MultipartException.class})
+    public ProblemDetail handleMultipart(Exception ex, HttpServletRequest req) {
+        return build(HttpStatus.BAD_REQUEST, "validation-error",
+                ex instanceof MissingServletRequestPartException
+                        ? "Fichier absent : partie multipart '" + ((MissingServletRequestPartException) ex).getRequestPartName() + "' attendue"
+                        : "Corps multipart illisible", req);
+    }
+
+    /** Fonctionnalite non activee sur ce serveur (ex. stockage des pieces d identite sans cle configuree). */
+    @ExceptionHandler(ServiceUnavailableException.class)
+    public ProblemDetail handleServiceUnavailable(ServiceUnavailableException ex, HttpServletRequest req) {
+        return build(HttpStatus.SERVICE_UNAVAILABLE, "service-unavailable", ex.getMessage(), req);
     }
 
     /* ------------------------------------------------------------ 404 / 405 / 406 / 415 */

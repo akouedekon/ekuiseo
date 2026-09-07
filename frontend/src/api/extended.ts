@@ -188,12 +188,24 @@ export interface PaymentMethodResponse {
 
 export type IdentityVerificationStatus = 'NOT_SUBMITTED' | 'PENDING' | 'APPROVED' | 'REJECTED'
 
+export type IdentityDocumentSide = 'FRONT' | 'BACK' | 'SELFIE'
+
+/** Presence d une piece televersee (V20) : jamais le contenu ni le nom du fichier. */
+export interface IdentityDocumentSummary {
+  side: IdentityDocumentSide
+  contentType: string
+  sizeBytes: number
+  createdAt: string
+}
+
 export interface IdentityVerificationResponse {
   status: IdentityVerificationStatus
   documentType: 'CNI' | 'PASSPORT' | 'DRIVER_LICENSE' | null
   submittedAt: string | null
   reviewedAt: string | null
   rejectionReason: string | null
+  /** Pieces televersees (recto, verso, selfie), V20. */
+  documents: IdentityDocumentSummary[]
 }
 
 /* ------------------------------------------------------------ Geocodage */
@@ -480,6 +492,8 @@ export interface AdminVerificationResponse {
   reviewedAt: string | null
   /** Motif transmis a l'utilisateur en cas de refus ; null sinon. */
   rejectionReason: string | null
+  /** Pieces televersees (V20) ; le contenu se lit face par face, consultation journalisee. */
+  documents: IdentityDocumentSummary[]
 }
 
 /** Valeurs de l'enum backend PayoutStatus ; la vue admin expose `PAID` pour `SETTLED`. */

@@ -37,7 +37,8 @@ class AdminVerificationServiceTest {
     private final AuditService auditService = mock(AuditService.class);
     private final NotificationService notificationService = mock(NotificationService.class);
     private final AdminVerificationService service =
-            new AdminVerificationService(repository, userRepository, auditService, notificationService);
+            new AdminVerificationService(repository, userRepository, auditService, notificationService,
+                    mock(bj.ekuiseo.api.service.IdentityDocumentService.class));
 
     private final UUID adminId = UUID.randomUUID();
     private final User admin = User.builder().id(adminId).firstName("Admin").lastName("E").build();

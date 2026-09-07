@@ -9,6 +9,7 @@ import { useIdentityVerification, useSubmitIdentity } from '@/hooks/useAccount'
 import { describeError } from '@/lib/errors'
 import { formatFromNow } from '@/lib/format'
 import { documentLabel } from '@/lib/labels'
+import { IDENTITY_DOCUMENTS_ALLOWED, IdentityDocumentsForm } from './forms/IdentityDocumentsForm'
 import { IDENTITY_FORM_ID, IdentityForm } from './forms/IdentityForm'
 import { IDENTITY_PRESENTATION } from './identity'
 
@@ -35,6 +36,7 @@ export function IdentitySection() {
   const presentation = IDENTITY_PRESENTATION[status]
   const Icon = presentation.icon
   const canSubmit = status === 'NOT_SUBMITTED' || status === 'REJECTED'
+  const documents = data.documents ?? []
 
   return (
     <section aria-labelledby="identity-title">
@@ -72,7 +74,9 @@ export function IdentitySection() {
             ) : null}
             {status === 'PENDING' ? (
               <p className="mt-2 text-label text-ink-2">
-                Un agent Ekuiseo contrôle votre dossier. Vous serez prévenu par notification.
+                {documents.length === 0
+                  ? 'Ajoutez les photos de votre pièce ci-dessous : sans elles, le contrôle ne peut pas aboutir.'
+                  : 'Un agent Ekuiseo contrôle votre dossier. Vous serez prévenu par notification.'}
               </p>
             ) : null}
           </div>
@@ -84,6 +88,14 @@ export function IdentitySection() {
           </Button>
         ) : null}
       </Card>
+
+      {/* Pieces (V20) : deposables tant que le dossier est en attente ; la presence reste visible ensuite. */}
+      {IDENTITY_DOCUMENTS_ALLOWED.has(status) || documents.length > 0 ? (
+        <div className="mt-3">
+          <h3 className="mb-2 text-label font-semibold text-ink-2">Pièces justificatives</h3>
+          <IdentityDocumentsForm documents={documents} editable={IDENTITY_DOCUMENTS_ALLOWED.has(status)} />
+        </div>
+      ) : null}
 
       <Sheet
         open={open}
@@ -101,7 +113,7 @@ export function IdentitySection() {
             submit.mutate(values, {
               onSuccess: () => {
                 setOpen(false)
-                toast.success('Dossier envoyé', { description: 'Vous serez prévenu dès la vérification.' })
+                toast.success('Dossier envoyé', { description: 'Ajoutez maintenant les photos de votre pièce.' })
               },
               onError: (error) => toast.error(describeError(error, "L'envoi n'a pas abouti. Réessayez.")),
             })
