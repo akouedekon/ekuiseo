@@ -9,6 +9,7 @@ import {
   Music,
   Flag,
   Snowflake,
+  UserCheck,
   Users,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
@@ -41,7 +42,7 @@ import {
   formatRelativeDay,
   toInputDate,
 } from '@/lib/format'
-import { COMFORT_LABEL } from '@/lib/labels'
+import { COMFORT_LABEL, DRIVER_APPROVAL_BADGE } from '@/lib/labels'
 import type { TripResponse } from '@/api/types'
 
 /** Recherche equivalente a un trajet (retour depuis un lien partage) ou son inverse (« Trajet retour »). */
@@ -295,6 +296,12 @@ export function TripDetailPage() {
                     <Users aria-hidden />
                     {full ? 'Complet' : `${data.seatsAvailable}/${data.seatsTotal} places`}
                   </Badge>
+                  {!data.instantBooking ? (
+                    <Badge tone="outline" title="Le conducteur accepte chaque passager avant confirmation">
+                      <UserCheck aria-hidden />
+                      {DRIVER_APPROVAL_BADGE}
+                    </Badge>
+                  ) : null}
                   {data.vehicle.comfortLevel !== 'BASIC' ? (
                     <Badge tone="neutral">
                       <Snowflake aria-hidden />

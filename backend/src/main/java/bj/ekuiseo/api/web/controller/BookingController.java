@@ -2,6 +2,7 @@ package bj.ekuiseo.api.web.controller;
 
 import bj.ekuiseo.api.dto.booking.BookingDetailResponse;
 import bj.ekuiseo.api.dto.booking.BookingResponse;
+import bj.ekuiseo.api.dto.booking.DeclineBookingRequest;
 import bj.ekuiseo.api.dto.message.MessageResponse;
 import bj.ekuiseo.api.dto.message.SendMessageRequest;
 import bj.ekuiseo.api.dto.payment.InitiateDepositRequest;
@@ -63,10 +64,22 @@ public class BookingController {
         return bookingService.markNoShow(id, currentUser.id());
     }
 
-    @Operation(summary = "Annuler ma reservation", description = "Remboursement selon le bareme : integral si plus de 24h avant le depart, 50% retenus si moins de 24h, rien si apres le depart.")
+    @Operation(summary = "Annuler ma reservation", description = "Remboursement selon le bareme : integral si plus de 24h avant le depart, 50% retenus si moins de 24h, rien si apres le depart. Une demande encore en attente de l accord du conducteur s annule sans frais.")
     @PostMapping("/{id}/cancel")
     public BookingResponse cancel(@PathVariable UUID id) {
         return bookingService.cancelByPassenger(id, currentUser.id());
+    }
+
+    @Operation(summary = "Accepter une demande de reservation", description = "Reserve au conducteur du trajet, sur une reservation PENDING_DRIVER_APPROVAL (trajet sans reservation immediate) : la reservation passe CONFIRMED et le passager est prevenu.")
+    @PostMapping("/{id}/accept")
+    public BookingResponse accept(@PathVariable UUID id) {
+        return bookingService.acceptByDriver(id, currentUser.id());
+    }
+
+    @Operation(summary = "Refuser une demande de reservation", description = "Reserve au conducteur du trajet, sur une reservation PENDING_DRIVER_APPROVAL : places liberees, acompte rembourse integralement, passager prevenu avec le motif eventuel. Corps facultatif { reason }.")
+    @PostMapping("/{id}/decline")
+    public BookingResponse decline(@PathVariable UUID id, @Valid @RequestBody(required = false) DeclineBookingRequest req) {
+        return bookingService.declineByDriver(id, currentUser.id(), req == null ? null : req.reason());
     }
 
     @Operation(summary = "Initier l'acompte mobile money de cette reservation", description = "Voie normale (remplace /api/v1/payments/kkiapay/initiate, conserve pour compatibilite). Renvoie la meme charge utile, a transmettre au widget Kkiapay.")

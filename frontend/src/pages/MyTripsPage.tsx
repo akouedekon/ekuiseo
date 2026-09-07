@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Clock,
   History,
+  Hourglass,
   MessageSquare,
   Pencil,
   PlusCircle,
@@ -37,7 +38,8 @@ import { useCancelBooking, useMyBookings } from '@/hooks/useBookings'
 import { useCancelTrip, useMyTrips } from '@/hooks/useTrips'
 import { cn } from '@/lib/cn'
 import { describeError } from '@/lib/errors'
-import { formatDayShort, formatFcfa, formatRelativeDay, formatTime } from '@/lib/format'
+import { formatDateTime, formatDayShort, formatFcfa, formatRelativeDay, formatTime } from '@/lib/format'
+import { BOOKING_STATUS_LABEL } from '@/lib/labels'
 import { listContainer, listItem } from '@/lib/motion'
 import type { BookingDetailResponse } from '@/api/extended'
 import type { BookingStatus, TripResponse } from '@/api/types'
@@ -52,18 +54,20 @@ const NO_TRIPS: TripResponse[] = []
 /** Un trajet conduit passe dans l historique 6 h apres son depart (delai de cloture serveur), ou des qu il est termine / annule. */
 const COMPLETION_DELAY_MS = 6 * 60 * 60 * 1000
 
-/** Traduction et couleur de chaque etat de reservation — une seule source. */
+/** Couleur et icone de chaque etat de reservation ; le libelle vient de BOOKING_STATUS_LABEL (une seule source, lib/labels). */
 const BOOKING_STATUS: Record<
   BookingStatus,
   { label: string; tone: 'success' | 'warning' | 'danger' | 'neutral'; icon: typeof CheckCircle2 }
 > = {
-  CONFIRMED: { label: 'Confirmée', tone: 'success', icon: CheckCircle2 },
-  PENDING_PAYMENT: { label: 'Acompte en attente', tone: 'warning', icon: Clock },
+  CONFIRMED: { label: BOOKING_STATUS_LABEL.CONFIRMED, tone: 'success', icon: CheckCircle2 },
+  PENDING_PAYMENT: { label: BOOKING_STATUS_LABEL.PENDING_PAYMENT, tone: 'warning', icon: Clock },
+  PENDING_DRIVER_APPROVAL: { label: BOOKING_STATUS_LABEL.PENDING_DRIVER_APPROVAL, tone: 'warning', icon: Hourglass },
+  // Vue passager : « par vous » est plus juste que « par le passager ».
   CANCELLED_BY_PASSENGER: { label: 'Annulée par vous', tone: 'danger', icon: XCircle },
-  CANCELLED_BY_DRIVER: { label: 'Annulée par le conducteur', tone: 'danger', icon: Ban },
-  COMPLETED: { label: 'Terminée', tone: 'neutral', icon: History },
-  NO_SHOW: { label: 'Non présenté', tone: 'danger', icon: XCircle },
-  EXPIRED: { label: 'Expirée (acompte non reçu)', tone: 'neutral', icon: TimerOff },
+  CANCELLED_BY_DRIVER: { label: BOOKING_STATUS_LABEL.CANCELLED_BY_DRIVER, tone: 'danger', icon: Ban },
+  COMPLETED: { label: BOOKING_STATUS_LABEL.COMPLETED, tone: 'neutral', icon: History },
+  NO_SHOW: { label: BOOKING_STATUS_LABEL.NO_SHOW, tone: 'danger', icon: XCircle },
+  EXPIRED: { label: BOOKING_STATUS_LABEL.EXPIRED, tone: 'neutral', icon: TimerOff },
 }
 
 /** Reservation close : plus d action possible, et la conversation est fermee (audit F546). */
@@ -166,6 +170,8 @@ export function MyTripsPage({ defaultTab = 'upcoming' }: { defaultTab?: TabKey }
     label: string
     hours?: number
     template?: boolean
+    /** Demande encore en attente du conducteur (V19) : retrait gratuit, remboursement integral. */
+    awaitingDriver?: boolean
   } | null>(null)
   const [reviewing, setReviewing] = useState<BookingDetailResponse | null>(null)
   const [editing, setEditing] = useState<TripResponse | null>(null)
@@ -249,6 +255,7 @@ export function MyTripsPage({ defaultTab = 'upcoming' }: { defaultTab?: TabKey }
                       id: booking.id,
                       label: `${booking.trip.originLabel} → ${booking.trip.destLabel}`,
                       hours: booking.paymentPlan.freeCancellationHours,
+                      awaitingDriver: booking.status === 'PENDING_DRIVER_APPROVAL',
                     })
             }
           />
@@ -372,19 +379,23 @@ export function MyTripsPage({ defaultTab = 'upcoming' }: { defaultTab?: TabKey }
             ? confirm.template
               ? 'Arrêter cette navette ?'
               : 'Annuler ce trajet ?'
-            : 'Annuler cette réservation ?'
+            : confirm?.awaitingDriver
+              ? 'Retirer votre demande ?'
+              : 'Annuler cette réservation ?'
         }
         description={
           confirm?.kind === 'trip'
             ? confirm.template
               ? `Tous les départs à venir de ${confirm.label} seront annulés. Les passagers déjà inscrits seront prévenus et intégralement remboursés.`
               : `Les passagers de ${confirm.label} seront prévenus et intégralement remboursés.`
-            : confirm
-              ? `Trajet ${confirm.label}. Annulation gratuite jusqu'à ${confirm.hours ?? 24} h avant le départ ; en deçà, la moitié de l'acompte est retenue, et la totalité après l'heure de départ.`
-              : undefined
+            : confirm?.awaitingDriver
+              ? `Trajet ${confirm.label}. Le conducteur n'a pas encore répondu : le retrait est gratuit et tout acompte versé vous est remboursé intégralement.`
+              : confirm
+                ? `Trajet ${confirm.label}. Annulation gratuite jusqu'à ${confirm.hours ?? 24} h avant le départ ; en deçà, la moitié de l'acompte est retenue, et la totalité après l'heure de départ.`
+                : undefined
         }
         tone="danger"
-        confirmLabel="Confirmer l'annulation"
+        confirmLabel={confirm?.awaitingDriver ? 'Retirer la demande' : "Confirmer l'annulation"}
         loading={cancelBooking.isPending || cancelTrip.isPending}
         onConfirm={confirmCancel}
       />
@@ -434,15 +445,17 @@ function BookingCard({
   const status = BOOKING_STATUS[booking.status]
   const StatusIcon = status.icon
   const pending = booking.status === 'PENDING_PAYMENT'
+  const awaitingDriver = booking.status === 'PENDING_DRIVER_APPROVAL'
   const closed = isClosedBooking(booking.status)
   const deadline = booking.paymentPlan.depositDueAt ? new Date(booking.paymentPlan.depositDueAt).getTime() : null
+  const approvalDeadline = awaitingDriver ? (booking.paymentPlan.approvalDeadlineAt ?? null) : null
 
   return (
     <m.div variants={listItem}>
       <Card
         className={
           // L'etat se lit d'abord au filet lateral, avant meme de lire la puce.
-          pending
+          pending || awaitingDriver
             ? 'border-l-[3px] border-l-accent'
             : closed
               ? 'border-l-[3px] border-l-danger'
@@ -469,6 +482,19 @@ function BookingCard({
           </div>
 
           {pending && deadline ? <DepositCountdown deadline={deadline} className="mt-3" /> : null}
+          {awaitingDriver ? (
+            <p className="mt-3 rounded-[var(--radius-control)] bg-accent-soft px-3 py-2 text-caption leading-relaxed text-accent-ink">
+              Le conducteur doit accepter votre demande
+              {approvalDeadline ? (
+                <>
+                  {' '}
+                  avant le <span className="tnum font-semibold">{formatDateTime(approvalDeadline)}</span>
+                </>
+              ) : null}
+              . Sans réponse, {booking.paymentPlan.depositAmount > 0 ? "l'acompte est remboursé intégralement et " : ''}la place est
+              libérée.
+            </p>
+          ) : null}
 
           <Separator className="my-3" />
 
@@ -520,7 +546,7 @@ function BookingCard({
             </Button>
             {onCancel ? (
               <Button variant="ghost" size="sm" className="ml-auto text-danger-ink" onClick={onCancel}>
-                Annuler
+                {awaitingDriver ? 'Retirer' : 'Annuler'}
               </Button>
             ) : null}
           </div>

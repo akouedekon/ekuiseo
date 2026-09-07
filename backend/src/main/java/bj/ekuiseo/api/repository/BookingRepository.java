@@ -64,6 +64,15 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     List<Booking> findExpirable(@Param("status") BookingStatus status, @Param("now") Instant now);
 
     /**
+     * Demandes en attente de l accord du conducteur (V19) restees sans reponse : echeance
+     * depassee, ou trajet deja parti (le cycle de vie ne laisse pas une demande survivre au
+     * depart). Traitees comme un refus par BookingService#expireStaleApprovals.
+     */
+    @Query("select b from Booking b join fetch b.trip t where b.status = bj.ekuiseo.api.domain.enums.BookingStatus.PENDING_DRIVER_APPROVAL "
+            + "and ((b.approvalDeadlineAt is not null and b.approvalDeadlineAt < :now) or t.departureAt <= :now)")
+    List<Booking> findExpirableApprovals(@Param("now") Instant now);
+
+    /**
      * Reservations encaissees (au moins en partie) par la plateforme via Kkiapay -
      * MOMO_DEPOSIT ou MOMO_FULL, jamais CASH - pour un conducteur donne, dans l'un
      * des statuts donnes, et pas encore incluses dans un lot de reversement (regle

@@ -26,7 +26,7 @@ import { Card } from '@/components/ui/card'
 import { FieldError, Input, Label, Textarea } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SegmentedToggle } from '@/components/ui/tabs'
-import { Separator, Skeleton, Stepper } from '@/components/ui/misc'
+import { Separator, SettingRow, Skeleton, Stepper, Switch } from '@/components/ui/misc'
 import { Sheet } from '@/components/ui/sheet'
 import { ErrorState } from '@/components/ui/states'
 import { StepIndicator } from '@/components/feedback/StepIndicator'
@@ -61,6 +61,8 @@ const schema = z
     pricePerSeat: z.number().min(100, 'Prix trop bas').max(100_000),
     luggagePolicy: z.string().max(120).optional(),
     description: z.string().max(400).optional(),
+    /** `false` : le conducteur accepte chaque passager avant confirmation (V19). */
+    instantBooking: z.boolean(),
     stops: z.array(
       z.object({
         label: z.string().min(1, 'Choisissez une ville'),
@@ -137,6 +139,7 @@ export function PublishTripPage() {
       pricePerSeat: 2000,
       luggagePolicy: '1 bagage cabine',
       description: '',
+      instantBooking: true,
       stops: [],
     },
   })
@@ -151,6 +154,7 @@ export function PublishTripPage() {
   const weekdays = useWatch({ control: form.control, name: 'weekdays' })
   const weeksCount = useWatch({ control: form.control, name: 'weeksCount' })
   const vehicleId = useWatch({ control: form.control, name: 'vehicleId' })
+  const instantBooking = useWatch({ control: form.control, name: 'instantBooking' })
   const [date, time, seatsTotal, pricePerSeat, stopsValue] = useWatch({
     control: form.control,
     name: ['date', 'time', 'seatsTotal', 'pricePerSeat', 'stops'],
@@ -231,8 +235,8 @@ export function PublishTripPage() {
       departureAt,
       seatsTotal: data.seatsTotal,
       pricePerSeat: data.pricePerSeat,
-      // L'acceptation par le conducteur n'existe pas cote serveur : toujours immediat (audit F213).
-      instantBooking: true,
+      // V19 (audit F048) : `false` = le conducteur accepte chaque passager avant confirmation.
+      instantBooking: data.instantBooking,
       luggagePolicy: data.luggagePolicy || undefined,
       description: data.description || undefined,
       // Recurrence exprimee en RRULE (RFC 5545), lisible par le backend.
@@ -706,6 +710,25 @@ export function PublishTripPage() {
                 />
               </Card>
 
+              <Card className="overflow-hidden">
+                <Controller
+                  control={form.control}
+                  name="instantBooking"
+                  render={({ field }) => (
+                    <SettingRow
+                      title="Réservation immédiate"
+                      description={
+                        field.value
+                          ? "Une place est confirmée dès que l'acompte est reçu (ou immédiatement en espèces)."
+                          : "Acceptez chaque passager avant confirmation. L'acompte est encaissé, puis vous avez 24 h (au plus tard 2 h avant le départ) pour répondre ; sans réponse, le passager est remboursé et la place libérée."
+                      }
+                    >
+                      <Switch checked={field.value} onCheckedChange={field.onChange} aria-label="Réservation immédiate" />
+                    </SettingRow>
+                  )}
+                />
+              </Card>
+
               {/* Récapitulatif */}
               <Card className="p-4">
                 <SectionTitle>Récapitulatif</SectionTitle>
@@ -744,8 +767,10 @@ export function PublishTripPage() {
                 </dl>
 
                 <p className="mt-3 text-caption leading-relaxed text-muted">
-                  Les passagers réservent directement : une place est confirmée dès que l'acompte est reçu (ou
-                  immédiatement en espèces). Vous retrouvez la liste d'appel dans « Mes trajets ».
+                  {instantBooking
+                    ? "Les passagers réservent directement : une place est confirmée dès que l'acompte est reçu (ou immédiatement en espèces)."
+                    : 'Sur accord du conducteur : chaque demande vous est transmise, vous acceptez ou refusez depuis la liste des passagers.'}{' '}
+                  Vous retrouvez la liste d'appel dans « Mes trajets ».
                 </p>
 
                 <div className="mt-4 flex items-center gap-2 rounded-[var(--radius-control)] bg-primary-soft px-3 py-3">

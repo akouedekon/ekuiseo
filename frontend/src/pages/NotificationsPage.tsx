@@ -16,6 +16,7 @@ import {
   ShieldOff,
   Star,
   TimerOff,
+  UserCheck,
   UserX,
   Wallet,
   XCircle,
@@ -57,6 +58,8 @@ const TONE = {
  */
 const PRESENTATION: Partial<Record<NotificationType, { icon: LucideIcon; tone: keyof typeof TONE; title: string }>> = {
   BOOKING_CONFIRMED: { icon: CheckCircle2, tone: 'success', title: 'Nouvelle réservation' },
+  BOOKING_REQUESTED: { icon: UserCheck, tone: 'warning', title: 'Demande de réservation' },
+  BOOKING_DECLINED: { icon: XCircle, tone: 'danger', title: 'Demande refusée' },
   BOOKING_CANCELLED: { icon: XCircle, tone: 'danger', title: 'Réservation annulée' },
   BOOKING_EXPIRED: { icon: TimerOff, tone: 'neutral', title: 'Réservation expirée' },
   PAYMENT_SUCCEEDED: { icon: CreditCard, tone: 'success', title: 'Paiement reçu' },
@@ -123,11 +126,43 @@ function describe(notification: NotificationResponse): string {
 
   switch (notification.type) {
     case 'BOOKING_CONFIRMED': {
+      if (bool('forPassenger')) {
+        // Recue par le passager : accord du conducteur (V19) ou demande en especes enregistree.
+        const balance = num('balanceDueOnBoardFcfa')
+        return `${bool('acceptedByDriver') ? 'Le conducteur a accepté votre demande' : 'Votre réservation est confirmée'}${
+          route ? ` sur ${route}` : ''
+        }${str('departureAt') ? ` (départ ${when(str('departureAt'))})` : ''}.${
+          balance ? ` À régler à bord : ${formatFcfa(balance)}.` : ''
+        }`
+      }
       // Recue par le conducteur : un passager vient de confirmer (acompte recu ou espèces).
       const passenger = str('passengerName') ?? 'Un passager'
       return `${passenger} a réservé ${seatsLabel ?? 'une place'}${route ? ` sur ${route}` : ''}${
         str('departureAt') ? ` (départ ${when(str('departureAt'))})` : ''
       }.`
+    }
+    case 'BOOKING_REQUESTED': {
+      const deadline = str('approvalDeadlineAt')
+      if (bool('forPassenger')) {
+        return `Votre demande${seatsLabel ? ` de ${seatsLabel}` : ''}${route ? ` sur ${route}` : ''} est transmise au conducteur${
+          deadline ? ` ; réponse attendue avant le ${when(deadline)}` : ''
+        }. Sans accord dans ce délai, votre acompte vous est remboursé intégralement.`
+      }
+      const passenger = str('passengerName') ?? 'Un passager'
+      return `${passenger} demande ${seatsLabel ?? 'une place'}${route ? ` sur ${route}` : ''}. ${
+        deadline ? `Répondez avant le ${when(deadline)} : passé ce délai, la demande sera refusée et le passager remboursé.` : 'Acceptez ou refusez depuis la liste des passagers.'
+      }`
+    }
+    case 'BOOKING_DECLINED': {
+      if (bool('forDriver')) {
+        const passenger = str('passengerName') ?? "d'un passager"
+        return `La demande de ${passenger}${route ? ` sur ${route}` : ''} est restée sans réponse dans le délai : elle a été refusée automatiquement et le passager remboursé.`
+      }
+      const refund = num('refundAmountFcfa')
+      const reason = str('reason')
+      return `${bool('timedOut') ? "Le conducteur n'a pas répondu à votre demande dans le délai" : "Le conducteur n'a pas pu accepter votre demande"}${
+        route ? ` sur ${route}` : ''
+      }.${reason ? ` Motif : ${reason}.` : ''} ${refund ? `Votre acompte de ${formatFcfa(refund)} vous est remboursé intégralement.` : 'Tout acompte versé vous est remboursé intégralement.'}`
     }
     case 'BOOKING_CANCELLED': {
       const by = str('cancelledBy')
@@ -238,15 +273,18 @@ function describe(notification: NotificationResponse): string {
 
 /** Lien de destination deduit du type ET de la charge utile : la bonne page pour la bonne personne. */
 function targetOf(notification: NotificationResponse): string | null {
-  const { str } = readPayload(notification)
+  const { str, bool } = readPayload(notification)
   const bookingId = str('bookingId')
   const tripId = str('tripId')
   switch (notification.type) {
     case 'NEW_MESSAGE':
       return bookingId ? `/bookings/${bookingId}/messages` : '/messages'
     case 'BOOKING_CONFIRMED':
-      // Recue par le conducteur : sa liste d'appel, pas « Mes reservations ».
-      return '/trips/mine'
+    case 'BOOKING_REQUESTED':
+      // Recue par le conducteur : sa liste d'appel, pas « Mes reservations » ; l'accuse du passager renvoie a sa reservation.
+      return bool('forPassenger') ? '/bookings' : '/trips/mine'
+    case 'BOOKING_DECLINED':
+      return bool('forDriver') ? '/trips/mine' : tripId ? `/trips/${tripId}` : '/bookings'
     case 'BOOKING_CANCELLED':
       return str('cancelledBy') === 'PASSENGER' ? '/trips/mine' : '/bookings'
     case 'BOOKING_EXPIRED':

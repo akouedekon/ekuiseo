@@ -249,10 +249,13 @@ class ReportServiceTest {
                 .thenAnswer(inv -> new PageImpl<>(List.of(report)));
         when(reportRepository.countOthersAgainstTarget(report.getId(), driver.getId())).thenReturn(3L);
 
-        List<AdminReportResponse> rows = service.listForAdmin(ReportStatus.OPEN);
+        List<AdminReportResponse> rows = service.listForAdmin(ReportStatus.OPEN, 2, 500).getContent();
 
         assertThat(pageable.getValue().getSort().getOrderFor("createdAt")).isNotNull();
         assertThat(pageable.getValue().getSort().getOrderFor("createdAt").getDirection()).isEqualTo(Sort.Direction.DESC);
+        // Constat F237 : pagination serveur, taille bornee a 100 quoi que demande le client.
+        assertThat(pageable.getValue().getPageNumber()).isEqualTo(2);
+        assertThat(pageable.getValue().getPageSize()).isEqualTo(100);
         assertThat(rows).hasSize(1);
         assertThat(rows.get(0).bookingId()).isEqualTo(report.getBookingId());
         assertThat(rows.get(0).target().id()).isEqualTo(driver.getId());

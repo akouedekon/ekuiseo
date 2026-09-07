@@ -76,6 +76,10 @@ public class Booking {
     @Column(name = "expires_at")
     private Instant expiresAt;
 
+    /** Echeance de la reponse du conducteur pour une reservation PENDING_DRIVER_APPROVAL (V19) ; null sinon. */
+    @Column(name = "approval_deadline_at")
+    private Instant approvalDeadlineAt;
+
     /** Annulation gratuite ouverte jusqu a cet instant (V13) quand le conducteur a modifie l horaire d un trajet reserve. */
     @Column(name = "free_cancellation_until")
     private Instant freeCancellationUntil;

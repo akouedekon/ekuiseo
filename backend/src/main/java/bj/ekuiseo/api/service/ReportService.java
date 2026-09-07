@@ -1,5 +1,6 @@
 package bj.ekuiseo.api.service;
 
+import bj.ekuiseo.api.common.Paging;
 import bj.ekuiseo.api.common.exception.BadRequestException;
 import bj.ekuiseo.api.common.exception.ConflictException;
 import bj.ekuiseo.api.common.exception.NotFoundException;
@@ -27,7 +28,6 @@ import bj.ekuiseo.api.repository.ReportRepository;
 import bj.ekuiseo.api.repository.TripRepository;
 import bj.ekuiseo.api.repository.UserRepository;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -65,8 +65,6 @@ import java.util.UUID;
 @Service
 public class ReportService {
 
-    /** Plafond de la liste admin (a plat, non paginee, voir GET /api/v1/admin/reports). */
-    private static final int ADMIN_LIST_LIMIT = 200;
     /** Plafond de signalements par auteur sur {@link #RATE_WINDOW}. */
     static final int MAX_REPORTS_PER_WINDOW = 5;
     static final Duration RATE_WINDOW = Duration.ofHours(24);
@@ -182,18 +180,18 @@ public class ReportService {
     /**
      * Vue back-office a plat, GET /api/v1/admin/reports?status=... (le front
      * attend un tableau simple, pas une Page), du plus recent au plus ancien.
-     * Plafonnee a ADMIN_LIST_LIMIT plutot que veritablement paginee : la file de
-     * moderation est censee rester courte (les signalements traites en sortent au
-     * fil de l'eau). Les parties (signalant, cible, conducteur du trajet signale) sont
-     * chargees avec les signalements (EntityGraph, constat F119) : une requete, pas N+1.
+     * Paginee cote serveur (constat F237), du plus recent au plus ancien, taille bornee par
+     * {@link Paging#MAX_PAGE_SIZE}. Les parties (signalant, cible, conducteur du trajet
+     * signale) sont chargees avec les signalements (EntityGraph, constat F119) : une requete
+     * par page, pas N+1.
      */
     @Transactional(readOnly = true)
-    public List<AdminReportResponse> listForAdmin(ReportStatus status) {
-        Pageable pageable = PageRequest.of(0, ADMIN_LIST_LIMIT, Sort.by("createdAt").descending());
-        Page<Report> page = status != null
+    public Page<AdminReportResponse> listForAdmin(ReportStatus status, int page, int size) {
+        Pageable pageable = Paging.of(page, size, Sort.by("createdAt").descending());
+        Page<Report> found = status != null
                 ? reportRepository.findByStatusWithParties(status, pageable)
                 : reportRepository.findAllWithParties(pageable);
-        return page.getContent().stream().map(this::toAdminResponse).toList();
+        return found.map(this::toAdminResponse);
     }
 
     /** PATCH /api/v1/admin/reports/{id} : changement d etat cible (note obligatoire pour clore). */

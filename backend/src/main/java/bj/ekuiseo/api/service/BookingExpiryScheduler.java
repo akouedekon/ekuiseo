@@ -6,9 +6,14 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * Tache planifiee liberant les places des reservations PENDING_PAYMENT trop
- * anciennes (regle metier n.2). Executee chaque minute. Toute exception est
- * journalisee et absorbee (constat F128) : l execution suivante repart normalement.
+ * Taches planifiees, executees chaque minute, qui liberent les places bloquees :
+ * <ul>
+ *   <li>reservations PENDING_PAYMENT trop anciennes (regle metier n.2) ;</li>
+ *   <li>demandes PENDING_DRIVER_APPROVAL restees sans reponse du conducteur dans le delai,
+ *       ou dont le trajet est parti (V19) : traitees comme un refus, acompte rembourse.</li>
+ * </ul>
+ * Toute exception est journalisee et absorbee (constat F128) : l execution suivante repart
+ * normalement, et les deux balayages sont independants.
  */
 @Component
 public class BookingExpiryScheduler {
@@ -30,6 +35,18 @@ public class BookingExpiryScheduler {
             }
         } catch (RuntimeException ex) {
             log.error("Expiration des reservations impayees : echec de l execution", ex);
+        }
+    }
+
+    @Scheduled(fixedRate = 60_000, initialDelay = 30_000)
+    public void expireStaleApprovals() {
+        try {
+            int count = bookingService.expireStaleApprovals();
+            if (count > 0) {
+                log.info("{} demande(s) sans reponse du conducteur traitee(s) comme un refus", count);
+            }
+        } catch (RuntimeException ex) {
+            log.error("Expiration des demandes en attente du conducteur : echec de l execution", ex);
         }
     }
 }

@@ -152,7 +152,8 @@ class UserServiceAnonymizeTest {
                 .isInstanceOf(ConflictException.class).hasMessageContaining("navette");
 
         when(tripRepository.countByDriverIdAndStatus(userId, TripStatus.TEMPLATE)).thenReturn(0L);
-        when(bookingRepository.existsByPassengerIdAndStatusIn(userId, List.of(BookingStatus.PENDING_PAYMENT, BookingStatus.CONFIRMED)))
+        when(bookingRepository.existsByPassengerIdAndStatusIn(userId,
+                List.of(BookingStatus.PENDING_PAYMENT, BookingStatus.PENDING_DRIVER_APPROVAL, BookingStatus.CONFIRMED)))
                 .thenReturn(true);
         assertThatThrownBy(() -> service.assertCanBeAnonymized(userId))
                 .isInstanceOf(ConflictException.class).hasMessageContaining("reservation en cours");

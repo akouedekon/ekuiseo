@@ -106,7 +106,8 @@ public class UserService {
     static final String DELETED_MESSAGE_BODY = "[message supprime]";
     static final String DELETED_PLATE = "********";
     private static final List<TripStatus> UPCOMING_TRIP_STATUSES = List.of(TripStatus.PUBLISHED, TripStatus.FULL);
-    private static final List<BookingStatus> ACTIVE_BOOKING_STATUSES = List.of(BookingStatus.PENDING_PAYMENT, BookingStatus.CONFIRMED);
+    private static final List<BookingStatus> ACTIVE_BOOKING_STATUSES =
+            List.of(BookingStatus.PENDING_PAYMENT, BookingStatus.PENDING_DRIVER_APPROVAL, BookingStatus.CONFIRMED);
     private static final List<PayoutStatus> OPEN_PAYOUT_STATUSES = List.of(PayoutStatus.PENDING, PayoutStatus.PROCESSING);
 
     /**

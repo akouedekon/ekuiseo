@@ -11,6 +11,7 @@ import bj.ekuiseo.api.service.ReportService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -37,10 +38,12 @@ public class AdminReportController {
         this.currentUser = currentUser;
     }
 
-    @Operation(summary = "Lister les signalements", description = "Filtrable par statut (OPEN/IN_REVIEW/RESOLVED/DISMISSED), du plus recent au plus ancien. Liste a plat, plafonnee (pas de pagination, voir ReportService). priorReportsAgainstTarget = autres signalements visant la meme personne.")
+    @Operation(summary = "Lister les signalements", description = "Filtrable par statut (OPEN/IN_REVIEW/RESOLVED/DISMISSED), du plus recent au plus ancien. Page Spring (content, totalElements, number, size, last), size <= 100. priorReportsAgainstTarget = autres signalements visant la meme personne.")
     @GetMapping
-    public List<AdminReportResponse> list(@RequestParam(required = false) ReportStatus status) {
-        return reportService.listForAdmin(status);
+    public Page<AdminReportResponse> list(@RequestParam(required = false) ReportStatus status,
+                                          @RequestParam(defaultValue = "0") int page,
+                                          @RequestParam(defaultValue = "20") int size) {
+        return reportService.listForAdmin(status, page, size);
     }
 
     @Operation(summary = "Changer l'etat d'un signalement (PATCH cible)", description = "Transitions : OPEN -> IN_REVIEW -> RESOLVED | DISMISSED (409 sinon). resolutionNote obligatoire pour RESOLVED / DISMISSED (400 sinon) ; resolvedAt/resolvedBy poses a la cloture seulement. L auteur est prevenu de l issue.")

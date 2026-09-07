@@ -1,5 +1,5 @@
 import type { ReportReason } from '@/api/extended'
-import type { ComfortLevel } from '@/api/types'
+import type { BookingStatus, ComfortLevel } from '@/api/types'
 
 /*
  * Libelles partages entre le parcours public et le back-office (audit F239) :
@@ -63,6 +63,25 @@ export const REPORT_REASON_OPTIONS = (Object.keys(REPORT_REASON_LABEL) as Report
   value,
   label: REPORT_REASON_LABEL[value],
 }))
+
+/**
+ * Etat d'une reservation, vu par le passager (« Mes réservations ») comme par le
+ * conducteur (liste d'appel) : une seule traduction par valeur, record total pour que
+ * l'ajout d'un statut cote serveur casse la compilation plutot que l'affichage.
+ */
+export const BOOKING_STATUS_LABEL: Record<BookingStatus, string> = {
+  PENDING_PAYMENT: 'Acompte en attente',
+  PENDING_DRIVER_APPROVAL: 'En attente du conducteur',
+  CONFIRMED: 'Confirmée',
+  CANCELLED_BY_PASSENGER: 'Annulée par le passager',
+  CANCELLED_BY_DRIVER: 'Annulée par le conducteur',
+  COMPLETED: 'Terminée',
+  NO_SHOW: 'Non présenté',
+  EXPIRED: 'Expirée (acompte non reçu)',
+}
+
+/** Mention affichee sur un trajet dont le conducteur accepte chaque passager (`instantBooking = false`, V19). */
+export const DRIVER_APPROVAL_BADGE = 'Sur accord du conducteur'
 
 export const TRIP_TYPE_LABEL = {
   INTERURBAIN: 'Interurbain',

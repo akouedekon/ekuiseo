@@ -94,12 +94,23 @@ Points structurants :
 - `POST /api/v1/reports` — signaler un utilisateur ou un trajet
 - `GET /api/v1/me/payouts/balance`, `GET /api/v1/me/payouts` — solde et historique de reversement (conducteur)
 - `GET /api/v1/me/subscription`, `POST /api/v1/me/subscription` — statut / souscription à l'abonnement conducteur
+- `POST /api/v1/bookings/{id}/accept`, `POST /api/v1/bookings/{id}/decline` `{ reason? }` — réponse du conducteur à une
+  demande sur un trajet sans réservation immédiate (`trips.instant_booking = false`, V19, point n.13 de l'audit / F048).
+  Le passager paie d'abord (acompte ou espèces), la réservation passe `PENDING_DRIVER_APPROVAL` avec
+  `bookings.approval_deadline_at` (`ekuiseo.booking.driver-approval-hours`, 24 h, plafonné à 2 h avant le départ) ;
+  accept → `CONFIRMED` (passager notifié `BOOKING_CONFIRMED`), decline ou délai dépassé / trajet parti
+  (`BookingExpiryScheduler`) → `CANCELLED_BY_DRIVER`, places libérées, **acompte remboursé intégralement**,
+  passager notifié `BOOKING_DECLINED` ; le passager peut se retirer sans frais tant que le conducteur n'a pas répondu.
+  `paymentPlan.paymentStatus` vaut alors `AWAITING_DRIVER` et `paymentPlan.approvalDeadlineAt` porte l'échéance.
 
 ### Admin (`/api/v1/admin/**`, `ROLE_ADMIN`)
-- `GET/POST /api/v1/admin/users`, `/{id}/suspend`, `/{id}/reinstate`, `/{id}/verify-identity`, `PATCH /{id}/contact`
+Depuis F237, `GET /admin/users`, `GET /admin/reports` et `GET /admin/payouts` renvoient une `Page` Spring
+(`content`, `totalElements`, `number`, `size`, `last`) : `?page=&size=` (`size` ≤ 100, `common/Paging`), tri serveur
+(`createdAt`/`requestedAt` décroissant), `?status=` en filtre pour les signalements et les reversements.
+- `GET/POST /api/v1/admin/users?q=&page=&size=`, `/{id}/suspend`, `/{id}/reinstate`, `/{id}/verify-identity`, `PATCH /{id}/contact`
 - `POST /api/v1/admin/vehicles/{id}/verify`
-- `GET /api/v1/admin/reports`, `POST /api/v1/admin/reports/{id}/resolve`
-- `GET /api/v1/admin/payouts`, `POST /api/v1/admin/payouts/run`, `POST /api/v1/admin/payouts/{id}/settle`
+- `GET /api/v1/admin/reports?status=&page=&size=`, `POST /api/v1/admin/reports/{id}/resolve`
+- `GET /api/v1/admin/payouts?status=&page=&size=`, `POST /api/v1/admin/payouts/run`, `POST /api/v1/admin/payouts/{id}/settle`
 - `GET /api/v1/admin/stats?from=...&to=...`
 - `GET /api/v1/admin/stats/liquidity?days=N` et `GET /api/v1/admin/stats/liquidity/export?days=N` (CSV) — voir §4ter
 - `GET /api/v1/admin/audit-log`

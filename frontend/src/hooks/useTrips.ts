@@ -1,7 +1,15 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/api/client'
 import type { PopularRouteResponse, RecurringTripResponse, TripStopResponse, UpdateTripRequest } from '@/api/extended'
-import type { BookingResponse, CreateTripRequest, Page, TripBookingResponse, TripResponse, TripType } from '@/api/types'
+import type {
+  BookingResponse,
+  CreateTripRequest,
+  DeclineBookingRequest,
+  Page,
+  TripBookingResponse,
+  TripResponse,
+  TripType,
+} from '@/api/types'
 
 export interface TripSearchParams {
   originLat: number
@@ -185,6 +193,29 @@ export function useMarkNoShow() {
       apiClient.post<BookingResponse>(`/api/v1/bookings/${bookingId}/no-show`),
     onSuccess: (_result, { tripId }) => {
       queryClient.invalidateQueries({ queryKey: ['trips', tripId, 'passengers'] })
+    },
+  })
+}
+
+/**
+ * POST /api/v1/bookings/{id}/accept | /decline { reason? } (V19) : reponse du conducteur a une
+ * demande sur un trajet sans reservation immediate. Un refus libere les places (le trajet et
+ * les resultats de recherche changent) et rembourse integralement l'acompte.
+ */
+export function useRespondToBooking() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ bookingId, accept, reason }: { bookingId: string; tripId: string; accept: boolean; reason?: string }) =>
+      accept
+        ? apiClient.post<BookingResponse>(`/api/v1/bookings/${bookingId}/accept`)
+        : apiClient.post<BookingResponse>(`/api/v1/bookings/${bookingId}/decline`, reason ? ({ reason } satisfies DeclineBookingRequest) : undefined),
+    onSuccess: (_result, { tripId, accept }) => {
+      queryClient.invalidateQueries({ queryKey: ['trips', tripId, 'passengers'] })
+      if (!accept) {
+        queryClient.invalidateQueries({ queryKey: ['trips', tripId] })
+        queryClient.invalidateQueries({ queryKey: ['me', 'trips'] })
+        invalidateTripListings(queryClient)
+      }
     },
   })
 }

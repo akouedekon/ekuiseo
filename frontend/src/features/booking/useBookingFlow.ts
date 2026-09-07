@@ -22,13 +22,15 @@ import { phoneSchema, toE164 } from '@/lib/validation'
  * suivantes sont des ISSUES decidees par le serveur (statut de la reservation ou
  * du paiement) et l'emportent toujours sur l'etape locale.
  */
-export type BookingStep = 'recap' | 'payment' | 'waiting' | 'confirmed' | 'failed' | 'expired' | 'cancelled' | 'refund'
+export type BookingStep = 'recap' | 'payment' | 'waiting' | 'awaiting' | 'confirmed' | 'failed' | 'expired' | 'cancelled' | 'refund'
 
 /** Position de chaque etape sur l'indicateur a trois crans (Recapitulatif, Paiement, Confirmation). */
 export const STEP_INDEX: Record<BookingStep, number> = {
   recap: 0,
   payment: 1,
   waiting: 1,
+  // Acompte encaisse, conducteur pas encore prononce (V19) : le paiement est derriere nous.
+  awaiting: 2,
   confirmed: 2,
   failed: 1,
   expired: 1,
@@ -105,9 +107,13 @@ export function useBookingFlow(tripId: string | undefined) {
   const myBookings = useMyBookings(conflict)
   const existing = conflict
     ? myBookings.data?.find(
-        (b) => b.tripId === tripId && (b.status === 'PENDING_PAYMENT' || b.status === 'CONFIRMED'),
+        (b) =>
+          b.tripId === tripId &&
+          (b.status === 'PENDING_PAYMENT' || b.status === 'PENDING_DRIVER_APPROVAL' || b.status === 'CONFIRMED'),
       )
     : undefined
+  /* Trajet a accord conducteur (V19) : l'acompte ne confirme rien, il transmet la demande. */
+  const requiresDriverApproval = data?.instantBooking === false
 
   const phone = phoneInput ?? me.data?.phone ?? ''
 
@@ -153,8 +159,11 @@ export function useBookingFlow(tripId: string | undefined) {
   const outcome: BookingStep | null = (() => {
     if (bookingStatus === 'EXPIRED' || serverPlan?.paymentStatus === 'EXPIRED') return 'expired'
     if (bookingStatus === 'CANCELLED_BY_PASSENGER' || bookingStatus === 'CANCELLED_BY_DRIVER') return 'cancelled'
+    if (bookingStatus === 'PENDING_DRIVER_APPROVAL') return 'awaiting'
     if (bookingStatus === 'CONFIRMED' || bookingStatus === 'COMPLETED') return 'confirmed'
-    if (payStatus === 'SUCCEEDED') return 'confirmed'
+    // Paiement reussi mais reservation pas encore relue : sur un trajet a accord conducteur,
+    // ce n'est pas une confirmation - on n'affiche jamais « place confirmee » a tort.
+    if (payStatus === 'SUCCEEDED') return requiresDriverApproval ? 'awaiting' : 'confirmed'
     if (payStatus === 'REFUNDED' || payStatus === 'REFUND_PENDING') return 'refund'
     if (payStatus === 'EXPIRED') return 'expired'
     if (payStatus === 'FAILED') return 'failed'
@@ -220,7 +229,7 @@ export function useBookingFlow(tripId: string | undefined) {
       {
         onSuccess: (created) => {
           initialisedFor.current = created.id
-          setFlowStep(paymentMode === 'CASH' ? 'confirmed' : 'payment')
+          setFlowStep(paymentMode === 'CASH' ? (requiresDriverApproval ? 'awaiting' : 'confirmed') : 'payment')
           // La reservation entre dans l'URL : un rafraichissement reprend ici.
           setSearchParams({ booking: created.id }, { replace: true })
         },
@@ -263,6 +272,7 @@ export function useBookingFlow(tripId: string | undefined) {
     selectedStop,
     unitPrice,
     cashAllowed,
+    requiresDriverApproval,
     quote,
     booking,
     bookingStatus,

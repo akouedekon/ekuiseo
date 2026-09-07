@@ -288,7 +288,8 @@ public class TripService {
             throw new BadRequestException("Ce trajet ne peut plus etre modifie");
         }
         List<Booking> activeBookings = trip.getStatus() == TripStatus.TEMPLATE ? List.of()
-                : bookingRepository.findByTripIdAndStatusIn(id, List.of(BookingStatus.PENDING_PAYMENT, BookingStatus.CONFIRMED));
+                : bookingRepository.findByTripIdAndStatusIn(id, List.of(BookingStatus.PENDING_PAYMENT,
+                        BookingStatus.PENDING_DRIVER_APPROVAL, BookingStatus.CONFIRMED));
         boolean routeChange = req.originLabel() != null || req.originLat() != null || req.originLng() != null
                 || req.destLabel() != null || req.destLat() != null || req.destLng() != null;
         if (routeChange && !activeBookings.isEmpty()) {

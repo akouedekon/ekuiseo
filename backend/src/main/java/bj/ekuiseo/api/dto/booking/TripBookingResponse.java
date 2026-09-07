@@ -25,6 +25,8 @@ public record TripBookingResponse(
         long balanceDueOnBoard,
         UUID pickupStopId,
         UUID dropoffStopId,
-        Instant createdAt
+        Instant createdAt,
+        /** Echeance de la reponse du conducteur (V19) ; renseignee seulement en PENDING_DRIVER_APPROVAL. */
+        Instant approvalDeadlineAt
 ) {
 }
