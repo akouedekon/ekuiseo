@@ -23,7 +23,7 @@
     <properties>
         <java.version>17</java.version>
         <mapstruct.version>1.6.3</mapstruct.version>
-        <jjwt.version>0.12.6</jjwt.version>
+        <jjwt.version>0.13.0</jjwt.version>
         <!-- springdoc 2.8.x est la ligne compatible Spring Boot 3.4/3.5. -->
         <springdoc.version>2.8.17</springdoc.version>
         <!-- Testcontainers, Flyway, Hibernate, Lombok, Mockito : versions gerees par le parent Spring Boot. -->
