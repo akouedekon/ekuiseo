@@ -18,7 +18,7 @@ updates:
       day: monday
       time: "06:00"
       timezone: Africa/Porto-Novo
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 2
     labels: [dependances, backend]
     commit-message:
       prefix: "deps(backend)"
@@ -31,9 +31,9 @@ updates:
         exclude-patterns: ["org.springframework*", "org.springdoc:*"]
         update-types: [minor, patch]
     ignore:
-      - dependency-name: "org.springframework.boot:*"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "org.springdoc:*"
+      # Toute majeure se decide a la main (revue complete) : Dependabot ne propose que
+      # les mineures et correctifs, groupes en une PR hebdomadaire.
+      - dependency-name: "*"
         update-types: ["version-update:semver-major"]
 
   - package-ecosystem: npm
@@ -43,7 +43,7 @@ updates:
       day: monday
       time: "06:00"
       timezone: Africa/Porto-Novo
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 2
     labels: [dependances, frontend]
     commit-message:
       prefix: "deps(frontend)"
@@ -52,14 +52,9 @@ updates:
         patterns: ["*"]
         update-types: [minor, patch]
     ignore:
-      # Majeures du socle front decidees a la main (React, Vite, Tailwind, router, Query).
-      - dependency-name: "react*"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "vite"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "tailwindcss"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "@tanstack/*"
+      # Toute majeure (React, Vite, Tailwind, Query, zod, TypeScript, jsdom...) se decide
+      # a la main : une majeure de zod ou de TypeScript casse les types du projet.
+      - dependency-name: "*"
         update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
