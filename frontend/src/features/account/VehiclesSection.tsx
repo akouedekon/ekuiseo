@@ -1,4 +1,4 @@
-import { motion } from 'motion/react'
+import { m } from 'motion/react'
 import { BadgeCheck, Car, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
@@ -59,15 +59,15 @@ export function VehiclesSection() {
           <EmptyState
             icon={Car}
             title="Aucun véhicule"
-            description="Ajoutez votre véhicule pour publier des trajets. Il sera vérifié avant votre première annonce."
+            description="Ajoutez votre véhicule pour publier des trajets : marque, modèle, immatriculation et nombre de places sont affichés aux passagers."
             action={<Button onClick={() => setAddOpen(true)}>Ajouter un véhicule</Button>}
             className="py-8"
           />
         </Card>
       ) : (
-        <motion.ul variants={listContainer} initial="hidden" animate="show" className="space-y-2">
+        <m.ul variants={listContainer} initial="hidden" animate="show" className="space-y-2">
           {list.map((vehicle) => (
-            <motion.li key={vehicle.id} variants={listItem}>
+            <m.li key={vehicle.id} variants={listItem}>
               <Card className="flex items-center gap-3 p-4">
                 <span className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-[var(--surface-calm)] text-ink-2">
                   <Car className="size-5" aria-hidden />
@@ -81,14 +81,17 @@ export function VehiclesSection() {
                     {vehicle.color ? ` · ${vehicle.color}` : ''}
                   </p>
                 </div>
+                {/*
+                 * Pas de file de verification des vehicules cote administration (audit F227) :
+                 * seul un vehicule reellement atteste par l'equipe porte un badge ; les autres
+                 * n'affichent aucune promesse d'« attente ».
+                 */}
                 {vehicle.verified ? (
                   <Badge tone="success">
                     <BadgeCheck aria-hidden />
-                    Vérifié
+                    Attesté par Ekuiseo
                   </Badge>
-                ) : (
-                  <Badge tone="warning">En attente</Badge>
-                )}
+                ) : null}
                 <Button
                   variant="ghost"
                   size="icon"
@@ -99,16 +102,21 @@ export function VehiclesSection() {
                   <Trash2 className="size-4" aria-hidden />
                 </Button>
               </Card>
-            </motion.li>
+            </m.li>
           ))}
-        </motion.ul>
+        </m.ul>
       )}
+
+      <p className="mt-3 text-label leading-relaxed text-muted">
+        Vous pouvez publier dès qu'un véhicule est enregistré. L'équipe Ekuiseo peut l'attester après un contrôle de
+        la carte grise et de la plaque, à sa demande : le badge apparaît alors sur vos annonces.
+      </p>
 
       <Sheet
         open={addOpen}
         onOpenChange={setAddOpen}
         title="Ajouter un véhicule"
-        description="Il sera vérifié avant votre première publication."
+        description="Ces informations sont affichées aux passagers sur vos annonces."
         footer={
           <Button type="submit" form={VEHICLE_FORM_ID} size="lg" block loading={addVehicle.isPending}>
             Ajouter le véhicule
@@ -122,7 +130,7 @@ export function VehiclesSection() {
               {
                 onSuccess: () => {
                   setAddOpen(false)
-                  toast.success('Véhicule ajouté', { description: "Il sera vérifié par l'équipe Ekuiseo avant votre première publication." })
+                  toast.success('Véhicule ajouté', { description: 'Vous pouvez le proposer sur vos trajets dès maintenant.' })
                 },
                 onError: () => toast.error("Le véhicule n'a pas pu être ajouté. Réessayez."),
               },

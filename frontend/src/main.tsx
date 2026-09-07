@@ -1,9 +1,10 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router'
-import { QueryClientProvider, onlineManager } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
 import { TooltipProvider } from '@radix-ui/react-tooltip'
+import { LazyMotion, domAnimation } from 'motion/react'
 import { Toaster } from 'sonner'
 
 // Polices auto-hebergees (pas de CDN) : seul le sous-ensemble latin est charge.
@@ -16,35 +17,39 @@ import '@fontsource/inter/latin-600.css'
 import '@fontsource/inter/latin-700.css'
 
 import { queryClient, createPersister, createPersistOptions } from '@/lib/queryClient'
+import { installGlobalErrorHandlers } from '@/lib/monitoring'
 import { applyTheme, readStoredTheme } from '@/lib/theme'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { ServiceWorkerUpdate } from '@/components/layout/ServiceWorkerUpdate'
 import './index.css'
 import App from './App.tsx'
+
+// Les erreurs non rattrapees (onerror, promesses rejetees) partent au collecteur, ou en console.
+installGlobalErrorHandlers()
 
 // Le theme est applique avant le premier rendu pour eviter tout clignotement.
 applyTheme(readStoredTheme())
 
 const persister = createPersister()
 
-/**
- * Reprise de la file d'attente au retour du reseau : les mutations mises en
- * pause par networkMode 'offlineFirst' sont rejouees dans l'ordre.
- */
-onlineManager.subscribe((online) => {
-  if (online) void queryClient.resumePausedMutations()
-})
-
 const root = createRoot(document.getElementById('root')!)
 
 const tree = (
   <TooltipProvider delayDuration={250}>
-    {/* Sous-chemin de publication (vitrine GitHub Pages) : le routeur doit le connaitre. */}
-    <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-      {/* La frontiere d'erreur vit dans le routeur : son ecran de secours contient des liens. */}
-      <ErrorBoundary>
-        <App />
-      </ErrorBoundary>
-      <Toaster
+    {/*
+     * `m` + LazyMotion : seules les animations DOM (entree, sortie, gestes) sont
+     * embarquees, pas le moteur complet de `motion` (audit F338). Le mode strict
+     * refuse tout composant `motion.*` qui ramenerait le paquet entier.
+     */}
+    <LazyMotion features={domAnimation} strict>
+      {/* Sous-chemin de publication (vitrine GitHub Pages) : le routeur doit le connaitre. */}
+      <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
+        {/* La frontiere d'erreur vit dans le routeur : son ecran de secours contient des liens. */}
+        <ErrorBoundary>
+          <App />
+        </ErrorBoundary>
+        <ServiceWorkerUpdate />
+        <Toaster
           position="top-center"
           offset={68}
           closeButton
@@ -60,7 +65,8 @@ const tree = (
             },
           }}
         />
-    </BrowserRouter>
+      </BrowserRouter>
+    </LazyMotion>
   </TooltipProvider>
 )
 

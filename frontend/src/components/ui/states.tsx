@@ -1,5 +1,5 @@
-import { motion } from 'motion/react'
-import { AlertTriangle, type LucideIcon } from 'lucide-react'
+import { m } from 'motion/react'
+import { AlertTriangle, WifiOff, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/cn'
 import { Button } from './button'
@@ -65,6 +65,45 @@ export function ErrorState({
   )
 }
 
+/**
+ * Premiere visite hors ligne : la requete est en pause (networkMode offlineFirst,
+ * aucune donnee en cache) et resterait en squelette indefiniment. Detecte par
+ * `isPending && fetchStatus === 'paused'` (audit F216).
+ */
+export function isOfflineWithoutData(query: { isPending: boolean; fetchStatus: 'fetching' | 'paused' | 'idle' }): boolean {
+  return query.isPending && query.fetchStatus === 'paused'
+}
+
+/** Hors ligne, aucune donnee enregistree pour cet ecran : on le dit, avec un reessai. */
+export function OfflineState({
+  title = 'Vous êtes hors ligne',
+  description = "Cet écran n'a pas encore été enregistré sur cet appareil. Il s'affichera dès que la connexion reviendra.",
+  onRetry,
+  className,
+}: {
+  title?: string
+  description?: string
+  onRetry?: () => void
+  className?: string
+}) {
+  return (
+    <div className={cn('flex flex-col items-center gap-3 px-6 py-10 text-center', className)} role="status">
+      <span className="flex size-14 items-center justify-center rounded-[var(--radius-card)] bg-accent-soft text-accent-ink shadow-e1 ring-4 ring-surface">
+        <WifiOff className="size-6" aria-hidden />
+      </span>
+      <div className="max-w-xs">
+        <h3 className="font-display text-title font-bold tracking-[-0.02em]">{title}</h3>
+        <p className="mt-1 text-body leading-relaxed text-muted">{description}</p>
+      </div>
+      {onRetry ? (
+        <Button variant="secondary" onClick={onRetry}>
+          Réessayer
+        </Button>
+      ) : null}
+    </div>
+  )
+}
+
 /** Squelette de carte trajet : reprend exactement la metrique de TripCard. */
 export function TripCardSkeleton() {
   return (
@@ -93,14 +132,14 @@ export function ListSkeleton({ count = 4, children }: { count?: number; children
     <div className="space-y-3" aria-busy="true" aria-live="polite">
       <span className="sr-only">Chargement des résultats</span>
       {Array.from({ length: count }).map((_, index) => (
-        <motion.div
+        <m.div
           key={index}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: index * 0.05 }}
         >
           {children ?? <TripCardSkeleton />}
-        </motion.div>
+        </m.div>
       ))}
     </div>
   )

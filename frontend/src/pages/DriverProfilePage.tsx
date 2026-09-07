@@ -1,4 +1,4 @@
-import { motion } from 'motion/react'
+import { m } from 'motion/react'
 import {
   BadgeCheck,
   CalendarCheck,
@@ -20,8 +20,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Avatar, RatingStars, Separator, Skeleton } from '@/components/ui/misc'
-import { ErrorState } from '@/components/ui/states'
-import { PageContainer, SectionTitle } from '@/components/layout/PageContainer'
+import { ErrorState, OfflineState, isOfflineWithoutData } from '@/components/ui/states'
+import { PageContainer, PageHeader, SectionTitle } from '@/components/layout/PageContainer'
 import { useIsAuthenticated, useMe } from '@/hooks/useAuth'
 import { usePublicUser, useUserReviews } from '@/hooks/useReviews'
 import { formatDuration, formatFromNow, formatRating } from '@/lib/format'
@@ -35,9 +35,22 @@ export function DriverProfilePage() {
   const me = useMe()
   const [reportOpen, setReportOpen] = useState(false)
 
+  if (isOfflineWithoutData(profile)) {
+    return (
+      <PageContainer width="md">
+        <PageHeader title="Profil conducteur" backTo="/" />
+        <OfflineState
+          description="Ce profil n'a pas encore été enregistré sur cet appareil. Il s'affichera dès que la connexion reviendra."
+          onRetry={() => profile.refetch()}
+        />
+      </PageContainer>
+    )
+  }
+
   if (profile.isPending) {
     return (
       <PageContainer width="md">
+        <PageHeader title="Profil conducteur" backTo="/" />
         <Card className="flex items-center gap-4 p-5">
           <Skeleton className="size-16 rounded-full" />
           <div className="flex-1 space-y-2">
@@ -57,6 +70,7 @@ export function DriverProfilePage() {
   if (profile.isError || !profile.data) {
     return (
       <PageContainer width="md">
+        <PageHeader title="Profil conducteur" backTo="/" />
         <ErrorState title="Profil introuvable" onRetry={() => profile.refetch()} />
       </PageContainer>
     )
@@ -72,15 +86,17 @@ export function DriverProfilePage() {
 
   return (
     <PageContainer width="md" className="pb-10">
+      {/* En-tete avec retour (audit F221) : un lien partage arrive ici sans historique, le repli mene a l'accueil. */}
+      <PageHeader title="Profil conducteur" backTo="/" className="mb-4" />
 
       {/* --- Identite --- */}
       <Card className="p-5">
         <div className="flex items-start gap-4">
           <Avatar firstName={user.firstName} lastName={user.lastName} photoUrl={user.photoUrl} size={64} />
           <div className="min-w-0 flex-1">
-            <h1 className="headline text-[24px]">
+            <h2 className="headline text-[24px]">
               {user.firstName} {user.lastName}
-            </h1>
+            </h2>
             <RatingStars value={user.ratingAvg} count={user.ratingCount} className="mt-1" />
             <p className="mt-1 text-[13px] text-muted">Inscrit {formatFromNow(user.memberSince)}</p>
           </div>
@@ -118,7 +134,7 @@ export function DriverProfilePage() {
       </Card>
 
       {/* --- Statistiques --- */}
-      <motion.div
+      <m.div
         variants={listContainer}
         initial="hidden"
         animate="show"
@@ -132,7 +148,7 @@ export function DriverProfilePage() {
           value={user.responseTimeMinutes ? formatDuration(user.responseTimeMinutes) : '—'}
         />
         <Stat icon={MessageCircle} label="Avis reçus" value={String(user.ratingCount)} />
-      </motion.div>
+      </m.div>
 
       {/* --- Vehicules --- */}
       {user.vehicles.length > 0 ? (
@@ -210,7 +226,7 @@ export function DriverProfilePage() {
                 <div key={row.star} className="flex items-center gap-2">
                   <span className="tnum w-3 text-[12px] text-muted">{row.star}</span>
                   <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--surface-calm)]">
-                    <motion.span
+                    <m.span
                       className="block h-full rounded-full bg-[var(--ocre)]"
                       initial={{ scaleX: 0 }}
                       animate={{ scaleX: row.count / maxCount }}
@@ -240,9 +256,9 @@ export function DriverProfilePage() {
         ) : reviewList.length === 0 ? (
           <Card className="p-4 text-[14px] text-muted">Aucun avis pour l'instant.</Card>
         ) : (
-          <motion.div variants={listContainer} initial="hidden" animate="show" className="space-y-2">
+          <m.div variants={listContainer} initial="hidden" animate="show" className="space-y-2">
             {reviewList.map((review) => (
-              <motion.div key={review.id} variants={listItem}>
+              <m.div key={review.id} variants={listItem}>
                 <Card className="p-4">
                   <div className="flex items-center justify-between gap-3">
                     <RatingStars value={review.rating} size={13} />
@@ -254,9 +270,9 @@ export function DriverProfilePage() {
                     <p className="mt-1.5 text-[14px] italic text-muted">Note sans commentaire.</p>
                   )}
                 </Card>
-              </motion.div>
+              </m.div>
             ))}
-          </motion.div>
+          </m.div>
         )}
       </section>
 
@@ -288,12 +304,12 @@ function Stat({
   value: string
 }) {
   return (
-    <motion.div variants={listItem}>
+    <m.div variants={listItem}>
       <Card className="p-3.5">
         <Icon className="size-4 text-muted" aria-hidden />
         <p className="tnum mt-2 font-display text-[20px] font-extrabold leading-none tracking-[-0.02em]">{value}</p>
         <p className="mt-1 text-[12px] leading-tight text-muted">{label}</p>
       </Card>
-    </motion.div>
+    </m.div>
   )
 }

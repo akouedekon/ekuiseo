@@ -1,7 +1,18 @@
-import { QueryClient, type Query } from '@tanstack/react-query'
+import { MutationCache, QueryCache, QueryClient, type Query } from '@tanstack/react-query'
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister'
 import type { PersistedClient, Persister, PersistQueryClientOptions } from '@tanstack/react-query-persist-client'
+import { ApiError } from '@/api/client'
 import { isTransientError } from '@/lib/errors'
+import { reportError } from '@/lib/monitoring'
+
+/**
+ * Seuls les echecs serveur non transitoires (500, 501, 505…) sont remontes au
+ * collecteur : un 502/503 est une panne d'infrastructure deja visible ailleurs,
+ * un 4xx est une reponse metier attendue, une erreur reseau vient du mobile.
+ */
+export function shouldReportQueryError(error: unknown): boolean {
+  return error instanceof ApiError && error.status >= 500 && !isTransientError(error)
+}
 
 const PERSIST_KEY = 'ekuiseo-query-cache'
 /** Proprietaire du cache persiste (id utilisateur) : un autre compte ne rehydrate jamais ce cache. */
@@ -20,8 +31,24 @@ export const API_CACHE_NAME = 'ekuiseo-api'
  * (reseau, serveur momentanement en panne), jamais sur une erreur definitive
  * (403, 404, 409...), et on persiste le cache dans localStorage pour un
  * affichage instantane (potentiellement perime) au demarrage hors-ligne.
+ *
+ * Mutations : `networkMode: 'online'`, donc un envoi hors ligne echoue tout de
+ * suite avec un message clair au lieu d'etre mis « en pause » sans jamais etre
+ * rejoue (audits F215, F340, F139) : aucune file d'attente n'est promise.
  */
 export const queryClient = new QueryClient({
+  queryCache: new QueryCache({
+    onError: (error, query) => {
+      if (shouldReportQueryError(error)) reportError(error, { source: `query:${String(query.queryKey[0])}` })
+    },
+  }),
+  mutationCache: new MutationCache({
+    onError: (error, _variables, _context, mutation) => {
+      if (shouldReportQueryError(error)) {
+        reportError(error, { source: `mutation:${String(mutation.options.mutationKey?.[0] ?? 'anonyme')}` })
+      }
+    },
+  }),
   defaultOptions: {
     queries: {
       retry: (failureCount, error) => failureCount < 2 && isTransientError(error),
@@ -33,7 +60,7 @@ export const queryClient = new QueryClient({
     },
     mutations: {
       retry: false,
-      networkMode: 'offlineFirst',
+      networkMode: 'online',
     },
   },
 })

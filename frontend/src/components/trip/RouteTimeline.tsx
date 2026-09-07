@@ -1,4 +1,4 @@
-import { motion } from 'motion/react'
+import { m } from 'motion/react'
 import { cn } from '@/lib/cn'
 import { formatFcfa, formatTime } from '@/lib/format'
 import type { RoutePoint } from '@/lib/route'
@@ -14,7 +14,7 @@ export function RouteTimeline({ points, className }: { points: RoutePoint[]; cla
       {points.map((point, index) => {
         const last = index === points.length - 1
         return (
-          <motion.li
+          <m.li
             key={`${point.label}-${index}`}
             initial={{ opacity: 0, x: -6 }}
             animate={{ opacity: 1, x: 0 }}
@@ -28,7 +28,18 @@ export function RouteTimeline({ points, className }: { points: RoutePoint[]; cla
                 point.kind === 'stop' ? 'text-muted' : 'text-ink',
               )}
             >
-              {point.time ? formatTime(point.time) : '—'}
+              {point.time ? (
+                <>
+                  {point.estimated ? (
+                    <span className="font-sans font-normal text-muted" title="Heure estimée">
+                      ≈{' '}
+                    </span>
+                  ) : null}
+                  {formatTime(point.time)}
+                </>
+              ) : (
+                '—'
+              )}
             </span>
 
             {/* Colonne graphique */}
@@ -70,7 +81,7 @@ export function RouteTimeline({ points, className }: { points: RoutePoint[]; cla
                 <span className="shrink-0 text-[12px] text-muted">départ</span>
               ) : null}
             </span>
-          </motion.li>
+          </m.li>
         )
       })}
     </ol>

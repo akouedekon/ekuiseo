@@ -1,6 +1,7 @@
-import { motion } from 'motion/react'
+import { m } from 'motion/react'
 import {
   Ban,
+  Banknote,
   Bell,
   BellOff,
   CalendarClock,
@@ -9,11 +10,14 @@ import {
   CreditCard,
   Flag,
   MessageSquare,
+  ScrollText,
   SearchCheck,
   ShieldCheck,
   ShieldOff,
   Star,
+  TimerOff,
   UserX,
+  Wallet,
   XCircle,
   type LucideIcon,
 } from 'lucide-react'
@@ -22,17 +26,26 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/misc'
-import { EmptyState, ErrorState } from '@/components/ui/states'
+import { EmptyState, ErrorState, OfflineState, isOfflineWithoutData } from '@/components/ui/states'
 import { PageContainer, PageHeader } from '@/components/layout/PageContainer'
 import {
   useMarkAllNotificationsRead,
   useMarkNotificationRead,
   useNotifications,
+  useUnreadNotificationCount,
 } from '@/hooks/useNotifications'
 import { describeError } from '@/lib/errors'
 import { formatDateTime, formatFcfa, formatFromNow } from '@/lib/format'
 import { listContainer, listItem } from '@/lib/motion'
 import type { NotificationResponse, NotificationType } from '@/api/types'
+
+const TONE = {
+  success: 'bg-[var(--vert-soft)] text-[var(--vert)]',
+  danger: 'bg-[var(--vermillon-soft)] text-[var(--vermillon)]',
+  info: 'bg-[var(--indigo-soft)] text-[var(--indigo)]',
+  warning: 'bg-[var(--ocre-soft)] text-[var(--ocre-ink)]',
+  neutral: 'bg-[var(--surface-calm)] text-ink-2',
+} as const
 
 /**
  * `Partial` (pas `Record` total) deliberement : une valeur de NotificationType
@@ -41,76 +54,154 @@ import type { NotificationResponse, NotificationType } from '@/api/types'
  * purement et simplement du type NotificationType cote front alors que le
  * serveur les emet deja).
  */
-const PRESENTATION: Partial<Record<NotificationType, { icon: LucideIcon; tone: string; title: string }>> = {
-  BOOKING_CONFIRMED: { icon: CheckCircle2, tone: 'bg-[var(--vert-soft)] text-[var(--vert)]', title: 'Réservation confirmée' },
-  BOOKING_CANCELLED: { icon: XCircle, tone: 'bg-[var(--vermillon-soft)] text-[var(--vermillon)]', title: 'Réservation annulée' },
-  PAYMENT_SUCCEEDED: { icon: CreditCard, tone: 'bg-[var(--vert-soft)] text-[var(--vert)]', title: 'Acompte reçu' },
-  PAYMENT_FAILED: { icon: CreditCard, tone: 'bg-[var(--vermillon-soft)] text-[var(--vermillon)]', title: 'Paiement échoué' },
-  NEW_MESSAGE: { icon: MessageSquare, tone: 'bg-[var(--indigo-soft)] text-[var(--indigo)]', title: 'Nouveau message' },
-  TRIP_REMINDER: { icon: CalendarClock, tone: 'bg-[var(--ocre-soft)] text-[var(--ocre-ink)]', title: 'Départ imminent' },
-  NEW_REVIEW: { icon: Star, tone: 'bg-[var(--ocre-soft)] text-[var(--ocre-ink)]', title: 'Nouvel avis' },
-  SEARCH_ALERT_MATCH: { icon: SearchCheck, tone: 'bg-[var(--indigo-soft)] text-[var(--indigo)]', title: 'Trajet correspondant trouvé' },
-  SUBSCRIPTION_ACTIVATED: { icon: CheckCircle2, tone: 'bg-[var(--vert-soft)] text-[var(--vert)]', title: 'Abonnement activé' },
-  REPORT_RECEIVED: { icon: Bell, tone: 'bg-[var(--ocre-soft)] text-[var(--ocre-ink)]', title: 'Signalement reçu' },
-  TRIP_UPDATED: { icon: CalendarClock, tone: 'bg-[var(--ocre-soft)] text-[var(--ocre-ink)]', title: 'Horaire modifié' },
-  BOOKING_NO_SHOW: { icon: UserX, tone: 'bg-[var(--vermillon-soft)] text-[var(--vermillon)]', title: 'Absence signalée' },
-  IDENTITY_APPROVED: { icon: ShieldCheck, tone: 'bg-[var(--vert-soft)] text-[var(--vert)]', title: 'Identité vérifiée' },
-  IDENTITY_REJECTED: { icon: ShieldOff, tone: 'bg-[var(--vermillon-soft)] text-[var(--vermillon)]', title: 'Vérification refusée' },
-  IDENTITY_REVOKED: { icon: ShieldOff, tone: 'bg-[var(--vermillon-soft)] text-[var(--vermillon)]', title: 'Badge d’identité retiré' },
-  ACCOUNT_SUSPENDED: { icon: Ban, tone: 'bg-[var(--vermillon-soft)] text-[var(--vermillon)]', title: 'Compte suspendu' },
-  REPORT_RESOLVED: { icon: Flag, tone: 'bg-[var(--indigo-soft)] text-[var(--indigo)]', title: 'Signalement traité' },
+const PRESENTATION: Partial<Record<NotificationType, { icon: LucideIcon; tone: keyof typeof TONE; title: string }>> = {
+  BOOKING_CONFIRMED: { icon: CheckCircle2, tone: 'success', title: 'Nouvelle réservation' },
+  BOOKING_CANCELLED: { icon: XCircle, tone: 'danger', title: 'Réservation annulée' },
+  BOOKING_EXPIRED: { icon: TimerOff, tone: 'neutral', title: 'Réservation expirée' },
+  PAYMENT_SUCCEEDED: { icon: CreditCard, tone: 'success', title: 'Paiement reçu' },
+  PAYMENT_FAILED: { icon: CreditCard, tone: 'danger', title: 'Paiement échoué' },
+  PAYMENT_REFUND_PENDING: { icon: Banknote, tone: 'warning', title: 'Remboursement en cours' },
+  PAYMENT_REFUNDED: { icon: Banknote, tone: 'success', title: 'Remboursement effectué' },
+  NEW_MESSAGE: { icon: MessageSquare, tone: 'info', title: 'Nouveau message' },
+  TRIP_REMINDER: { icon: CalendarClock, tone: 'warning', title: 'Départ demain' },
+  TRIP_UPDATED: { icon: CalendarClock, tone: 'warning', title: 'Horaire modifié' },
+  NEW_REVIEW: { icon: Star, tone: 'warning', title: 'Nouvel avis' },
+  SEARCH_ALERT_MATCH: { icon: SearchCheck, tone: 'info', title: 'Un trajet correspond à votre alerte' },
+  SUBSCRIPTION_ACTIVATED: { icon: CheckCircle2, tone: 'success', title: 'Abonnement activé' },
+  SUBSCRIPTION_EXPIRING: { icon: CalendarClock, tone: 'warning', title: 'Abonnement bientôt expiré' },
+  SUBSCRIPTION_EXPIRED: { icon: TimerOff, tone: 'neutral', title: 'Abonnement expiré' },
+  PAYOUT_ACCOUNT_MISSING: { icon: Wallet, tone: 'warning', title: 'Reversement en attente d’un compte' },
+  PAYOUT_SETTLED: { icon: Wallet, tone: 'success', title: 'Reversement effectué' },
+  PAYOUT_FAILED: { icon: Wallet, tone: 'danger', title: 'Reversement en échec' },
+  REPORT_RECEIVED: { icon: Bell, tone: 'warning', title: 'Signalement reçu' },
+  REPORT_RESOLVED: { icon: Flag, tone: 'info', title: 'Signalement traité' },
+  BOOKING_NO_SHOW: { icon: UserX, tone: 'danger', title: 'Absence signalée' },
+  IDENTITY_APPROVED: { icon: ShieldCheck, tone: 'success', title: 'Identité vérifiée' },
+  IDENTITY_REJECTED: { icon: ShieldOff, tone: 'danger', title: 'Vérification refusée' },
+  IDENTITY_REVOKED: { icon: ShieldOff, tone: 'danger', title: 'Badge d’identité retiré' },
+  ACCOUNT_SUSPENDED: { icon: Ban, tone: 'danger', title: 'Compte suspendu' },
+  TERMS_UPDATED: { icon: ScrollText, tone: 'info', title: 'Conditions mises à jour' },
 }
 
-const DEFAULT_PRESENTATION = { icon: Bell, tone: 'bg-[var(--surface-calm)] text-ink-2', title: 'Notification' }
+const DEFAULT_PRESENTATION = { icon: Bell, tone: 'neutral' as const, title: 'Notification' }
 
-/** Resume lisible construit a partir de la charge utile de la notification. */
-function describe(notification: NotificationResponse): string {
+/** Lecture tolerante de la charge utile : le serveur envoie parfois les nombres en chaine (`rating`). */
+function readPayload(notification: NotificationResponse) {
   const payload = notification.payload ?? {}
-  const str = (key: string) => (typeof payload[key] === 'string' ? (payload[key] as string) : undefined)
-  const num = (key: string) => (typeof payload[key] === 'number' ? (payload[key] as number) : undefined)
+  const str = (key: string): string | undefined => {
+    const value = payload[key]
+    return typeof value === 'string' && value.trim() ? value : undefined
+  }
+  const num = (key: string): number | undefined => {
+    const value = payload[key]
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+    if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) return Number(value)
+    return undefined
+  }
+  const bool = (key: string): boolean => payload[key] === true || payload[key] === 'true'
+  return { str, num, bool }
+}
+
+/** « Cotonou -> Bohicon » tel qu envoye par le serveur, rendu avec une vraie fleche. */
+function routeLabel(route: string | undefined): string | undefined {
+  return route?.replace(/\s*->\s*/g, ' → ')
+}
+
+function when(iso: string | undefined): string {
+  if (!iso) return ''
+  const date = new Date(iso)
+  return Number.isNaN(date.getTime()) ? '' : formatDateTime(date)
+}
+
+/** Resume lisible construit a partir de la charge utile REELLEMENT emise par le serveur (audit F230). */
+function describe(notification: NotificationResponse): string {
+  const { str, num, bool } = readPayload(notification)
+  const route = routeLabel(str('route'))
+  const seats = num('seats')
+  const seatsLabel = seats ? `${seats} place${seats > 1 ? 's' : ''}` : undefined
 
   switch (notification.type) {
+    case 'BOOKING_CONFIRMED': {
+      // Recue par le conducteur : un passager vient de confirmer (acompte recu ou espèces).
+      const passenger = str('passengerName') ?? 'Un passager'
+      return `${passenger} a réservé ${seatsLabel ?? 'une place'}${route ? ` sur ${route}` : ''}${
+        str('departureAt') ? ` (départ ${when(str('departureAt'))})` : ''
+      }.`
+    }
+    case 'BOOKING_CANCELLED': {
+      const by = str('cancelledBy')
+      const refund = num('refundAmountFcfa')
+      const retained = num('retainedAmountFcfa')
+      if (by === 'DRIVER' || by === 'PLATFORM') {
+        return `${by === 'PLATFORM' ? 'Le trajet' : 'Le conducteur a annulé le trajet'}${route ? ` ${route}` : ''}${
+          by === 'PLATFORM' ? ' a été annulé' : ''
+        }.${refund ? ` Votre acompte de ${formatFcfa(refund)} vous est remboursé.` : ' Tout acompte versé vous est remboursé.'}`
+      }
+      const parts = [`Réservation annulée par le passager${route ? ` sur ${route}` : ''}${seatsLabel ? ` (${seatsLabel})` : ''}.`]
+      if (refund) parts.push(`Acompte remboursé : ${formatFcfa(refund)}.`)
+      if (retained) parts.push(`Montant retenu : ${formatFcfa(retained)}.`)
+      return parts.join(' ')
+    }
+    case 'BOOKING_EXPIRED':
+      return `L'acompte n'a pas été reçu dans les 20 minutes${route ? ` pour ${route}` : ''} : la place a été libérée. Vous pouvez réserver à nouveau.`
     case 'PAYMENT_SUCCEEDED': {
-      const amount = num('amount')
-      return amount ? `Acompte de ${formatFcfa(amount)} bien reçu. Votre place est bloquée.` : 'Acompte bien reçu.'
+      const amount = num('amountFcfa')
+      const balance = num('balanceDueOnBoardFcfa')
+      const reference = str('reference')
+      return `${amount ? `Paiement de ${formatFcfa(amount)} reçu` : 'Paiement reçu'}${route ? ` pour ${route}` : ''}. Votre place est confirmée${
+        balance ? ` ; ${formatFcfa(balance)} restent à régler en espèces à bord` : ''
+      }.${reference ? ` Référence ${reference}.` : ''}`
     }
     case 'PAYMENT_FAILED':
-      return "Le paiement de l'acompte n'a pas abouti. La place n'est pas encore réservée."
-    case 'NEW_MESSAGE': {
-      const from = str('from')
-      return from ? `${from} vous a écrit à propos de votre trajet.` : 'Vous avez reçu un message.'
+      return "Le paiement de l'acompte n'a pas abouti. La place n'est pas réservée : réessayez avec un autre numéro ou opérateur."
+    case 'PAYMENT_REFUND_PENDING': {
+      const amount = num('amountFcfa')
+      return bool('manual')
+        ? `Remboursement${amount ? ` de ${formatFcfa(amount)}` : ''} pris en charge par l'équipe Ekuiseo : il sera fait à la main, vous serez prévenu.`
+        : `Remboursement${amount ? ` de ${formatFcfa(amount)}` : ''} en cours auprès de l'opérateur mobile money.`
     }
-    case 'BOOKING_CONFIRMED': {
-      const origin = str('origin')
-      const destination = str('destination')
-      // Recue par le passager (sa place) comme par le conducteur (une place vendue) : formulation neutre.
-      return origin && destination
-        ? `La réservation ${origin} → ${destination} est confirmée.`
-        : 'Une réservation vient d’être confirmée sur votre trajet ou pour votre place.'
+    case 'PAYMENT_REFUNDED': {
+      const amount = num('amountFcfa')
+      return `${amount ? formatFcfa(amount) : 'Le montant'} vous ${amount ? 'ont' : 'a'} été remboursé${amount ? 's' : ''} sur votre compte mobile money.`
     }
-    case 'BOOKING_CANCELLED':
-      return str('by') === 'driver'
-        ? 'Le conducteur a annulé le trajet. Votre acompte est remboursé.'
-        : 'La réservation a été annulée.'
+    case 'NEW_MESSAGE':
+      return 'Vous avez reçu un message à propos d’une réservation.'
     case 'TRIP_REMINDER':
-      return 'Votre trajet part bientôt. Pensez à prévoir le solde en espèces.'
-    case 'NEW_REVIEW': {
-      const rating = num('rating')
-      const from = str('from')
-      return `${from ?? 'Un passager'} vous a laissé ${rating ?? 5} étoiles.`
-    }
-    case 'SEARCH_ALERT_MATCH':
-      return 'Un trajet correspond à une de vos alertes de recherche.'
-    case 'SUBSCRIPTION_ACTIVATED':
-      return 'Votre abonnement conducteur est actif : plus de commission ce mois-ci.'
-    case 'REPORT_RECEIVED':
-      return 'Un signalement vous concernant a été reçu par la modération.'
+      return `Votre trajet${route ? ` ${route}` : ''} part demain${str('departureAt') ? `, ${when(str('departureAt'))}` : ''}. Pensez au solde en espèces.`
     case 'TRIP_UPDATED': {
       const departureAt = str('departureAt')
-      return departureAt
-        ? `Le conducteur a déplacé le départ au ${formatDateTime(departureAt)}. Vous pouvez annuler sans frais pendant 24 h.`
-        : 'Le conducteur a modifié l’horaire de départ. Vous pouvez annuler sans frais pendant 24 h.'
+      return `Le conducteur a déplacé le départ${route ? ` de ${route}` : ''}${
+        departureAt ? ` au ${when(departureAt)}` : ''
+      }. Vous pouvez annuler sans frais pendant 24 h.`
     }
+    case 'NEW_REVIEW': {
+      const rating = num('rating')
+      return rating ? `Un passager vous a laissé ${rating} étoile${rating > 1 ? 's' : ''}.` : 'Un passager vous a laissé un avis.'
+    }
+    case 'SEARCH_ALERT_MATCH':
+      return `Un trajet${route ? ` ${route}` : ''}${str('departureAt') ? ` (${when(str('departureAt'))})` : ''} correspond à votre alerte.`
+    case 'SUBSCRIPTION_ACTIVATED':
+      return 'Votre abonnement conducteur est actif : aucune commission sur vos trajets pendant 30 jours.'
+    case 'SUBSCRIPTION_EXPIRING':
+      return 'Votre abonnement conducteur arrive à échéance. Renouvelez-le pour garder 0 % de commission.'
+    case 'SUBSCRIPTION_EXPIRED':
+      return 'Votre abonnement conducteur a expiré : la commission de 8 % s’applique de nouveau.'
+    case 'PAYOUT_ACCOUNT_MISSING': {
+      const amount = num('amountFcfa')
+      return `${amount ? `${formatFcfa(amount)} vous attendent` : 'Un reversement vous attend'} : ajoutez un compte mobile money vérifié pour le recevoir.`
+    }
+    case 'PAYOUT_SETTLED': {
+      const amount = num('amountFcfa')
+      return `${amount ? `${formatFcfa(amount)} ont` : 'Votre reversement a'} été viré${amount ? 's' : ''} sur votre compte mobile money.`
+    }
+    case 'PAYOUT_FAILED':
+      return `Le virement de votre reversement n'a pas abouti${str('reason') ? ` : ${str('reason')}` : ''}. Vérifiez votre compte mobile money ou écrivez au support.`
+    case 'REPORT_RECEIVED':
+      return 'Un signalement vous concernant a été reçu par la modération.'
+    case 'REPORT_RESOLVED':
+      return str('status') === 'DISMISSED'
+        ? 'Votre signalement a été examiné et classé sans suite.'
+        : 'Votre signalement a été examiné et une mesure a été prise. Merci d’avoir contribué à la sécurité de la communauté.'
     case 'BOOKING_NO_SHOW': {
       const retained = num('retainedAmountFcfa')
       return retained
@@ -137,32 +228,60 @@ function describe(notification: NotificationResponse): string {
         ? `Votre compte est suspendu : ${reason}. Écrivez-nous pour contester.`
         : 'Votre compte est suspendu. Écrivez-nous pour contester.'
     }
-    case 'REPORT_RESOLVED':
-      return str('status') === 'DISMISSED'
-        ? 'Votre signalement a été examiné et classé sans suite.'
-        : 'Votre signalement a été examiné et une mesure a été prise. Merci d’avoir contribué à la sécurité de la communauté.'
+    case 'TERMS_UPDATED':
+      return 'Nos conditions générales d’utilisation ont changé. Elles vous seront proposées à votre prochaine ouverture.'
     default:
       return ''
   }
 }
 
-/** Lien de destination deduit de la charge utile. */
+/** Lien de destination deduit du type ET de la charge utile : la bonne page pour la bonne personne. */
 function targetOf(notification: NotificationResponse): string | null {
-  const payload = notification.payload ?? {}
-  const bookingId = typeof payload.bookingId === 'string' ? payload.bookingId : null
-  const tripId = typeof payload.tripId === 'string' ? payload.tripId : null
+  const { str } = readPayload(notification)
+  const bookingId = str('bookingId')
+  const tripId = str('tripId')
   switch (notification.type) {
     case 'NEW_MESSAGE':
       return bookingId ? `/bookings/${bookingId}/messages` : '/messages'
+    case 'BOOKING_CONFIRMED':
+      // Recue par le conducteur : sa liste d'appel, pas « Mes reservations ».
+      return '/trips/mine'
+    case 'BOOKING_CANCELLED':
+      return str('cancelledBy') === 'PASSENGER' ? '/trips/mine' : '/bookings'
+    case 'BOOKING_EXPIRED':
+      return tripId ? `/trips/${tripId}` : '/'
+    case 'PAYMENT_FAILED':
+      return bookingId && tripId ? `/book/${tripId}?booking=${bookingId}` : '/bookings'
+    case 'PAYMENT_SUCCEEDED':
+    case 'PAYMENT_REFUND_PENDING':
+    case 'PAYMENT_REFUNDED':
+    case 'TRIP_REMINDER':
+    case 'TRIP_UPDATED':
+    case 'BOOKING_NO_SHOW':
+      return '/bookings'
+    case 'NEW_REVIEW':
+      return '/me'
+    case 'SEARCH_ALERT_MATCH':
+      return tripId ? `/trips/${tripId}` : '/me?tab=alerts'
+    case 'SUBSCRIPTION_ACTIVATED':
+    case 'SUBSCRIPTION_EXPIRING':
+    case 'SUBSCRIPTION_EXPIRED':
+    case 'PAYOUT_SETTLED':
+    case 'PAYOUT_FAILED':
+      return '/me?tab=earnings'
+    case 'PAYOUT_ACCOUNT_MISSING':
+      return '/me?tab=payment'
     case 'IDENTITY_APPROVED':
     case 'IDENTITY_REJECTED':
     case 'IDENTITY_REVOKED':
       return '/me?tab=identity'
+    case 'TERMS_UPDATED':
+      return '/cgu'
     case 'ACCOUNT_SUSPENDED':
+    case 'REPORT_RECEIVED':
+    case 'REPORT_RESOLVED':
       // Rien a faire dans l'application : la contestation passe par le support.
       return null
-    case 'REPORT_RESOLVED':
-      return tripId ? `/trips/${tripId}` : null
     default:
       if (bookingId) return '/bookings'
       if (tripId) return `/trips/${tripId}`
@@ -172,15 +291,15 @@ function targetOf(notification: NotificationResponse): string | null {
 
 export function NotificationsPage() {
   const notifications = useNotifications()
+  const unread = useUnreadNotificationCount()
   const markRead = useMarkNotificationRead()
   const markAll = useMarkAllNotificationsRead()
 
-  const list = notifications.data ?? []
-  const unread = list.filter((n) => !n.readAt).length
+  const list = notifications.data?.pages.flatMap((page) => page.content) ?? []
+  const total = notifications.data?.pages[0]?.totalElements ?? list.length
 
   return (
     <PageContainer width="md">
-
       <PageHeader
         title="Notifications"
         back={false}
@@ -205,7 +324,9 @@ export function NotificationsPage() {
         }
       />
 
-      {notifications.isPending ? (
+      {isOfflineWithoutData(notifications) ? (
+        <OfflineState onRetry={() => notifications.refetch()} />
+      ) : notifications.isPending ? (
         <div className="space-y-2">
           {[0, 1, 2, 3].map((i) => (
             <Card key={i} className="flex gap-3 p-4">
@@ -226,68 +347,82 @@ export function NotificationsPage() {
           description="Les confirmations, messages et rappels de départ arriveront ici."
         />
       ) : (
-        <motion.ul variants={listContainer} initial="hidden" animate="show" className="space-y-2">
-          {list.map((notification) => {
-            const presentation = PRESENTATION[notification.type] ?? DEFAULT_PRESENTATION
-            const Icon = presentation.icon
-            const target = targetOf(notification)
-            const unreadItem = !notification.readAt
+        <>
+          <m.ul variants={listContainer} initial="hidden" animate="show" className="space-y-2">
+            {list.map((notification) => {
+              const presentation = PRESENTATION[notification.type] ?? DEFAULT_PRESENTATION
+              const Icon = presentation.icon
+              const target = targetOf(notification)
+              const unreadItem = !notification.readAt
 
-            const body = (
-              <div className="flex gap-3 p-4">
-                <span
-                  className={`flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-control)] ${presentation.tone}`}
-                >
-                  <Icon className="size-[18px]" aria-hidden />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <p className={unreadItem ? 'font-display text-[15px] font-bold' : 'font-display text-[15px] font-bold text-ink-2'}>
-                      {presentation.title}
-                    </p>
-                    <span className="shrink-0 text-[12px] text-muted">{formatFromNow(notification.createdAt)}</span>
+              const body = (
+                <div className="flex gap-3 p-4">
+                  <span
+                    className={`flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-control)] ${TONE[presentation.tone]}`}
+                  >
+                    <Icon className="size-[18px]" aria-hidden />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className={unreadItem ? 'font-display text-[15px] font-bold' : 'font-display text-[15px] font-bold text-ink-2'}>
+                        {presentation.title}
+                      </p>
+                      <span className="shrink-0 text-[12px] text-muted">{formatFromNow(notification.createdAt)}</span>
+                    </div>
+                    <p className="mt-0.5 text-[14px] leading-relaxed text-ink-2">{describe(notification)}</p>
                   </div>
-                  <p className="mt-0.5 text-[14px] leading-relaxed text-ink-2">{describe(notification)}</p>
+                  {unreadItem ? (
+                    <span className="mt-1.5 size-2 shrink-0 rounded-full bg-[var(--indigo)]" aria-label="Non lue" />
+                  ) : null}
                 </div>
-                {unreadItem ? (
-                  <span className="mt-1.5 size-2 shrink-0 rounded-full bg-[var(--indigo)]" aria-label="Non lue" />
-                ) : null}
-              </div>
-            )
+              )
 
-            return (
-              <motion.li key={notification.id} variants={listItem}>
-                <Card
-                  className={
-                    unreadItem
-                      ? 'border-l-[3px] border-l-[var(--indigo)] bg-surface'
-                      : 'border-l-[3px] border-l-transparent'
-                  }
-                >
-                  {target ? (
-                    <Link
-                      to={target}
-                      onClick={() => unreadItem && markRead.mutate(notification.id)}
-                      className="block transition-colors hover:bg-[var(--surface-calm)]"
-                    >
-                      {body}
-                    </Link>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => unreadItem && markRead.mutate(notification.id)}
-                      disabled={!unreadItem}
-                      aria-label={unreadItem ? 'Marquer comme lue' : undefined}
-                      className="block w-full text-left transition-colors enabled:hover:bg-[var(--surface-calm)] disabled:cursor-default"
-                    >
-                      {body}
-                    </button>
-                  )}
-                </Card>
-              </motion.li>
-            )
-          })}
-        </motion.ul>
+              return (
+                <m.li key={notification.id} variants={listItem}>
+                  <Card
+                    className={
+                      unreadItem
+                        ? 'border-l-[3px] border-l-[var(--indigo)] bg-surface'
+                        : 'border-l-[3px] border-l-transparent'
+                    }
+                  >
+                    {target ? (
+                      <Link
+                        to={target}
+                        onClick={() => unreadItem && markRead.mutate(notification.id)}
+                        className="block transition-colors hover:bg-[var(--surface-calm)]"
+                      >
+                        {body}
+                      </Link>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => unreadItem && markRead.mutate(notification.id)}
+                        disabled={!unreadItem}
+                        aria-label={unreadItem ? 'Marquer comme lue' : undefined}
+                        className="block w-full text-left transition-colors enabled:hover:bg-[var(--surface-calm)] disabled:cursor-default"
+                      >
+                        {body}
+                      </button>
+                    )}
+                  </Card>
+                </m.li>
+              )
+            })}
+          </m.ul>
+
+          {notifications.hasNextPage ? (
+            <Button
+              variant="secondary"
+              block
+              className="mt-4"
+              loading={notifications.isFetchingNextPage}
+              onClick={() => notifications.fetchNextPage()}
+            >
+              Voir plus ({Math.max(0, total - list.length)} restantes)
+            </Button>
+          ) : null}
+        </>
       )}
     </PageContainer>
   )

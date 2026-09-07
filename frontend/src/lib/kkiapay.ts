@@ -104,9 +104,44 @@ export function toKkiapayPhone(phone: string | undefined): string | undefined {
   return digits.length >= 8 ? digits : undefined
 }
 
+/** Fenetre fermee par l'utilisateur sans conclure : ni succes ni refus, rien a afficher. */
+export class KkiapayClosedError extends Error {
+  constructor() {
+    super('Kkiapay : fenetre fermee')
+    this.name = 'KkiapayClosedError'
+  }
+}
+
+export function isKkiapayClosed(error: unknown): boolean {
+  return error instanceof KkiapayClosedError
+}
+
+/*
+ * Le SDK n'expose pas de retrait pour l'ecouteur de fermeture : on en pose un
+ * seul, une fois pour toutes, qui delegue a l'ouverture en cours. Sans cela,
+ * chaque ouverture empilait un ecouteur de plus (audit F136).
+ */
+let currentClose: (() => void) | null = null
+let closeListenerInstalled = false
+
+function ensureCloseListener(w: Window) {
+  if (closeListenerInstalled || !w.addKkiapayCloseListener) return
+  closeListenerInstalled = true
+  w.addKkiapayCloseListener(() => currentClose?.())
+}
+
+/** Reserve aux tests : oublie l'ecouteur de fermeture pose sur une fenetre precedente. */
+export function resetKkiapayListenersForTests(): void {
+  currentClose = null
+  closeListenerInstalled = false
+  loader = undefined
+}
+
 /**
- * Ouvre le widget et se resout a l'evenement "success" (avec `transactionId`), rejette
- * a l'evenement "failed". Les ecouteurs sont retires des qu'un evenement est recu :
+ * Ouvre le widget et se resout a l'evenement "success" (avec `transactionId`).
+ * Rejette a l'evenement "failed" (paiement refuse) ou a la fermeture de la fenetre
+ * sans conclure (`KkiapayClosedError`, a ignorer cote appelant). La promesse est
+ * TOUJOURS reglee, et les ecouteurs sont retires dans un `settle()` unique :
  * chaque ouverture est independante (plusieurs paiements possibles par session).
  */
 export async function openKkiapay(input: OpenKkiapayInput): Promise<KkiapaySuccess> {
@@ -117,40 +152,56 @@ export async function openKkiapay(input: OpenKkiapayInput): Promise<KkiapaySucce
   }
 
   return new Promise<KkiapaySuccess>((resolve, reject) => {
-    const cleanup = () => {
+    let settled = false
+    const settle = (outcome: { ok: true; value: KkiapaySuccess } | { ok: false; error: Error }) => {
+      if (settled) return
+      settled = true
       w.removeKkiapayListener?.('success', onSuccess)
       w.removeKkiapayListener?.('failed', onFailed)
+      if (currentClose === onClose) currentClose = null
+      if (outcome.ok) resolve(outcome.value)
+      else reject(outcome.error)
     }
     const onSuccess = (payload: unknown) => {
-      cleanup()
       const res = (payload ?? {}) as KkiapaySuccess
       if (!res.transactionId) {
-        reject(new Error('Kkiapay : succes sans transactionId'))
+        settle({ ok: false, error: new Error('Kkiapay : succes sans transactionId') })
         return
       }
-      resolve(res)
+      settle({ ok: true, value: res })
     }
     const onFailed = (payload: unknown) => {
-      cleanup()
       const failure = (payload ?? {}) as KkiapayFailure
-      reject(Object.assign(new Error(failure.message ?? failure.reason ?? 'Paiement refuse'), { failure }))
+      settle({
+        ok: false,
+        error: Object.assign(new Error(failure.message ?? failure.reason ?? 'Paiement refuse'), { failure }),
+      })
+    }
+    const onClose = () => {
+      input.onClose?.()
+      settle({ ok: false, error: new KkiapayClosedError() })
     }
     w.addKkiapayListener?.('success', onSuccess)
     w.addKkiapayListener?.('failed', onFailed)
-    if (input.onClose) w.addKkiapayCloseListener?.(input.onClose)
+    ensureCloseListener(w)
+    currentClose = onClose
 
-    w.openKkiapayWidget?.({
-      amount: Math.round(input.amount),
-      key: input.publicKey,
-      api_key: input.publicKey,
-      sandbox: input.sandbox,
-      phone: toKkiapayPhone(input.phone),
-      name: input.name,
-      email: input.email,
-      data: input.data ? JSON.stringify(input.data) : undefined,
-      theme: '#0e7c4a',
-      position: 'center',
-      countries: ['BJ'],
-    })
+    try {
+      w.openKkiapayWidget?.({
+        amount: Math.round(input.amount),
+        key: input.publicKey,
+        api_key: input.publicKey,
+        sandbox: input.sandbox,
+        phone: toKkiapayPhone(input.phone),
+        name: input.name,
+        email: input.email,
+        data: input.data ? JSON.stringify(input.data) : undefined,
+        theme: '#0e7c4a',
+        position: 'center',
+        countries: ['BJ'],
+      })
+    } catch (error) {
+      settle({ ok: false, error: error instanceof Error ? error : new Error('Kkiapay : ouverture impossible') })
+    }
   })
 }

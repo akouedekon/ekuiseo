@@ -1,4 +1,4 @@
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { AnimatePresence, m, useReducedMotion } from 'motion/react'
 import {
   Bell,
   Car,
@@ -29,11 +29,13 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { StatusBanners } from '@/components/layout/OfflineBanner'
 import { Logo } from '@/components/layout/Logo'
+import { TermsGate } from '@/features/account/TermsGate'
 import { resetSession, useIsAuthenticated, useLogout, useMe } from '@/hooks/useAuth'
 import { useUnreadMessagesCount } from '@/hooks/useMessages'
 import { useUnreadNotificationCount } from '@/hooks/useNotifications'
 import { useTheme } from '@/hooks/useTheme'
 import { cn } from '@/lib/cn'
+import { CONTACT_EMAIL, LEGAL_PAGES } from '@/lib/legal'
 import { pageVariants } from '@/lib/motion'
 
 /** Profondeur de navigation : sert a donner sa direction a la transition. */
@@ -150,12 +152,9 @@ export function AppShell() {
               >
                 {({ isActive }) => (
                   <>
+                    {/* Pilule statique : les animations de mise en page (layoutId) ne font pas partie de domAnimation. */}
                     {isActive ? (
-                      <motion.span
-                        layoutId="nav-pill"
-                        className="absolute inset-0 rounded-[var(--radius-control)] bg-primary-soft"
-                        transition={{ type: 'spring', stiffness: 520, damping: 42 }}
-                      />
+                      <span aria-hidden className="absolute inset-0 rounded-[var(--radius-control)] bg-primary-soft" />
                     ) : null}
                     <item.icon className="relative size-[18px]" aria-hidden />
                     <span className="relative hidden lg:inline">{item.label}</span>
@@ -282,23 +281,55 @@ export function AppShell() {
 
       <StatusBanners />
 
-      <main id="contenu" className="flex-1 pb-28 md:pb-12">
-        <AnimatePresence mode="wait" custom={direction} initial={false}>
-          <motion.div
-            key={location.pathname}
-            custom={direction}
-            variants={pageVariants}
-            initial="enter"
-            animate="center"
-            exit="exit"
-          >
-            <Outlet />
-          </motion.div>
-        </AnimatePresence>
+      <main id="contenu" className="flex-1 pb-8 md:pb-12">
+        {/* CGU a re-accepter : tout l'ecran est bloque, sauf les pages legales elles-memes. */}
+        {authed && user?.termsAcceptanceRequired && !isLegalPath(location.pathname) ? (
+          <TermsGate />
+        ) : (
+          <AnimatePresence mode="wait" custom={direction} initial={false}>
+            <m.div
+              key={location.pathname}
+              custom={direction}
+              variants={pageVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+            >
+              <Outlet />
+            </m.div>
+          </AnimatePresence>
+        )}
       </main>
 
+      <SiteFooter />
       <BottomNav unreadMessages={authed ? unreadMessages : 0} />
     </div>
+  )
+}
+
+function isLegalPath(pathname: string): boolean {
+  return LEGAL_PAGES.some((page) => page.path === pathname)
+}
+
+/**
+ * Pied de page leger (audit F510) : les trois textes legaux et l'adresse de
+ * contact, sur toutes les pages. Sur mobile il vit au-dessus de la barre basse.
+ */
+function SiteFooter() {
+  return (
+    <footer className="border-t border-rule bg-bg pb-24 md:pb-0">
+      <div className="mx-auto flex max-w-[1200px] flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-4 text-caption text-muted sm:px-6">
+        <span className="font-semibold text-ink-2">Ekuiseo</span>
+        {LEGAL_PAGES.map((page) => (
+          <Link key={page.slug} to={page.path} className="underline-offset-4 hover:text-ink hover:underline">
+            {page.title}
+          </Link>
+        ))}
+        <a href={`mailto:${CONTACT_EMAIL}`} className="underline-offset-4 hover:text-ink hover:underline">
+          {CONTACT_EMAIL}
+        </a>
+      </div>
+    </footer>
   )
 }
 

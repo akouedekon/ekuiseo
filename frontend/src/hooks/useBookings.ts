@@ -21,12 +21,17 @@ export function useMyBookings(enabled = true) {
   })
 }
 
-/** GET /api/v1/bookings/{id} */
-export function useBooking(id: string | undefined) {
+/**
+ * GET /api/v1/bookings/{id}. `refetchInterval` sert au tunnel de reservation : une
+ * fois le compte a rebours local ecoule, on interroge le serveur jusqu'a ce qu'il
+ * tranche (EXPIRED ou confirmee) : l'expiration est decidee par lui, jamais ici.
+ */
+export function useBooking(id: string | undefined, options: { refetchInterval?: number | false } = {}) {
   return useQuery<BookingDetailResponse>({
     queryKey: ['bookings', id],
     queryFn: () => apiClient.get<BookingDetailResponse>(`/api/v1/bookings/${id}`),
     enabled: !!id,
+    refetchInterval: options.refetchInterval ?? false,
   })
 }
 

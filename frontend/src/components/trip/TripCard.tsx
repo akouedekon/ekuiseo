@@ -1,10 +1,10 @@
-import { motion } from 'motion/react'
-import { BadgeCheck, Users, Zap } from 'lucide-react'
+import { m } from 'motion/react'
+import { BadgeCheck, Users } from 'lucide-react'
 import { Link } from 'react-router'
 import { Avatar, RatingStars } from '@/components/ui/misc'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/cn'
-import { estimateDurationMinutes, haversineKm } from '@/lib/cities'
+import { estimateArrivalIso } from '@/lib/cities'
 import { formatDuration, formatFcfa, formatTime } from '@/lib/format'
 import { listItem } from '@/lib/motion'
 import type { TripResponse } from '@/api/types'
@@ -17,10 +17,12 @@ import type { TripResponse } from '@/api/types'
  * restent alignes quelle que soit la longueur des libelles.
  */
 export function TripCard({ trip, animate = true }: { trip: TripResponse; animate?: boolean }) {
-  const km = haversineKm(trip.originLat, trip.originLng, trip.destLat, trip.destLng)
-  const durationMin = estimateDurationMinutes(km)
-  const arrival = new Date(new Date(trip.departureAt).getTime() + durationMin * 60_000)
+  // Arrivee et duree sont des ESTIMATIONS du front : aucune heure d'arrivee n'est saisie par le conducteur.
+  const arrival = estimateArrivalIso(trip)
+  const durationMin = Math.round((new Date(arrival).getTime() - new Date(trip.departureAt).getTime()) / 60_000)
   const full = trip.seatsAvailable === 0
+  // Resultat apparie sur un troncon (arret intermediaire) : le prix affiche est celui du troncon.
+  const segment = trip.segmentPriceFcfa != null && trip.segmentPriceFcfa > 0 ? trip.segmentPriceFcfa : null
 
   const content = (
     <Link
@@ -37,18 +39,29 @@ export function TripCard({ trip, animate = true }: { trip: TripResponse; animate
         <span className="truncate font-display text-base font-bold leading-tight">{trip.originLabel}</span>
         <span className="row-span-3 self-start text-right">
           <span className="tnum block font-display text-[22px] font-extrabold leading-none tracking-[-0.03em] text-ink">
-            {formatFcfa(trip.pricePerSeat)}
+            {formatFcfa(segment ?? trip.pricePerSeat)}
           </span>
-          <span className="mt-1 block text-caption text-muted">par place</span>
+          <span className="mt-1 block text-caption text-muted">{segment ? 'par place, tronçon' : 'par place'}</span>
         </span>
 
         {/* Ligne 2 : duree du trajet, le long du filet */}
-        <span className="py-1 text-right text-[11px] leading-none text-muted">{formatDuration(durationMin)}</span>
+        <span className="py-1 text-right text-[11px] leading-none text-muted" title="Durée estimée">
+          ≈ {formatDuration(durationMin)}
+        </span>
         <span aria-hidden className="mx-auto h-5 w-0.5 rounded-full bg-rule-strong" />
         <span aria-hidden />
 
         {/* Ligne 3 : arrivee */}
-        <span className="tnum font-display text-title font-bold leading-none text-muted">{formatTime(arrival)}</span>
+        <span
+          className="tnum font-display text-title font-bold leading-none text-muted"
+          aria-label={`Arrivée estimée ${formatTime(arrival)}`}
+          title="Arrivée estimée"
+        >
+          <span className="font-sans text-[13px] font-normal" aria-hidden>
+            ≈{' '}
+          </span>
+          {formatTime(arrival)}
+        </span>
         <span aria-hidden className="mx-auto size-2.5 rounded-[3px] bg-danger" />
         <span className="truncate font-display text-base font-bold leading-tight text-ink-2">{trip.destLabel}</span>
       </div>
@@ -70,12 +83,6 @@ export function TripCard({ trip, animate = true }: { trip: TripResponse; animate
         ) : null}
 
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
-          {trip.instantBooking ? (
-            <Badge tone="indigo" title="Réservation instantanée">
-              <Zap aria-hidden />
-              Immédiat
-            </Badge>
-          ) : null}
           <Badge tone={full ? 'danger' : trip.seatsAvailable <= 1 ? 'warning' : 'neutral'}>
             <Users aria-hidden />
             {full ? 'Complet' : `${trip.seatsAvailable} pl.`}
@@ -86,5 +93,5 @@ export function TripCard({ trip, animate = true }: { trip: TripResponse; animate
   )
 
   if (!animate) return content
-  return <motion.div variants={listItem}>{content}</motion.div>
+  return <m.div variants={listItem}>{content}</m.div>
 }

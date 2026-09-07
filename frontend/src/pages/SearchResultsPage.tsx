@@ -1,15 +1,5 @@
-import { motion } from 'motion/react'
-import {
-  ArrowUpDown,
-  BellPlus,
-  CircleDot,
-  Flag,
-  SearchX,
-  SlidersHorizontal,
-  Star,
-  WifiOff,
-  X,
-} from 'lucide-react'
+import { m } from 'motion/react'
+import { ArrowUpDown, BellPlus, CircleDot, Flag, SearchX, SlidersHorizontal, Star, WifiOff, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
@@ -19,16 +9,17 @@ import { Checkbox } from '@/components/ui/misc'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet } from '@/components/ui/sheet'
 import { Slider } from '@/components/ui/misc'
-import { EmptyState, ErrorState, ListSkeleton } from '@/components/ui/states'
+import { EmptyState, ErrorState, ListSkeleton, OfflineState, isOfflineWithoutData } from '@/components/ui/states'
 import { PageContainer } from '@/components/layout/PageContainer'
 import { RouteMap } from '@/components/trip/RouteMap'
 import { TripCard } from '@/components/trip/TripCard'
 import { useCreateTripAlert } from '@/hooks/useAlerts'
 import { useIsAuthenticated } from '@/hooks/useAuth'
+import { useIsDesktop } from '@/hooks/useMediaQuery'
 import { useOnlineStatus, useStaleAge } from '@/hooks/useNetwork'
-import { useTripSearchPages, type TripSearchParams } from '@/hooks/useTrips'
-import { describeError } from '@/lib/errors'
-import { estimateDurationMinutes, haversineKm, searchRadiusKm } from '@/lib/cities'
+import { useTripSearchPages, type TripSearchParams, type TripSearchSort } from '@/hooks/useTrips'
+import { describeError, errorStatus } from '@/lib/errors'
+import { haversineKm, searchRadiusKm } from '@/lib/cities'
 import { formatDayShort, formatFcfa } from '@/lib/format'
 import { listContainer } from '@/lib/motion'
 import type { TripResponse, TripType } from '@/api/types'
@@ -36,42 +27,65 @@ import type { TripResponse, TripType } from '@/api/types'
 /** Tableau vide partage : evite de creer une nouvelle reference a chaque rendu. */
 const NO_TRIPS: TripResponse[] = []
 
-type SortKey = 'departure' | 'price' | 'rating' | 'duration'
+const SORT_KEYS: TripSearchSort[] = ['departure', 'price', 'rating']
+const RATING_STEPS = [0, 3.5, 4, 4.5]
 
+/**
+ * Tri et filtres vivent dans l'URL et sont appliques PAR LE SERVEUR (audit F137,
+ * F219) : ils portent sur l'ensemble des departs, pas sur la page chargee, et
+ * « Voir plus » reste toujours accessible. Un lien partage reproduit la meme vue.
+ */
 interface Filters {
-  /** null = aucun plafond ; la borne du curseur suit les prix reellement proposes. */
+  /** null = aucun plafond. */
   maxPrice: number | null
-  departureWindow: 'ALL' | 'MORNING' | 'AFTERNOON' | 'EVENING'
   minRating: number
   verifiedOnly: boolean
-  instantOnly: boolean
 }
 
-const DEFAULT_FILTERS: Filters = {
-  maxPrice: null,
-  departureWindow: 'ALL',
-  minRating: 0,
-  verifiedOnly: false,
-  instantOnly: false,
+function readSort(value: string | null): TripSearchSort {
+  return SORT_KEYS.includes(value as TripSearchSort) ? (value as TripSearchSort) : 'departure'
 }
 
-const WINDOW_LABEL: Record<Filters['departureWindow'], string> = {
-  ALL: 'Toute la journée',
-  MORNING: 'Matin (avant 12 h)',
-  AFTERNOON: 'Après-midi (12 h – 17 h)',
-  EVENING: 'Soir (après 17 h)',
+function readFilters(params: URLSearchParams): Filters {
+  const maxPrice = Number(params.get('maxPrice'))
+  const minRating = Number(params.get('minRating'))
+  return {
+    maxPrice: Number.isFinite(maxPrice) && maxPrice > 0 ? maxPrice : null,
+    minRating: RATING_STEPS.includes(minRating) ? minRating : 0,
+    verifiedOnly: params.get('verifiedOnly') === 'true',
+  }
 }
 
 export function SearchResultsPage() {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const authed = useIsAuthenticated()
   const online = useOnlineStatus()
-  const [sort, setSort] = useState<SortKey>('departure')
-  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS)
+  const desktop = useIsDesktop()
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [alertOpen, setAlertOpen] = useState(false)
   const createAlert = useCreateTripAlert()
+
+  const sort = readSort(searchParams.get('sort'))
+  const filters = useMemo(() => readFilters(searchParams), [searchParams])
+
+  /** Met a jour tri ou filtres dans l'URL sans toucher au reste de la recherche. */
+  const updateParams = (patch: Record<string, string | null>) => {
+    const next = new URLSearchParams(searchParams)
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === null || value === '') next.delete(key)
+      else next.set(key, value)
+    }
+    setSearchParams(next, { replace: true })
+  }
+  const setSort = (value: TripSearchSort) => updateParams({ sort: value === 'departure' ? null : value })
+  const setFilters = (next: Filters) =>
+    updateParams({
+      maxPrice: next.maxPrice === null ? null : String(next.maxPrice),
+      minRating: next.minRating > 0 ? String(next.minRating) : null,
+      verifiedOnly: next.verifiedOnly ? 'true' : null,
+    })
+  const resetFilters = () => setFilters({ maxPrice: null, minRating: 0, verifiedOnly: false })
 
   const query = useMemo(() => {
     const fromLat = Number(searchParams.get('fromLat'))
@@ -91,10 +105,14 @@ export function SearchResultsPage() {
       tripType: (searchParams.get('type') as TripType | null) ?? undefined,
       // 5 km en urbain, 15 km en interurbain, jamais plus de la moitie de l'axe (sens de circulation).
       radiusKm: searchRadiusKm(haversineKm(fromLat, fromLng, toLat, toLng)),
+      sort: sort === 'departure' ? undefined : sort,
+      maxPrice: filters.maxPrice ?? undefined,
+      minRating: filters.minRating > 0 ? filters.minRating : undefined,
+      verifiedOnly: filters.verifiedOnly || undefined,
       size: 20,
     }
     return params
-  }, [searchParams])
+  }, [searchParams, sort, filters])
 
   const fromLabel = searchParams.get('from') ?? 'Départ'
   const toLabel = searchParams.get('to') ?? 'Arrivée'
@@ -103,23 +121,17 @@ export function SearchResultsPage() {
 
   const search = useTripSearchPages(query)
   const staleMinutes = useStaleAge(search.dataUpdatedAt || undefined)
-  // Pages cumulees ; reference stable sans resultat pour ne pas recalculer tri et filtres a chaque rendu.
+  // Pages cumulees ; reference stable sans resultat.
   const trips = useMemo(() => search.data?.pages.flatMap((page) => page.content) ?? NO_TRIPS, [search.data])
   const totalResults = search.data?.pages[0]?.totalElements ?? trips.length
-  // Borne du curseur de prix : le plus cher des resultats, arrondi aux 500 F superieurs.
+  // Borne du curseur de prix : le plus cher des resultats charges, arrondi aux 500 F superieurs.
   const priceCeiling = useMemo(
     () => Math.max(5_000, Math.ceil(Math.max(0, ...trips.map((t) => t.pricePerSeat)) / 500) * 500),
     [trips],
   )
 
   const activeFilterCount =
-    (filters.maxPrice !== null ? 1 : 0) +
-    (filters.departureWindow !== 'ALL' ? 1 : 0) +
-    (filters.minRating > 0 ? 1 : 0) +
-    (filters.verifiedOnly ? 1 : 0) +
-    (filters.instantOnly ? 1 : 0)
-
-  const visible = useMemo(() => filterAndSort(trips, filters, sort), [trips, filters, sort])
+    (filters.maxPrice !== null ? 1 : 0) + (filters.minRating > 0 ? 1 : 0) + (filters.verifiedOnly ? 1 : 0)
 
   const mapPoints = useMemo(() => {
     const fromLat = Number(searchParams.get('fromLat'))
@@ -159,9 +171,15 @@ export function SearchResultsPage() {
           setAlertOpen(false)
           toast.success('Alerte créée', {
             description: `Vous serez prévenu dès qu'un trajet ${fromLabel} → ${toLabel} est publié.`,
+            action: { label: 'Mes alertes', onClick: () => navigate('/me?tab=alerts') },
           })
         },
-        onError: (error) => toast.error(describeError(error, "L'alerte n'a pas pu être créée.")),
+        onError: (error) =>
+          toast.error(
+            errorStatus(error) === 422
+              ? 'Vous avez atteint le maximum de 10 alertes actives. Supprimez-en une depuis « Mes alertes ».'
+              : describeError(error, "L'alerte n'a pas pu être créée."),
+          ),
       },
     )
   }
@@ -185,7 +203,6 @@ export function SearchResultsPage() {
 
   return (
     <PageContainer width="lg">
-
       {/* --- En-tete de recherche : rappel du critere, toujours visible --- */}
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-x-3">
         <div className="min-w-0 sm:flex-1">
@@ -196,20 +213,22 @@ export function SearchResultsPage() {
           </h1>
           <p className="mt-0.5 text-[13px] text-muted">
             {dateParam ? formatDayShort(dateParam) : 'Toutes dates'} · {seats} place{seats > 1 ? 's' : ''}
-            {search.isFetched ? ` · ${totalResults} départ${totalResults > 1 ? 's' : ''}${activeFilterCount > 0 ? `, ${visible.length} affiché${visible.length > 1 ? 's' : ''}` : ''}` : ''}
+            {search.isFetched ? ` · ${totalResults} départ${totalResults > 1 ? 's' : ''}` : ''}
           </p>
         </div>
 
         <div className="flex items-center gap-2">
-          <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
-            <SelectTrigger className="h-11 min-w-0 flex-1 gap-2 text-[14px] sm:w-auto sm:min-w-[148px] sm:flex-none" aria-label="Trier les résultats">
+          <Select value={sort} onValueChange={(v) => setSort(readSort(v))}>
+            <SelectTrigger
+              className="h-11 min-w-0 flex-1 gap-2 text-[14px] sm:w-auto sm:min-w-[148px] sm:flex-none"
+              aria-label="Trier les résultats"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="departure">Départ le plus tôt</SelectItem>
               <SelectItem value="price">Prix croissant</SelectItem>
               <SelectItem value="rating">Meilleure note</SelectItem>
-              <SelectItem value="duration">Trajet le plus court</SelectItem>
             </SelectContent>
           </Select>
 
@@ -241,33 +260,21 @@ export function SearchResultsPage() {
           {filters.maxPrice !== null ? (
             <FilterChip
               label={`≤ ${formatFcfa(filters.maxPrice)}`}
-              onClear={() => setFilters((f) => ({ ...f, maxPrice: null }))}
-            />
-          ) : null}
-          {filters.departureWindow !== 'ALL' ? (
-            <FilterChip
-              label={WINDOW_LABEL[filters.departureWindow]}
-              onClear={() => setFilters((f) => ({ ...f, departureWindow: 'ALL' }))}
+              onClear={() => setFilters({ ...filters, maxPrice: null })}
             />
           ) : null}
           {filters.minRating > 0 ? (
             <FilterChip
               label={`Note ≥ ${filters.minRating.toFixed(1).replace('.', ',')}`}
-              onClear={() => setFilters((f) => ({ ...f, minRating: 0 }))}
+              onClear={() => setFilters({ ...filters, minRating: 0 })}
             />
           ) : null}
           {filters.verifiedOnly ? (
-            <FilterChip label="Vérifiés" onClear={() => setFilters((f) => ({ ...f, verifiedOnly: false }))} />
-          ) : null}
-          {filters.instantOnly ? (
-            <FilterChip
-              label="Réservation immédiate"
-              onClear={() => setFilters((f) => ({ ...f, instantOnly: false }))}
-            />
+            <FilterChip label="Vérifiés" onClear={() => setFilters({ ...filters, verifiedOnly: false })} />
           ) : null}
           <button
             type="button"
-            onClick={() => setFilters(DEFAULT_FILTERS)}
+            onClick={resetFilters}
             className="ml-1 text-[13px] font-medium text-[var(--indigo)] underline-offset-4 hover:underline"
           >
             Tout effacer
@@ -278,35 +285,40 @@ export function SearchResultsPage() {
       {/* --- Deux colonnes au-dela de 1024 px : liste + carte collante --- */}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div>
-          {search.isPending ? (
+          {isOfflineWithoutData(search) ? (
+            <OfflineState
+              description="Cette recherche n'a pas encore été enregistrée sur cet appareil. Elle se lancera dès que la connexion reviendra."
+              onRetry={() => search.refetch()}
+            />
+          ) : search.isPending ? (
             <ListSkeleton count={5} />
           ) : search.isError ? (
             <ErrorState onRetry={() => search.refetch()} />
-          ) : visible.length === 0 ? (
+          ) : trips.length === 0 ? (
             <EmptyState
               icon={SearchX}
-              title={trips.length === 0 ? 'Aucun trajet ce jour-là' : 'Aucun trajet ne passe vos filtres'}
+              title={activeFilterCount > 0 ? 'Aucun trajet ne passe vos filtres' : 'Aucun trajet ce jour-là'}
               description={
-                trips.length === 0
-                  ? `Personne ne part encore de ${fromLabel} vers ${toLabel} à cette date. Créez une alerte : nous vous prévenons dès qu'une place se libère.`
-                  : 'Élargissez vos critères pour voir les autres départs disponibles.'
+                activeFilterCount > 0
+                  ? 'Élargissez vos critères pour voir les autres départs disponibles.'
+                  : `Personne ne part encore de ${fromLabel} vers ${toLabel} à cette date. Créez une alerte : nous vous prévenons dès qu'une place se libère.`
               }
               action={
-                trips.length === 0 ? (
+                activeFilterCount > 0 ? (
+                  <Button variant="secondary" onClick={resetFilters}>
+                    Réinitialiser les filtres
+                  </Button>
+                ) : (
                   <Button onClick={() => setAlertOpen(true)}>
                     <BellPlus className="size-4" aria-hidden />
                     Créer une alerte
-                  </Button>
-                ) : (
-                  <Button variant="secondary" onClick={() => setFilters(DEFAULT_FILTERS)}>
-                    Réinitialiser les filtres
                   </Button>
                 )
               }
             />
           ) : (
             <>
-              <motion.div
+              <m.div
                 // La cle force le rejeu de la cascade quand le tri ou les filtres changent.
                 key={`${sort}-${activeFilterCount}`}
                 variants={listContainer}
@@ -314,10 +326,10 @@ export function SearchResultsPage() {
                 animate="show"
                 className="space-y-3"
               >
-                {visible.map((trip) => (
+                {trips.map((trip) => (
                   <TripCard key={trip.id} trip={trip} />
                 ))}
-              </motion.div>
+              </m.div>
 
               {search.hasNextPage ? (
                 <Button
@@ -344,28 +356,31 @@ export function SearchResultsPage() {
           )}
         </div>
 
-        <aside className="hidden lg:block">
-          <div className="sticky top-24 space-y-3">
-            <RouteMap points={mapPoints} className="h-[280px]" />
-            <Card className="p-4">
-              <h2 className="font-display text-[14px] font-bold uppercase tracking-[0.06em] text-muted">
-                Repères de prix
-              </h2>
-              {visible.length > 0 ? (
-                <dl className="mt-3 space-y-2 text-[14px]">
-                  <PriceRow label="Le moins cher" value={Math.min(...visible.map((t) => t.pricePerSeat))} />
-                  <PriceRow
-                    label="Prix médian"
-                    value={median(visible.map((t) => t.pricePerSeat))}
-                  />
-                  <PriceRow label="Le plus cher" value={Math.max(...visible.map((t) => t.pricePerSeat))} />
-                </dl>
-              ) : (
-                <p className="mt-2 text-[13px] text-muted">Pas encore de repère pour cet axe.</p>
-              )}
-            </Card>
-          </div>
-        </aside>
+        {/* La carte (MapLibre, 1 Mo) n'est montee que lorsqu'elle est visible : jamais sur mobile. */}
+        {desktop ? (
+          <aside>
+            <div className="sticky top-24 space-y-3">
+              <RouteMap points={mapPoints} className="h-[280px]" />
+              <Card className="p-4">
+                <h2 className="font-display text-[14px] font-bold uppercase tracking-[0.06em] text-muted">
+                  Repères de prix
+                </h2>
+                {trips.length > 0 ? (
+                  <dl className="mt-3 space-y-2 text-[14px]">
+                    <PriceRow label="Le moins cher" value={Math.min(...trips.map((t) => t.pricePerSeat))} />
+                    <PriceRow label="Prix médian" value={median(trips.map((t) => t.pricePerSeat))} />
+                    <PriceRow label="Le plus cher" value={Math.max(...trips.map((t) => t.pricePerSeat))} />
+                  </dl>
+                ) : (
+                  <p className="mt-2 text-[13px] text-muted">Pas encore de repère pour cet axe.</p>
+                )}
+                {search.hasNextPage ? (
+                  <p className="mt-2 text-[12px] text-muted">Sur les {trips.length} premiers départs affichés.</p>
+                ) : null}
+              </Card>
+            </div>
+          </aside>
+        ) : null}
       </div>
 
       {/* --- Feuille de filtres --- */}
@@ -373,10 +388,10 @@ export function SearchResultsPage() {
         open={filtersOpen}
         onOpenChange={setFiltersOpen}
         title="Filtrer les trajets"
-        description={`${visible.length} trajet${visible.length > 1 ? 's' : ''} correspondent`}
+        description={search.isFetched ? `${totalResults} départ${totalResults > 1 ? 's' : ''} correspondent` : undefined}
         footer={
           <div className="flex gap-2">
-            <Button variant="ghost" block onClick={() => setFilters(DEFAULT_FILTERS)}>
+            <Button variant="ghost" block onClick={resetFilters}>
               Réinitialiser
             </Button>
             <Button block size="lg" onClick={() => setFiltersOpen(false)}>
@@ -398,41 +413,20 @@ export function SearchResultsPage() {
               min={500}
               max={priceCeiling}
               step={500}
-              onValueChange={([value]) => setFilters((f) => ({ ...f, maxPrice: value >= priceCeiling ? null : value }))}
+              onValueCommit={([value]) => setFilters({ ...filters, maxPrice: value >= priceCeiling ? null : value })}
               aria-label="Prix maximum par place"
             />
           </div>
 
           <fieldset>
-            <legend className="mb-2 text-[14px] font-semibold">Heure de départ</legend>
-            <div className="grid grid-cols-2 gap-2">
-              {(Object.keys(WINDOW_LABEL) as Filters['departureWindow'][]).map((key) => (
-                <button
-                  key={key}
-                  type="button"
-                  aria-pressed={filters.departureWindow === key}
-                  onClick={() => setFilters((f) => ({ ...f, departureWindow: key }))}
-                  className={
-                    filters.departureWindow === key
-                      ? 'min-h-11 rounded-[var(--radius-control)] border border-[var(--indigo)] bg-[var(--indigo-soft)] px-3 text-[13px] font-semibold text-[var(--indigo-deep)]'
-                      : 'min-h-11 rounded-[var(--radius-control)] border border-rule-strong bg-surface px-3 text-[13px] font-medium text-ink-2'
-                  }
-                >
-                  {WINDOW_LABEL[key]}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-
-          <fieldset>
             <legend className="mb-2 text-[14px] font-semibold">Note minimale du conducteur</legend>
             <div className="flex gap-2">
-              {[0, 3.5, 4, 4.5].map((value) => (
+              {RATING_STEPS.map((value) => (
                 <button
                   key={value}
                   type="button"
                   aria-pressed={filters.minRating === value}
-                  onClick={() => setFilters((f) => ({ ...f, minRating: value }))}
+                  onClick={() => setFilters({ ...filters, minRating: value })}
                   className={
                     filters.minRating === value
                       ? 'flex min-h-11 flex-1 items-center justify-center gap-1 rounded-[var(--radius-control)] border border-[var(--indigo)] bg-[var(--indigo-soft)] text-[13px] font-semibold text-[var(--indigo-deep)]'
@@ -450,27 +444,18 @@ export function SearchResultsPage() {
                 </button>
               ))}
             </div>
+            <p className="mt-1.5 text-[12px] text-muted">Un conducteur sans avis reste affiché.</p>
           </fieldset>
 
           <div className="divide-y divide-rule rounded-[var(--radius-card)] border border-rule">
             <label className="flex min-h-[56px] cursor-pointer items-center gap-3 px-4">
               <Checkbox
                 checked={filters.verifiedOnly}
-                onCheckedChange={(checked) => setFilters((f) => ({ ...f, verifiedOnly: checked === true }))}
+                onCheckedChange={(checked) => setFilters({ ...filters, verifiedOnly: checked === true })}
               />
               <span className="flex-1">
                 <span className="block text-[14px] font-medium">Conducteurs vérifiés uniquement</span>
                 <span className="block text-[12px] text-muted">Pièce d'identité contrôlée par Ekuiseo</span>
-              </span>
-            </label>
-            <label className="flex min-h-[56px] cursor-pointer items-center gap-3 px-4">
-              <Checkbox
-                checked={filters.instantOnly}
-                onCheckedChange={(checked) => setFilters((f) => ({ ...f, instantOnly: checked === true }))}
-              />
-              <span className="flex-1">
-                <span className="block text-[14px] font-medium">Réservation immédiate</span>
-                <span className="block text-[12px] text-muted">Sans attendre l'accord du conducteur</span>
               </span>
             </label>
           </div>
@@ -513,39 +498,6 @@ export function SearchResultsPage() {
 }
 
 /* -------------------------------------------------------------- Utilitaires */
-
-function filterAndSort(trips: TripResponse[], filters: Filters, sort: SortKey): TripResponse[] {
-  const filtered = trips.filter((trip) => {
-    if (filters.maxPrice !== null && trip.pricePerSeat > filters.maxPrice) return false
-    // Un conducteur sans avis n'est pas un conducteur mal note : il reste visible.
-    if (filters.minRating > 0 && trip.driver.ratingCount > 0 && trip.driver.ratingAvg < filters.minRating) return false
-    if (filters.instantOnly && !trip.instantBooking) return false
-    if (filters.verifiedOnly && !trip.driver.identityVerified) return false
-    if (filters.departureWindow !== 'ALL') {
-      const hour = new Date(trip.departureAt).getHours()
-      if (filters.departureWindow === 'MORNING' && hour >= 12) return false
-      if (filters.departureWindow === 'AFTERNOON' && (hour < 12 || hour >= 17)) return false
-      if (filters.departureWindow === 'EVENING' && hour < 17) return false
-    }
-    return true
-  })
-
-  const duration = (trip: TripResponse) =>
-    estimateDurationMinutes(haversineKm(trip.originLat, trip.originLng, trip.destLat, trip.destLng))
-
-  return filtered.sort((a, b) => {
-    switch (sort) {
-      case 'price':
-        return a.pricePerSeat - b.pricePerSeat
-      case 'rating':
-        return b.driver.ratingAvg - a.driver.ratingAvg
-      case 'duration':
-        return duration(a) - duration(b)
-      default:
-        return new Date(a.departureAt).getTime() - new Date(b.departureAt).getTime()
-    }
-  })
-}
 
 function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b)

@@ -4,6 +4,8 @@ export interface RoutePoint {
   label: string
   /** Heure prevue, ISO. Absente pour un arret non horodate. */
   time: string | null
+  /** Heure calculee par le front (arrivee estimee), pas annoncee par le conducteur : affichee avec « ≈ ». */
+  estimated?: boolean
   /** Prix depuis l'origine (0 a l'origine, prix plein a l'arrivee). */
   priceFromOrigin: number | null
   kind: 'origin' | 'stop' | 'destination'
@@ -28,6 +30,6 @@ export function buildRoutePoints(
         priceFromOrigin: stop.priceFromOrigin,
         kind: 'stop',
       })),
-    { label: destLabel, time: arrivalAt, priceFromOrigin: pricePerSeat, kind: 'destination' },
+    { label: destLabel, time: arrivalAt, estimated: true, priceFromOrigin: pricePerSeat, kind: 'destination' },
   ]
 }

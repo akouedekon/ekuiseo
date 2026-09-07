@@ -1,10 +1,12 @@
 import { useNavigate, useSearchParams } from 'react-router'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/misc'
-import { ErrorState } from '@/components/ui/states'
+import { ErrorState, OfflineState, isOfflineWithoutData } from '@/components/ui/states'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PageContainer, PageHeader } from '@/components/layout/PageContainer'
 import { AccountHeaderCard } from '@/features/account/AccountHeaderCard'
+import { AlertsSection } from '@/features/account/AlertsSection'
+import { DataSection } from '@/features/account/DataSection'
 import { DeleteAccountSection } from '@/features/account/DeleteAccountSection'
 import { EarningsSection } from '@/features/account/EarningsSection'
 import { IdentitySection } from '@/features/account/IdentitySection'
@@ -15,7 +17,7 @@ import { VehiclesSection } from '@/features/account/VehiclesSection'
 import { useIdentityVerification } from '@/hooks/useAccount'
 import { useLogout, useMe } from '@/hooks/useAuth'
 
-const TABS = ['vehicles', 'identity', 'payment', 'earnings', 'preferences'] as const
+const TABS = ['vehicles', 'identity', 'payment', 'earnings', 'alerts', 'preferences'] as const
 type TabKey = (typeof TABS)[number]
 
 function isTabKey(value: string | null): value is TabKey {
@@ -23,9 +25,10 @@ function isTabKey(value: string | null): value is TabKey {
 }
 
 /**
- * Mon compte : identite, puis cinq onglets. L'onglet actif vit dans l'URL
+ * Mon compte : identite, puis six onglets. L'onglet actif vit dans l'URL
  * (?tab=), ce qui permet d'y renvoyer directement (ex. « ajoutez un vehicule »
- * depuis la publication) et de le retrouver apres un retour arriere.
+ * depuis la publication, « Mes alertes » depuis un toast) et de le retrouver
+ * apres un retour arriere.
  */
 export function MePage() {
   const me = useMe()
@@ -37,6 +40,18 @@ export function MePage() {
   const tab: TabKey = isTabKey(tabParam) ? tabParam : 'vehicles'
 
   const user = me.data
+
+  if (isOfflineWithoutData(me)) {
+    return (
+      <PageContainer width="md">
+        <PageHeader title="Mon compte" back={false} />
+        <OfflineState
+          description="Votre compte n'est pas enregistré sur cet appareil. Il s'affichera dès que la connexion reviendra."
+          onRetry={() => me.refetch()}
+        />
+      </PageContainer>
+    )
+  }
 
   if (me.isError) {
     return (
@@ -80,6 +95,7 @@ export function MePage() {
           <TabsTrigger value="identity">Identité</TabsTrigger>
           <TabsTrigger value="payment">Paiement</TabsTrigger>
           <TabsTrigger value="earnings">Revenus</TabsTrigger>
+          <TabsTrigger value="alerts">Alertes</TabsTrigger>
           <TabsTrigger value="preferences">Réglages</TabsTrigger>
         </TabsList>
 
@@ -98,6 +114,9 @@ export function MePage() {
             <SubscriptionSection user={user} />
           </div>
         </TabsContent>
+        <TabsContent value="alerts">
+          <AlertsSection />
+        </TabsContent>
         <TabsContent value="preferences">
           <PreferencesSection
             onLogout={() => {
@@ -105,6 +124,7 @@ export function MePage() {
               navigate('/', { replace: true })
             }}
           />
+          <DataSection />
           <DeleteAccountSection email={user.email} />
         </TabsContent>
       </Tabs>

@@ -1,4 +1,4 @@
-import { motion } from 'motion/react'
+import { m } from 'motion/react'
 import { ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { cn } from '@/lib/cn'
@@ -39,7 +39,7 @@ export function StatTile({
   hint?: string
 }) {
   return (
-    <motion.div variants={listItem}>
+    <m.div variants={listItem}>
       <Card className="h-full p-5">
         <p className="text-label font-medium text-muted">{label}</p>
         <p
@@ -54,7 +54,7 @@ export function StatTile({
         </p>
         {hint ? <p className="mt-1 text-caption text-muted">{hint}</p> : null}
       </Card>
-    </motion.div>
+    </m.div>
   )
 }
 

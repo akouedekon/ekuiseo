@@ -65,7 +65,15 @@ export type PaymentMode = 'MOMO_DEPOSIT' | 'MOMO_FULL' | 'CASH'
  * valeurs sont exactement celles renvoyees par BookingService#paymentPlanStatus
  * cote serveur (voir bj.ekuiseo.api.service.BookingService).
  */
-export type PaymentPlanStatus = 'ESTIMATED' | 'PENDING' | 'CANCELLED' | 'DEPOSIT_PAID' | 'PAID_IN_FULL' | 'CASH_DUE_ON_BOARD'
+export type PaymentPlanStatus =
+  | 'ESTIMATED'
+  | 'PENDING'
+  | 'CANCELLED'
+  | 'DEPOSIT_PAID'
+  | 'PAID_IN_FULL'
+  | 'CASH_DUE_ON_BOARD'
+  /** Acompte non recu a l'echeance : la reservation est EXPIRED, les places liberees. */
+  | 'EXPIRED'
 
 /**
  * Decomposition du paiement, calculee et renvoyee par le serveur.
@@ -244,10 +252,12 @@ export interface TripAlertRequest {
   tripType: TripType
 }
 
+/** GET /api/v1/trip-alerts (liste), POST (200 si une alerte identique est reutilisee, 422 au-dela de 10), DELETE /{id} → 204. */
 export interface TripAlertResponse extends TripAlertRequest {
   id: string
   createdAt: string
   active: boolean
+  radiusKm: number
 }
 
 /* -------------------------------------------------------------- Messagerie */
@@ -372,15 +382,42 @@ export interface AdminLiquidityResponse {
 export type ReportStatus = 'OPEN' | 'IN_REVIEW' | 'RESOLVED' | 'DISMISSED'
 export type ReportReason = 'NO_SHOW' | 'DANGEROUS_DRIVING' | 'HARASSMENT' | 'FRAUD' | 'VEHICLE_MISMATCH' | 'OTHER'
 
+/** Personne citee dans un signalement (auteur, mis en cause, moderateur). */
+export interface ReportPersonRef {
+  id: string
+  firstName: string
+  lastName: string
+}
+
 export interface AdminReportResponse {
   id: string
   reason: ReportReason
   status: ReportStatus
   detail: string
   createdAt: string
-  reporter: { id: string; firstName: string; lastName: string }
-  target: { id: string; firstName: string; lastName: string }
+  reporter: ReportPersonRef
+  target: ReportPersonRef
   tripId: string | null
+  bookingId: string | null
+  /** Note de cloture (RESOLVED / DISMISSED), obligatoire cote serveur ; null tant que le dossier est ouvert. */
+  resolutionNote: string | null
+  resolvedBy: ReportPersonRef | null
+  resolvedAt: string | null
+  /** Signalements deja clos ou en cours contre la meme personne, celui-ci exclu : un recidiviste se traite autrement. */
+  priorReportsAgainstTarget: number
+}
+
+/**
+ * GET /admin/reports/{id}/conversations : echanges lies au signalement (reservation ou
+ * trajet). Lecture journalisee cote serveur - c'est une intrusion dans la messagerie,
+ * reservee a l'instruction d'un dossier.
+ */
+export interface AdminReportConversationResponse {
+  conversationId: string
+  bookingId: string | null
+  tripId: string | null
+  participants: ReportPersonRef[]
+  messages: { id: string; senderId: string; body: string; createdAt: string }[]
 }
 
 export interface AdminVerificationResponse {
@@ -417,9 +454,29 @@ export interface AdminPayoutResponse {
   /** Reservations remboursees apres inclusion dans un lot deja traite : montant a deduire du prochain virement. */
   reversedCount: number
   reversedAmount: number
+  /** Reference du virement mobile money saisie au reglement (identifiant operateur). */
+  externalReference: string | null
+  /** Motif saisi quand le virement a echoue (numero invalide, plafond, operateur en panne). */
+  failureReason: string | null
+  settledAt: string | null
 }
 
-/** POST /admin/payouts/{id}/pay et GET /me/payouts : lot de reversement brut (dto.payout.PayoutResponse). */
+/**
+ * POST /admin/payouts/{id}/settle : marque un lot regle apres virement manuel. La
+ * reference externe permet de retrouver l'operation chez l'operateur ; le montant
+ * n'est renseigne que s'il differe du montant du lot (frais retenus).
+ */
+export interface SettlePayoutRequest {
+  externalReference: string
+  settledAmountFcfa?: number
+}
+
+/** POST /admin/payouts/{id}/fail : virement impossible, motif obligatoire. */
+export interface FailPayoutRequest {
+  reason: string
+}
+
+/** POST /admin/payouts/{id}/settle et GET /me/payouts : lot de reversement brut (dto.payout.PayoutResponse). */
 export interface PayoutResponse {
   id: string
   driverId: string
@@ -523,11 +580,24 @@ export interface ReportResponse {
 export interface AuditLogResponse {
   id: string
   actorId: string | null
+  /** Nom de l'acteur au moment de la lecture ; null pour le systeme ou un compte anonymise. */
+  actorName: string | null
   action: string
   entityType: string | null
   entityId: string | null
   details: Record<string, unknown> | null
   createdAt: string
+}
+
+/** Filtres de GET /admin/audit-log ; chaque champ vide est omis de la requete. */
+export interface AuditLogFilters {
+  action?: string
+  actorId?: string
+  entityType?: string
+  entityId?: string
+  /** Bornes ISO (date ou date-heure), inclusives. */
+  from?: string
+  to?: string
 }
 
 /** PATCH /trips/{id} : chaque champ absent est laisse inchange. */
@@ -564,4 +634,93 @@ export interface AdminUserResponse {
   tripsPublished: number
   bookingsMade: number
   ratingAvg: number
+  /** ADMIN : compte du back-office, jamais suspendable depuis l'interface. */
+  role: 'USER' | 'ADMIN'
+}
+
+/**
+ * GET /admin/overview : les files d'attente du back-office, rafraichies chaque
+ * minute. Chaque chiffre repond a « qu'est-ce qui attend une decision ? ».
+ */
+export interface AdminOverviewResponse {
+  openReports: number
+  inReviewReports: number
+  pendingVerifications: number
+  /** Date de depot du plus vieux dossier en attente ; null si la file est vide. */
+  oldestPendingVerificationAt: string | null
+  pendingPayouts: number
+  pendingPayoutsAmountFcfa: number
+  /** Paiements REFUND_PENDING + REFUND_MANUAL. */
+  refundsToHandle: number
+}
+
+/** Statut de compte, valeurs de l'enum backend UserStatus. */
+export type AdminUserStatus = 'PENDING_VERIFICATION' | 'ACTIVE' | 'SUSPENDED' | 'DELETED'
+
+export interface AdminUserVehicle {
+  id: string
+  brand: string
+  model: string
+  color: string | null
+  plate: string
+  seats: number
+  comfortLevel: ComfortLevel
+  verified: boolean
+}
+
+export interface AdminUserPaymentAccount {
+  id: string
+  provider: PaymentProvider
+  phone: string
+  isDefault: boolean
+  verified: boolean
+}
+
+/** GET /admin/users/{id} : fiche complete d'un utilisateur, pour instruire un dossier. */
+export interface AdminUserDetailResponse {
+  id: string
+  firstName: string
+  lastName: string
+  phone: string
+  email: string | null
+  role: 'USER' | 'ADMIN'
+  /** Enum backend ; tolere une valeur inconnue plutot que de casser l'ecran. */
+  status: AdminUserStatus | string
+  suspendedReason: string | null
+  suspendedAt: string | null
+  createdAt: string
+  identity: {
+    status: IdentityVerificationStatus
+    documentType: 'CNI' | 'PASSPORT' | 'DRIVER_LICENSE' | null
+    /** Quatre derniers caracteres du numero de piece : jamais le numero complet a l'ecran. */
+    documentLast4: string | null
+  } | null
+  identityVerified: boolean
+  vehicles: AdminUserVehicle[]
+  paymentAccounts: AdminUserPaymentAccount[]
+  tripsPublished: number
+  bookingsMade: number
+  ratingAvg: number
+  /** Annulations a moins de 24 h du depart : le signal d'un passager peu fiable. */
+  lateCancellationsCount: number
+  anonymizedAt: string | null
+}
+
+/**
+ * GET /admin/users/{id}/bookings : reservations d'un utilisateur, vue minimale.
+ * Champs optionnels : le contrat est tolerant, l'ecran affiche « — » quand absent.
+ */
+export interface AdminUserBookingResponse {
+  id: string
+  tripId?: string
+  seats?: number
+  amount?: number
+  status?: BookingStatus
+  paymentMethod?: PaymentMethod
+  createdAt?: string
+  trip?: {
+    originLabel?: string
+    destLabel?: string
+    departureAt?: string
+  } | null
 }

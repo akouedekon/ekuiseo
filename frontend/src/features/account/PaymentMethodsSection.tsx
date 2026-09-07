@@ -1,4 +1,4 @@
-import { motion } from 'motion/react'
+import { m } from 'motion/react'
 import { CreditCard, Plus, Smartphone, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
@@ -63,9 +63,9 @@ export function PaymentMethodsSection({ defaultPhone }: { defaultPhone: string }
           />
         </Card>
       ) : (
-        <motion.ul variants={listContainer} initial="hidden" animate="show" className="space-y-2">
+        <m.ul variants={listContainer} initial="hidden" animate="show" className="space-y-2">
           {list.map((method) => (
-            <motion.li key={method.id} variants={listItem}>
+            <m.li key={method.id} variants={listItem}>
               <Card className="flex items-center gap-3 p-4">
                 <span className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-[var(--indigo-soft)] text-[var(--indigo)]">
                   <Smartphone className="size-5" aria-hidden />
@@ -90,9 +90,9 @@ export function PaymentMethodsSection({ defaultPhone }: { defaultPhone: string }
                   <Trash2 className="size-4" aria-hidden />
                 </Button>
               </Card>
-            </motion.li>
+            </m.li>
           ))}
-        </motion.ul>
+        </m.ul>
       )}
 
       <p className="mt-3 text-label leading-relaxed text-muted">

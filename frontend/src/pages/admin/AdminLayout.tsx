@@ -17,13 +17,18 @@ import { Button } from '@/components/ui/button'
 import { Tooltip } from '@/components/ui/misc'
 import { Logo } from '@/components/layout/Logo'
 import { PageContainer } from '@/components/layout/PageContainer'
+import { useAdminOverview } from '@/hooks/useAdmin'
 import { cn } from '@/lib/cn'
+import type { AdminOverviewResponse } from '@/api/extended'
 
 interface AdminNavItem {
   to: string
   label: string
   icon: LucideIcon
   end: boolean
+  /** File d'attente associee : nombre d'elements qui attendent une decision. */
+  queue?: (overview: AdminOverviewResponse) => number
+  queueLabel?: string
 }
 
 interface AdminNavGroup {
@@ -42,10 +47,38 @@ const ADMIN_NAV: AdminNavGroup[] = [
   {
     label: 'Opérations',
     items: [
-      { to: '/admin/reports', label: 'Signalements', icon: AlertTriangle, end: false },
-      { to: '/admin/verifications', label: 'Vérifications', icon: BadgeCheck, end: false },
-      { to: '/admin/payouts', label: 'Reversements', icon: Wallet, end: false },
-      { to: '/admin/payments', label: 'Paiements', icon: Banknote, end: false },
+      {
+        to: '/admin/reports',
+        label: 'Signalements',
+        icon: AlertTriangle,
+        end: false,
+        queue: (o) => o.openReports,
+        queueLabel: 'signalements ouverts',
+      },
+      {
+        to: '/admin/verifications',
+        label: 'Vérifications',
+        icon: BadgeCheck,
+        end: false,
+        queue: (o) => o.pendingVerifications,
+        queueLabel: 'dossiers en attente',
+      },
+      {
+        to: '/admin/payouts',
+        label: 'Reversements',
+        icon: Wallet,
+        end: false,
+        queue: (o) => o.pendingPayouts,
+        queueLabel: 'reversements dus',
+      },
+      {
+        to: '/admin/payments',
+        label: 'Paiements',
+        icon: Banknote,
+        end: false,
+        queue: (o) => o.refundsToHandle,
+        queueLabel: 'remboursements à traiter',
+      },
       { to: '/admin/users', label: 'Utilisateurs', icon: Users, end: false },
       { to: '/admin/audit', label: 'Journal', icon: ScrollText, end: false },
     ],
@@ -78,11 +111,14 @@ function storeCollapsed(collapsed: boolean): void {
  *   groupee, reductible en rail d'icones (choix memorise), collant au defilement.
  * - En dessous : barre d'onglets horizontale defilante, sans tiroir : les six
  *   entrees restent accessibles d'un geste.
+ * - Les entrees qui portent une file d'attente affichent son compte (rafraichi
+ *   chaque minute) : on voit ce qui attend sans ouvrir chaque page.
  * L'acces est filtre en amont par RequireAdmin (role du profil) ; le serveur
  * reste seul juge (403 sur /api/v1/admin/**).
  */
 export function AdminLayout() {
   const [collapsed, setCollapsed] = useState(readCollapsed)
+  const overview = useAdminOverview()
 
   const toggle = () => {
     setCollapsed((current) => {
@@ -133,7 +169,11 @@ export function AdminLayout() {
                   <ul className="contents lg:flex lg:flex-col lg:gap-0.5">
                     {group.items.map((item) => (
                       <li key={item.to} className="shrink-0 lg:w-full">
-                        <AdminNavLink item={item} collapsed={collapsed} />
+                        <AdminNavLink
+                          item={item}
+                          collapsed={collapsed}
+                          queue={item.queue && overview.data ? item.queue(overview.data) : 0}
+                        />
                       </li>
                     ))}
                   </ul>
@@ -173,15 +213,18 @@ export function AdminLayout() {
   )
 }
 
-function AdminNavLink({ item, collapsed }: { item: AdminNavItem; collapsed: boolean }) {
+function AdminNavLink({ item, collapsed, queue }: { item: AdminNavItem; collapsed: boolean; queue: number }) {
+  const queueText = queue > 0 ? `${queue.toLocaleString('fr-FR')} ${item.queueLabel ?? ''}`.trim() : null
+  const label = queueText ? `${item.label} · ${queueText}` : item.label
+
   const link = (
     <NavLink
       to={item.to}
       end={item.end}
-      aria-label={collapsed ? item.label : undefined}
+      aria-label={collapsed || queueText ? label : undefined}
       className={({ isActive }) =>
         cn(
-          'flex min-h-10 items-center gap-2.5 whitespace-nowrap rounded-[var(--radius-control)] px-3 text-body font-medium transition-colors lg:w-full',
+          'relative flex min-h-10 items-center gap-2.5 whitespace-nowrap rounded-[var(--radius-control)] px-3 text-body font-medium transition-colors lg:w-full',
           collapsed && 'lg:justify-center lg:px-0',
           isActive
             ? 'bg-primary-soft text-primary-ink shadow-[inset_0_0_0_1px_var(--primary-soft-2)]'
@@ -189,15 +232,35 @@ function AdminNavLink({ item, collapsed }: { item: AdminNavItem; collapsed: bool
         )
       }
     >
-      <item.icon className="size-[18px] shrink-0" aria-hidden />
+      <span className="relative shrink-0">
+        <item.icon className="size-[18px]" aria-hidden />
+        {/* Rail reduit : le compte n'a pas la place, un point signale la file non vide. */}
+        {queue > 0 && collapsed ? (
+          <span
+            aria-hidden
+            className="absolute -right-1 -top-1 hidden size-2.5 rounded-full bg-[var(--vermillon)] ring-2 ring-surface lg:block"
+          />
+        ) : null}
+      </span>
       <span className={cn(collapsed && 'lg:sr-only')}>{item.label}</span>
+      {queue > 0 ? (
+        <span
+          aria-hidden
+          className={cn(
+            'tnum ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-[var(--vermillon)] px-1.5 py-px text-[11px] font-bold leading-4 text-white',
+            collapsed && 'lg:hidden',
+          )}
+        >
+          {queue > 99 ? '99+' : queue}
+        </span>
+      ) : null}
     </NavLink>
   )
 
   return collapsed ? (
     <>
       <span className="hidden lg:block">
-        <Tooltip label={item.label}>{link}</Tooltip>
+        <Tooltip label={label}>{link}</Tooltip>
       </span>
       <span className="lg:hidden">{link}</span>
     </>
@@ -205,4 +268,3 @@ function AdminNavLink({ item, collapsed }: { item: AdminNavItem; collapsed: bool
     link
   )
 }
-

@@ -12,6 +12,8 @@ export type BookingStatus =
   | 'CANCELLED_BY_DRIVER'
   | 'COMPLETED'
   | 'NO_SHOW'
+  /** Acompte non recu dans les 20 minutes : places liberees par le serveur. Aucune action possible. */
+  | 'EXPIRED'
 // Alignes sur bj.ekuiseo.api.domain.enums.PaymentMethod : MOMO_DEPOSIT (acompte,
 // defaut), MOMO_FULL (paiement integral en ligne), CASH (rien en ligne).
 export type PaymentMethod = 'MOMO_DEPOSIT' | 'MOMO_FULL' | 'CASH'
@@ -44,6 +46,22 @@ export type NotificationType =
   | 'IDENTITY_REVOKED'
   | 'ACCOUNT_SUSPENDED'
   | 'REPORT_RESOLVED'
+  /* Remboursements (RefundService) et conducteur sans compte mobile money verifie (PayoutService). */
+  | 'PAYMENT_REFUND_PENDING'
+  | 'PAYMENT_REFUNDED'
+  | 'PAYOUT_ACCOUNT_MISSING'
+  /* Lot 2 : expiration d'acompte, abonnement, reversements, CGU. */
+  | 'BOOKING_EXPIRED'
+  | 'SUBSCRIPTION_EXPIRING'
+  | 'SUBSCRIPTION_EXPIRED'
+  | 'PAYOUT_SETTLED'
+  | 'PAYOUT_FAILED'
+  | 'TERMS_UPDATED'
+
+/** GET /api/v1/notifications/unread-count : compteur seul, rafraichi chaque minute pour la pastille. */
+export interface UnreadCountResponse {
+  count: number
+}
 
 export interface UserResponse {
   id: string
@@ -61,6 +79,8 @@ export interface UserResponse {
   identityVerified: boolean
   /** USER par defaut ; ADMIN ouvre le back-office (/api/v1/admin/**). */
   role: 'USER' | 'ADMIN'
+  /** Vrai quand les CGU acceptees sont anterieures a la version courante : ecran bloquant (PATCH /me/terms). */
+  termsAcceptanceRequired?: boolean
 }
 
 /**
@@ -144,6 +164,13 @@ export interface TripResponse {
   parentTripId: string | null
   /** Renseigne uniquement dans la reponse de creation d une navette : occurrences generees. */
   generatedOccurrences?: number | null
+  /**
+   * Resultat de recherche apparie sur un troncon (arret intermediaire) : arrets de
+   * montee / descente et prix du troncon. Absents quand le trajet complet correspond.
+   */
+  pickupStopId?: string | null
+  dropoffStopId?: string | null
+  segmentPriceFcfa?: number | null
 }
 
 /** Reservation d un trajet vue par son conducteur (GET /api/v1/trips/{id}/bookings). */
@@ -167,6 +194,7 @@ export interface StopRequest {
   label: string
   lat: number
   lng: number
+  /** Heure de passage annoncee par le conducteur (ISO) ; absente, l'arret est affiche sans horaire. */
   plannedAt?: string
   priceFromOrigin: number
 }
@@ -183,6 +211,11 @@ export interface CreateTripRequest {
   departureAt: string
   seatsTotal: number
   pricePerSeat: number
+  /**
+   * Toujours `true` : l'acceptation par le conducteur n'existe pas cote serveur
+   * (audit F213), l'interrupteur a ete retire de l'interface. Le champ reste
+   * exige par le contrat de creation.
+   */
   instantBooking: boolean
   luggagePolicy?: string
   description?: string
@@ -266,6 +299,8 @@ export interface Page<T> {
   totalPages: number
   number: number
   size: number
+  /** Derniere page (Page Spring) ; optionnel pour tolerer un serializer qui l'omet. */
+  last?: boolean
 }
 
 /** Reponse d'erreur RFC 7807 (application/problem+json) renvoyee par l'API. */

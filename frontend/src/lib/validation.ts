@@ -109,3 +109,51 @@ export const identitySchema = z.object({
 })
 export type IdentityValues = z.infer<typeof identitySchema>
 
+/* ------------------------------------------------------------ Horaires */
+
+/** Un depart ne se publie ni ne se deplace a moins de 15 minutes (regle F225, alignee sur le serveur). */
+export const MIN_DEPARTURE_LEAD_MS = 15 * 60 * 1000
+
+/** Date locale « AAAA-MM-JJ » + heure « HH:MM » -> Date, ou null si l'un des deux est invalide. */
+export function departureFromFields(date: string, time: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) return null
+  const value = new Date(`${date}T${time}:00`)
+  return Number.isNaN(value.getTime()) ? null : value
+}
+
+/** Prochaine demi-heure ronde apres `from` + 15 min : valeur initiale honnete du champ heure. */
+export function nextHalfHour(from: Date = new Date()): { date: string; time: string } {
+  const d = new Date(from.getTime() + MIN_DEPARTURE_LEAD_MS)
+  d.setSeconds(0, 0)
+  const minutes = d.getMinutes()
+  if (minutes === 0 || minutes === 30) {
+    /* deja ronde */
+  } else if (minutes < 30) d.setMinutes(30)
+  else {
+    d.setMinutes(0)
+    d.setHours(d.getHours() + 1)
+  }
+  const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return { date, time }
+}
+
+/* --------------------------------------------------------------- CGU */
+
+/**
+ * Acceptation des CGU et de la politique de confidentialite a l'inscription :
+ * obligatoire, envoyee au serveur avec la version acceptee (lib/legal.ts).
+ */
+export const termsAcceptanceSchema = z.literal(true, {
+  errorMap: () => ({ message: "Vous devez accepter les conditions générales d'utilisation pour créer un compte" }),
+})
+
+export const registerSchema = z.object({
+  phone: phoneSchema,
+  firstName: z.string().trim().min(1, 'Indiquez votre prénom').max(60, '60 caractères maximum'),
+  lastName: z.string().trim().min(1, 'Indiquez votre nom').max(60, '60 caractères maximum'),
+  email: emailSchema,
+  acceptTerms: termsAcceptanceSchema,
+})
+export type RegisterValues = z.infer<typeof registerSchema>
+
