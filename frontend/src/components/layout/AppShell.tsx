@@ -13,10 +13,10 @@ import {
   Ticket,
   User,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
-import { authStore } from '@/api/client'
+import { authStore, suspensionStore } from '@/api/client'
 import { Avatar } from '@/components/ui/misc'
 import { Button } from '@/components/ui/button'
 import {
@@ -29,6 +29,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { StatusBanners } from '@/components/layout/OfflineBanner'
 import { Logo } from '@/components/layout/Logo'
+import { PAGE_TITLE_EVENT } from '@/components/layout/PageMeta'
+import { PwaInstallBanner } from '@/components/layout/PwaInstallBanner'
 import { TermsGate } from '@/features/account/TermsGate'
 import { resetSession, useIsAuthenticated, useLogout, useMe } from '@/hooks/useAuth'
 import { useUnreadMessagesCount } from '@/hooks/useMessages'
@@ -37,6 +39,7 @@ import { useTheme } from '@/hooks/useTheme'
 import { cn } from '@/lib/cn'
 import { CONTACT_EMAIL, LEGAL_PAGES } from '@/lib/legal'
 import { pageVariants } from '@/lib/motion'
+import { AccountSuspendedPage } from '@/pages/SystemPages'
 
 /** Profondeur de navigation : sert a donner sa direction a la transition. */
 const DEPTH: { match: RegExp; depth: number }[] = [
@@ -91,6 +94,22 @@ export function AppShell() {
       }),
     [navigate],
   )
+  /*
+   * Compte suspendu (403 « account-suspended » sur n'importe quel appel) : ecran
+   * dedie tant que la session dure, avec le contact du support (audit F257).
+   */
+  const [suspendedReason, setSuspendedReason] = useState<string | null>(null)
+  useEffect(
+    () =>
+      suspensionStore.subscribe((problem) => {
+        setSuspendedReason(problem.detail ?? '')
+      }),
+    [],
+  )
+  useEffect(() => {
+    if (!authed) setSuspendedReason(null)
+  }, [authed])
+
   const unread = useUnreadNotificationCount()
   const unreadMessages = useUnreadMessagesCount()
   const { mode, setTheme } = useTheme()
@@ -113,11 +132,43 @@ export function AppShell() {
     window.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' })
   }, [location.pathname, reduce])
 
+  /*
+   * Annonce du changement d'ecran (audit F317) : le titre pose par PageMeta est
+   * repete dans une zone aria-live, et le focus est place sur le h1 de l'ecran
+   * (tabIndex -1) pour que la lecture reprenne au bon endroit. Sans h1, le focus
+   * va au conteneur principal.
+   */
+  const [announcedTitle, setAnnouncedTitle] = useState('')
+  const mainRef = useRef<HTMLElement>(null)
+  const lastFocusedPath = useRef<string | null>(null)
+  useEffect(() => {
+    const onTitle = (event: Event) => setAnnouncedTitle((event as CustomEvent<string>).detail)
+    window.addEventListener(PAGE_TITLE_EVENT, onTitle)
+    return () => window.removeEventListener(PAGE_TITLE_EVENT, onTitle)
+  }, [])
+  useEffect(() => {
+    if (lastFocusedPath.current === null) {
+      // Premier rendu : le focus reste ou le navigateur l'a mis.
+      lastFocusedPath.current = location.pathname
+      return
+    }
+    if (lastFocusedPath.current === location.pathname) return
+    lastFocusedPath.current = location.pathname
+    const id = window.setTimeout(() => {
+      const target = mainRef.current?.querySelector<HTMLElement>('h1[tabindex="-1"]') ?? mainRef.current
+      target?.focus({ preventScroll: true })
+    }, 260)
+    return () => window.clearTimeout(id)
+  }, [location.pathname])
+
   const user = me
   const isAdmin = user?.role === 'ADMIN'
 
   return (
     <div className="flex min-h-dvh flex-col bg-bg">
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {announcedTitle}
+      </div>
       <a
         href="#contenu"
         className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-[var(--radius-control)] focus:bg-primary focus:px-4 focus:py-2 focus:text-on-primary"
@@ -182,11 +233,11 @@ export function AppShell() {
               <Link
                 to="/notifications"
                 aria-label={unread > 0 ? `Notifications, ${unread} non lues` : 'Notifications'}
-                className="relative flex size-10 items-center justify-center rounded-[var(--radius-control)] text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink"
+                className="relative flex size-11 items-center justify-center rounded-[var(--radius-control)] text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink"
               >
                 <Bell className="size-5" aria-hidden />
                 {unread > 0 ? (
-                  <span className="tnum absolute right-1 top-1 flex min-w-[17px] items-center justify-center rounded-full bg-danger px-1 text-[11px] font-bold leading-[17px] text-on-danger ring-2 ring-bg">
+                  <span className="tnum absolute right-1 top-1 flex min-w-[17px] items-center justify-center rounded-full bg-danger px-1 text-micro font-bold leading-[17px] text-on-danger ring-2 ring-bg">
                     {unread > 9 ? '9+' : unread}
                   </span>
                 ) : null}
@@ -196,7 +247,7 @@ export function AppShell() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
-                  className="flex size-10 items-center justify-center rounded-full text-ink-2 transition-[box-shadow,color] hover:text-ink data-[state=open]:ring-2 data-[state=open]:ring-primary-soft-2"
+                  className="flex size-11 items-center justify-center rounded-full text-ink-2 transition-[box-shadow,color] hover:text-ink data-[state=open]:ring-2 data-[state=open]:ring-primary-soft-2"
                   aria-label={authed && user ? `Menu du compte de ${user.firstName}` : 'Menu du compte'}
                 >
                   {authed && user ? (
@@ -227,6 +278,14 @@ export function AppShell() {
                         Mon compte
                       </Link>
                     </DropdownMenuItem>
+                    {/* Repli d'acces a la messagerie quand la barre basse est masquee (audit F318). */}
+                    <DropdownMenuItem asChild>
+                      <Link to="/messages">
+                        <MessageSquare aria-hidden />
+                        Messages
+                        {unreadMessages > 0 ? <UnreadPill count={unreadMessages} className="ml-auto" /> : null}
+                      </Link>
+                    </DropdownMenuItem>
                     {isAdmin ? (
                       <DropdownMenuItem asChild>
                         <Link to="/admin">
@@ -251,7 +310,10 @@ export function AppShell() {
                     <option.icon aria-hidden />
                     {option.label}
                     {mode === option.value ? (
-                      <span className="ml-auto size-1.5 rounded-full bg-primary" aria-label="Actif" />
+                      <>
+                        <span aria-hidden className="ml-auto size-1.5 rounded-full bg-primary" />
+                        <span className="sr-only">Thème actif</span>
+                      </>
                     ) : null}
                   </DropdownMenuItem>
                 ))}
@@ -281,9 +343,12 @@ export function AppShell() {
 
       <StatusBanners />
 
-      <main id="contenu" className="flex-1 pb-8 md:pb-12">
-        {/* CGU a re-accepter : tout l'ecran est bloque, sauf les pages legales elles-memes. */}
-        {authed && user?.termsAcceptanceRequired && !isLegalPath(location.pathname) ? (
+      <main id="contenu" ref={mainRef} tabIndex={-1} className="flex-1 pb-8 outline-none md:pb-12">
+        {/* Compte suspendu : rien d'autre n'est accessible, la deconnexion reste possible. */}
+        {authed && suspendedReason !== null ? (
+          <AccountSuspendedPage reason={suspendedReason || undefined} onLogout={logout} />
+        ) : authed && user?.termsAcceptanceRequired && !isLegalPath(location.pathname) ? (
+          /* CGU a re-accepter : tout l'ecran est bloque, sauf les pages legales elles-memes. */
           <TermsGate />
         ) : (
           <AnimatePresence mode="wait" custom={direction} initial={false}>
@@ -302,6 +367,7 @@ export function AppShell() {
       </main>
 
       <SiteFooter />
+      <PwaInstallBanner />
       <BottomNav unreadMessages={authed ? unreadMessages : 0} />
     </div>
   )
@@ -338,7 +404,7 @@ function UnreadPill({ count, className }: { count: number; className?: string })
   return (
     <span
       className={cn(
-        'tnum flex min-w-[17px] items-center justify-center rounded-full bg-danger px-1 text-[11px] font-bold leading-[17px] text-on-danger',
+        'tnum flex min-w-[17px] items-center justify-center rounded-full bg-danger px-1 text-micro font-bold leading-[17px] text-on-danger',
         className,
       )}
       aria-hidden
@@ -414,7 +480,7 @@ function BottomNav({ unreadMessages }: { unreadMessages: number }) {
                   >
                     <item.icon className="size-6" strokeWidth={2.4} aria-hidden />
                   </span>
-                  <span className="text-[11px] font-semibold leading-none text-primary-ink">{item.label}</span>
+                  <span className="text-micro font-semibold leading-none text-primary-ink">{item.label}</span>
                 </Link>
               ) : (
                 <Link
@@ -435,8 +501,8 @@ function BottomNav({ unreadMessages }: { unreadMessages: number }) {
                     <item.icon className="size-[22px]" strokeWidth={active ? 2.3 : 1.9} aria-hidden />
                     {badge > 0 ? <UnreadPill count={badge} className="absolute -right-1 -top-1.5 ring-2 ring-bg" /> : null}
                   </span>
-                  {/* 11 px tolere uniquement ici, conformement a la charte. */}
-                  <span className="text-[11px] font-medium leading-none">{item.label}</span>
+                  {/* Cran `text-micro` (11 px) : reserve a la barre basse et aux pastilles, conformement a la charte. */}
+                  <span className="text-micro font-medium leading-none">{item.label}</span>
                 </Link>
               )}
             </li>

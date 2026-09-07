@@ -48,8 +48,8 @@ export function DataSection() {
             <FileJson className="size-5" aria-hidden />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-[14px] font-medium text-ink">Télécharger mes données</p>
-            <p className="text-[12px] text-muted">
+            <p className="text-body font-medium text-ink">Télécharger mes données</p>
+            <p className="text-caption text-muted">
               Profil, véhicules, trajets, réservations, paiements, avis, messages envoyés et alertes, au format JSON.
               Un export par 24 h.
             </p>
@@ -64,8 +64,8 @@ export function DataSection() {
             <ScrollText className="size-5" aria-hidden />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-[14px] font-medium text-ink">Ce que nous conservons, et pourquoi</p>
-            <p className="text-[12px] text-muted">Durées de conservation, sous-traitants et vos droits, dans la politique de confidentialité.</p>
+            <p className="text-body font-medium text-ink">Ce que nous conservons, et pourquoi</p>
+            <p className="text-caption text-muted">Durées de conservation, sous-traitants et vos droits, dans la politique de confidentialité.</p>
           </div>
           <Button asChild variant="ghost" size="sm">
             <Link to={privacy?.path ?? '/confidentialite'}>Lire</Link>
@@ -76,8 +76,8 @@ export function DataSection() {
             <Mail className="size-5" aria-hidden />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-[14px] font-medium text-ink">Une question, une contestation, une rectification ?</p>
-            <p className="text-[12px] text-muted">Suppression du compte : voir la section ci-dessous, effet immédiat après confirmation.</p>
+            <p className="text-body font-medium text-ink">Une question, une contestation, une rectification ?</p>
+            <p className="text-caption text-muted">Suppression du compte : voir la section ci-dessous, effet immédiat après confirmation.</p>
           </div>
           <Button asChild variant="ghost" size="sm">
             <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>

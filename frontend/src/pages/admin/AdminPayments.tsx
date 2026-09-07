@@ -52,7 +52,7 @@ const COLUMNS: DataTableColumn<AdminPaymentResponse>[] = [
     cell: (p) => (
       <span className="block text-label text-ink-2">
         {p.refundReason ? (REASON[p.refundReason] ?? p.refundReason) : '—'}
-        {p.refundLastError ? <span className="block text-[12px] text-[var(--vermillon)]">{p.refundLastError}</span> : null}
+        {p.refundLastError ? <span className="block text-caption text-danger-ink">{p.refundLastError}</span> : null}
       </span>
     ),
   },
@@ -66,7 +66,7 @@ const COLUMNS: DataTableColumn<AdminPaymentResponse>[] = [
       <span className="font-display font-bold text-ink">
         {formatFcfa(p.refundAmount ?? p.amount)}
         {p.refundAmount !== null && p.refundAmount !== p.amount ? (
-          <span className="block text-[12px] font-normal text-muted">sur {formatFcfa(p.amount)} encaissés</span>
+          <span className="block text-caption font-normal text-muted">sur {formatFcfa(p.amount)} encaissés</span>
         ) : null}
       </span>
     ),
@@ -81,7 +81,7 @@ const COLUMNS: DataTableColumn<AdminPaymentResponse>[] = [
     cell: (p) => (
       <span className="tnum text-ink-2">
         {formatDayShort(p.refundRequestedAt ?? p.createdAt)}
-        {p.refundAttempts > 0 ? <span className="block text-[12px] text-muted">{p.refundAttempts} tentative{p.refundAttempts > 1 ? 's' : ''}</span> : null}
+        {p.refundAttempts > 0 ? <span className="block text-caption text-muted">{p.refundAttempts} tentative{p.refundAttempts > 1 ? 's' : ''}</span> : null}
       </span>
     ),
   },
@@ -173,7 +173,7 @@ export function AdminPayments() {
           rowKey={(p) => p.id}
           loading={payments.isPending}
           initialSort={{ id: 'requested', direction: 'desc' }}
-          rowAccent={(p) => (p.status === 'REFUND_MANUAL' ? 'var(--vermillon)' : p.status === 'REFUND_PENDING' ? 'var(--ocre)' : undefined)}
+          rowAccent={(p) => (p.status === 'REFUND_MANUAL' ? 'var(--danger)' : p.status === 'REFUND_PENDING' ? 'var(--accent)' : undefined)}
           empty={
             <EmptyState
               icon={Banknote}
@@ -221,7 +221,7 @@ export function AdminPayments() {
         />
       </ConfirmDialog>
 
-      <p className="mt-4 flex items-start gap-2 text-[12px] leading-relaxed text-muted">
+      <p className="mt-4 flex items-start gap-2 text-caption leading-relaxed text-muted">
         <RotateCcw className="mt-0.5 size-4 shrink-0" aria-hidden />
         Un remboursement partiel (annulation entre 24 h et l'heure du départ : 50 % retenus) n'est pas automatisable
         avec l'API Kkiapay : il se fait depuis le tableau de bord Kkiapay, puis se marque ici.

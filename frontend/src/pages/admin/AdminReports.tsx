@@ -144,9 +144,9 @@ export function AdminReports() {
                 <Card
                   className={
                     report.status === 'OPEN'
-                      ? 'border-l-[3px] border-l-[var(--vermillon)]'
+                      ? 'border-l-[3px] border-l-danger'
                       : report.status === 'IN_REVIEW'
-                        ? 'border-l-[3px] border-l-[var(--ocre)]'
+                        ? 'border-l-[3px] border-l-accent'
                         : 'border-l-[3px] border-l-rule-strong'
                   }
                 >
@@ -160,12 +160,12 @@ export function AdminReports() {
                           {priors} signalement{priors > 1 ? 's' : ''} antérieur{priors > 1 ? 's' : ''} contre cette personne
                         </Badge>
                       ) : null}
-                      <span className="ml-auto text-[12px] text-muted">{formatFromNow(report.createdAt)}</span>
+                      <span className="ml-auto text-caption text-muted">{formatFromNow(report.createdAt)}</span>
                     </div>
 
-                    <p className="mt-2.5 text-[14px] leading-relaxed text-ink">{report.detail || 'Aucune précision fournie.'}</p>
+                    <p className="mt-2.5 text-body leading-relaxed text-ink">{report.detail || 'Aucune précision fournie.'}</p>
 
-                    <dl className="mt-3 grid gap-1 text-[13px] sm:grid-cols-2">
+                    <dl className="mt-3 grid gap-1 text-label sm:grid-cols-2">
                       <div className="flex gap-1.5">
                         <dt className="text-muted">Signalé par</dt>
                         <dd className="font-medium">
@@ -202,12 +202,12 @@ export function AdminReports() {
 
                     {/* Dossier clos : la decision, qui l'a prise et quand - ce que le prochain moderateur doit lire en premier. */}
                     {isClosed(report.status) ? (
-                      <div className="mt-3 rounded-[var(--radius-control)] bg-[var(--surface-calm)] px-3 py-2.5 text-[13px]">
+                      <div className="mt-3 rounded-[var(--radius-control)] bg-surface-2 px-3 py-2.5 text-label">
                         <p className="font-medium text-ink">
                           {report.status === 'RESOLVED' ? 'Mesure prise' : 'Motif du classement'}
                         </p>
                         <p className="mt-0.5 leading-relaxed text-ink-2">{report.resolutionNote ?? '—'}</p>
-                        <p className="mt-1 text-[12px] text-muted">
+                        <p className="mt-1 text-caption text-muted">
                           {report.resolvedBy ? `Par ${report.resolvedBy.firstName} ${report.resolvedBy.lastName}` : 'Par le système'}
                           {report.resolvedAt ? ` · ${formatDateTime(report.resolvedAt)}` : ''}
                         </p>
@@ -245,7 +245,7 @@ export function AdminReports() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="text-[var(--vermillon)]"
+                        className="text-danger-ink"
                         onClick={() => setSuspension({ ...report.target, suspended: false })}
                       >
                         <Ban className="size-4" aria-hidden />
@@ -329,7 +329,7 @@ function ConversationsSheet({
           : undefined
       }
     >
-      <p className="mb-3 flex items-start gap-2 rounded-[var(--radius-control)] bg-[var(--ocre-soft)] px-3 py-2 text-[12px] leading-relaxed text-[var(--ocre-ink)]">
+      <p className="mb-3 flex items-start gap-2 rounded-[var(--radius-control)] bg-accent-soft px-3 py-2 text-caption leading-relaxed text-accent-ink">
         <Eye className="mt-0.5 size-4 shrink-0" aria-hidden />
         Accès journalisé : cette consultation d'une messagerie privée est inscrite au journal d'audit, avec votre identifiant.
       </p>
@@ -374,16 +374,16 @@ function ConversationThread({ conversation }: { conversation: AdminReportConvers
         ) : null}
       </p>
       {conversation.messages.length === 0 ? (
-        <p className="text-[13px] text-muted">Aucun message.</p>
+        <p className="text-label text-muted">Aucun message.</p>
       ) : (
         <ol className="space-y-2">
           {conversation.messages.map((message) => (
             <li key={message.id} className="rounded-[var(--radius-control)] border border-rule bg-surface px-3 py-2">
-              <p className="flex items-baseline justify-between gap-2 text-[12px]">
+              <p className="flex items-baseline justify-between gap-2 text-caption">
                 <span className="font-semibold text-ink">{names.get(message.senderId) ?? message.senderId.slice(0, 8)}</span>
                 <span className="tnum text-muted">{formatDateTime(message.createdAt)}</span>
               </p>
-              <p className="mt-1 whitespace-pre-wrap text-[13px] leading-relaxed text-ink-2">{message.body}</p>
+              <p className="mt-1 whitespace-pre-wrap text-label leading-relaxed text-ink-2">{message.body}</p>
             </li>
           ))}
         </ol>

@@ -15,7 +15,7 @@ import {
   Wallet,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { Controller, useFieldArray, useForm } from 'react-hook-form'
+import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form'
 import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { z } from 'zod'
@@ -23,35 +23,28 @@ import { ApiError } from '@/api/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Input, Label, Textarea } from '@/components/ui/input'
+import { FieldError, Input, Label, Textarea } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SegmentedToggle } from '@/components/ui/tabs'
 import { Separator, Skeleton, Stepper } from '@/components/ui/misc'
 import { Sheet } from '@/components/ui/sheet'
 import { ErrorState } from '@/components/ui/states'
+import { StepIndicator } from '@/components/feedback/StepIndicator'
 import { CityAutocomplete } from '@/components/trip/CityAutocomplete'
 import { PageContainer, PageHeader, SectionTitle } from '@/components/layout/PageContainer'
+import { PageMeta } from '@/components/layout/PageMeta'
 import { VEHICLE_FORM_ID, VehicleForm } from '@/features/account/forms/VehicleForm'
 import { useAddVehicle, useMyVehicles } from '@/hooks/useAccount'
 import { useCreateTrip } from '@/hooks/useTrips'
 import { estimateDurationMinutes, haversineKm, suggestPricePerSeat, type CityOption } from '@/lib/cities'
-import { formatDuration, formatFcfa } from '@/lib/format'
+import { BENIN_TIME_HINT, deviceClockDiffersFromBenin, formatDuration, formatFcfa, toInputDate } from '@/lib/format'
 import { describeError } from '@/lib/errors'
+import { WEEKDAYS } from '@/lib/labels'
 import { estimatePaymentPlan } from '@/lib/payments'
 import { MIN_DEPARTURE_LEAD_MS, departureFromFields, nextHalfHour } from '@/lib/validation'
 import type { CreateTripRequest, StopRequest, TripType } from '@/api/types'
 
-const WEEKDAYS = [
-  { value: 1, letter: 'L', name: 'lundi' },
-  { value: 2, letter: 'M', name: 'mardi' },
-  { value: 3, letter: 'M', name: 'mercredi' },
-  { value: 4, letter: 'J', name: 'jeudi' },
-  { value: 5, letter: 'V', name: 'vendredi' },
-  { value: 6, letter: 'S', name: 'samedi' },
-  { value: 7, letter: 'D', name: 'dimanche' },
-]
-
-const RRULE_DAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']
+const PUBLISH_STEPS = ['Trajet', 'Véhicule et prix', 'Options'] as const
 const MAX_SEATS = 8
 
 const schema = z
@@ -112,9 +105,9 @@ const schema = z
 
 type FormValues = z.infer<typeof schema>
 
+/** Jour civil au Benin : c'est dans ce fuseau que les champs date/heure sont saisis (audit F424). */
 function todayIso(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return toInputDate(new Date())
 }
 
 export function PublishTripPage() {
@@ -148,24 +141,35 @@ export function PublishTripPage() {
     },
   })
 
-  // React Compiler ne sait pas memoiser react-hook-form (avertissement
-  // `incompatible-library`) : c'est attendu, le formulaire gere son propre etat.
   const stopsField = useFieldArray({ control: form.control, name: 'stops' })
-  const values = form.watch()
+  /*
+   * Abonnements cibles (audit F242) : seuls les champs qui pilotent l'affichage
+   * re-rendent la page, pas chaque frappe dans un champ texte. Le recapitulatif de
+   * l'etape 3 lit ses propres champs plus bas.
+   */
+  const tripType = useWatch({ control: form.control, name: 'tripType' })
+  const weekdays = useWatch({ control: form.control, name: 'weekdays' })
+  const weeksCount = useWatch({ control: form.control, name: 'weeksCount' })
+  const vehicleId = useWatch({ control: form.control, name: 'vehicleId' })
+  const [date, time, seatsTotal, pricePerSeat, stopsValue] = useWatch({
+    control: form.control,
+    name: ['date', 'time', 'seatsTotal', 'pricePerSeat', 'stops'],
+  })
+  const clockDiffers = deviceClockDiffersFromBenin()
 
   const distanceKm = origin && destination ? haversineKm(origin.lat, origin.lng, destination.lat, destination.lng) : 0
   const suggestedPrice = distanceKm > 0 ? suggestPricePerSeat(distanceKm) : 0
 
   const vehicleList = vehicles.data ?? []
-  const selectedVehicle = vehicleList.find((v) => v.id === values.vehicleId)
+  const selectedVehicle = vehicleList.find((v) => v.id === vehicleId)
   // Le nombre de places est borne par le vehicule choisi (audit F226).
   const maxSeats = selectedVehicle ? Math.min(MAX_SEATS, Math.max(1, selectedVehicle.seats)) : MAX_SEATS
 
   /** Nombre de departs generes par la recurrence, affiche au recapitulatif. */
   const departuresCount = useMemo(() => {
-    if (values.tripType !== 'QUOTIDIEN') return 1
-    return Math.max(1, values.weekdays.length * values.weeksCount)
-  }, [values.tripType, values.weekdays, values.weeksCount])
+    if (tripType !== 'QUOTIDIEN') return 1
+    return Math.max(1, weekdays.length * weeksCount)
+  }, [tripType, weekdays, weeksCount])
 
   const selectVehicle = (vehicleId: string) => {
     form.setValue('vehicleId', vehicleId, { shouldValidate: true })
@@ -234,7 +238,7 @@ export function PublishTripPage() {
       // Recurrence exprimee en RRULE (RFC 5545), lisible par le backend.
       recurrenceRule:
         data.tripType === 'QUOTIDIEN' && data.weekdays.length > 0
-          ? `FREQ=WEEKLY;COUNT=${departuresCount};BYDAY=${data.weekdays.map((d) => RRULE_DAYS[d - 1]).join(',')}`
+          ? `FREQ=WEEKLY;COUNT=${departuresCount};BYDAY=${data.weekdays.map((d) => WEEKDAYS[d - 1].rrule).join(',')}`
           : undefined,
       stops: stops.length > 0 ? stops : undefined,
     }
@@ -266,22 +270,11 @@ export function PublishTripPage() {
 
   return (
     <PageContainer width="md" className="pb-12">
-      <PageHeader title="Publier un trajet" subtitle={`Étape ${step + 1} sur 3`} />
+      <PageMeta title="Publier un trajet" noindex />
+      <PageHeader title="Publier un trajet" subtitle="Trois étapes : trajet, véhicule et prix, options." />
 
-      {/* Progression : trois segments pleins, sans decor. */}
-      <div className="mb-5 flex gap-1.5" role="progressbar" aria-valuenow={step + 1} aria-valuemin={1} aria-valuemax={3} aria-label="Progression de la publication">
-        {[0, 1, 2].map((index) => (
-          <span key={index} className="h-1 flex-1 overflow-hidden rounded-full bg-rule-strong">
-            <m.span
-              className="block h-full rounded-full bg-[var(--indigo)]"
-              initial={false}
-              animate={{ scaleX: index <= step ? 1 : 0 }}
-              style={{ originX: 0 }}
-              transition={{ duration: 0.3 }}
-            />
-          </span>
-        ))}
-      </div>
+      {/* Meme indicateur d'etapes que la reservation (audit F331). */}
+      <StepIndicator steps={PUBLISH_STEPS} current={step} label="Étapes de la publication" />
 
       <form onSubmit={submit} noValidate>
         <AnimatePresence mode="wait" custom={direction}>
@@ -346,7 +339,7 @@ export function PublishTripPage() {
                 </div>
 
                 {distanceKm > 0 ? (
-                  <p className="tnum mt-3 flex items-center gap-1.5 rounded-[var(--radius-control)] bg-[var(--surface-calm)] px-3 py-2 text-[13px] text-ink-2">
+                  <p className="tnum mt-3 flex items-center gap-1.5 rounded-[var(--radius-control)] bg-surface-2 px-3 py-2 text-label text-ink-2">
                     <Info className="size-3.5 shrink-0" aria-hidden />≈ {Math.round(distanceKm)} km ·{' '}
                     {formatDuration(estimateDurationMinutes(distanceKm))} de route (estimation)
                   </p>
@@ -355,7 +348,7 @@ export function PublishTripPage() {
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   <Input
                     type="date"
-                    label={values.tripType === 'QUOTIDIEN' ? 'Premier départ' : 'Date'}
+                    label={tripType === 'QUOTIDIEN' ? 'Premier départ' : 'Date'}
                     min={todayIso()}
                     leading={<CalendarDays />}
                     error={form.formState.errors.date?.message}
@@ -363,8 +356,8 @@ export function PublishTripPage() {
                   />
                   <Input
                     type="time"
-                    label="Heure de départ"
-                    hint="Au moins 15 minutes à l'avance."
+                    label={clockDiffers ? `Heure de départ (${BENIN_TIME_HINT})` : 'Heure de départ'}
+                    hint={clockDiffers ? "Au moins 15 minutes à l'avance, en heure du Bénin." : "Au moins 15 minutes à l'avance."}
                     error={form.formState.errors.time?.message}
                     {...form.register('time')}
                   />
@@ -372,7 +365,7 @@ export function PublishTripPage() {
               </Card>
 
               {/* Récurrence : uniquement en mode quotidien */}
-              {values.tripType === 'QUOTIDIEN' ? (
+              {tripType === 'QUOTIDIEN' ? (
                 <Card className="p-4">
                   <SectionTitle>Récurrence</SectionTitle>
                   <Controller
@@ -380,7 +373,7 @@ export function PublishTripPage() {
                     name="weekdays"
                     render={({ field }) => (
                       <fieldset>
-                        <legend className="mb-2 text-[13px] font-medium text-ink-2">Jours de circulation</legend>
+                        <legend className="mb-2 text-label font-medium text-ink-2">Jours de circulation</legend>
                         <div className="flex gap-1.5">
                           {WEEKDAYS.map((day) => {
                             const active = field.value.includes(day.value)
@@ -399,8 +392,8 @@ export function PublishTripPage() {
                                 }
                                 className={
                                   active
-                                    ? 'flex size-11 flex-1 items-center justify-center rounded-[var(--radius-control)] bg-[var(--indigo)] font-display text-[15px] font-bold text-[var(--indigo-contrast)] transition-transform active:scale-95'
-                                    : 'flex size-11 flex-1 items-center justify-center rounded-[var(--radius-control)] border border-rule-strong bg-surface font-display text-[15px] font-bold text-muted transition-transform active:scale-95'
+                                    ? 'flex size-11 flex-1 items-center justify-center rounded-[var(--radius-control)] bg-primary font-display text-base font-bold text-on-primary transition-transform active:scale-95'
+                                    : 'flex size-11 flex-1 items-center justify-center rounded-[var(--radius-control)] border border-field-border bg-surface font-display text-base font-bold text-muted transition-transform active:scale-95'
                                 }
                               >
                                 {day.letter}
@@ -420,8 +413,8 @@ export function PublishTripPage() {
                     render={({ field }) => (
                       <div className="flex items-center justify-between gap-4">
                         <div>
-                          <span className="text-[14px] font-medium">Répéter pendant</span>
-                          <p className="text-[12px] text-muted">Nombre de semaines</p>
+                          <span className="text-body font-medium">Répéter pendant</span>
+                          <p className="text-caption text-muted">Nombre de semaines</p>
                         </div>
                         <Stepper
                           value={field.value}
@@ -430,12 +423,14 @@ export function PublishTripPage() {
                           max={26}
                           label="semaines"
                           suffix="sem."
+                          decrementLabel="Une semaine de moins"
+                          incrementLabel="Une semaine de plus"
                         />
                       </div>
                     )}
                   />
 
-                  <p className="mt-3 flex items-center gap-2 rounded-[var(--radius-control)] bg-[var(--indigo-soft)] px-3 py-2.5 text-[13px] font-medium text-[var(--indigo-deep)]">
+                  <p className="mt-3 flex items-center gap-2 rounded-[var(--radius-control)] bg-primary-soft px-3 py-2.5 text-label font-medium text-primary-ink">
                     <Repeat className="size-4 shrink-0" aria-hidden />
                     <span className="tnum">
                       {departuresCount} départ{departuresCount > 1 ? 's' : ''} au total, publiés 14 jours à l'avance.
@@ -479,9 +474,9 @@ export function PublishTripPage() {
                     onRetry={() => vehicles.refetch()}
                   />
                 ) : vehicleList.length === 0 ? (
-                  <div className="rounded-[var(--radius-control)] border border-dashed border-rule-strong p-4 text-center">
+                  <div className="rounded-[var(--radius-control)] border border-dashed border-field-border p-4 text-center">
                     <Car className="mx-auto size-6 text-muted" aria-hidden />
-                    <p className="mt-2 text-[14px] text-ink-2">Aucun véhicule enregistré.</p>
+                    <p className="mt-2 text-body text-ink-2">Aucun véhicule enregistré.</p>
                     {/* La feuille s'ouvre ici : le formulaire de publication n'est pas perdu (audit F226). */}
                     <Button variant="secondary" size="sm" type="button" className="mt-3" onClick={() => setVehicleSheetOpen(true)}>
                       Ajouter un véhicule
@@ -506,11 +501,7 @@ export function PublishTripPage() {
                             ))}
                           </SelectContent>
                         </Select>
-                        {form.formState.errors.vehicleId ? (
-                          <p role="alert" className="text-[12px] font-medium text-[var(--vermillon)]">
-                            {form.formState.errors.vehicleId.message}
-                          </p>
-                        ) : null}
+                        {form.formState.errors.vehicleId ? <FieldError>{form.formState.errors.vehicleId.message}</FieldError> : null}
                       </div>
                     )}
                   />
@@ -524,14 +515,22 @@ export function PublishTripPage() {
                   render={({ field }) => (
                     <div className="flex items-center justify-between gap-4">
                       <div>
-                        <span className="text-[14px] font-medium">Places proposées</span>
-                        <p className="text-[12px] text-muted">
+                        <span className="text-body font-medium">Places proposées</span>
+                        <p className="text-caption text-muted">
                           {selectedVehicle
                             ? `Hors conducteur · ${maxSeats} au plus dans ce véhicule`
                             : 'Hors conducteur'}
                         </p>
                       </div>
-                      <Stepper value={Math.min(field.value, maxSeats)} onChange={field.onChange} min={1} max={maxSeats} label="places" />
+                      <Stepper
+                        value={Math.min(field.value, maxSeats)}
+                        onChange={field.onChange}
+                        min={1}
+                        max={maxSeats}
+                        label="places"
+                        decrementLabel="Une place de moins"
+                        incrementLabel="Une place de plus"
+                      />
                     </div>
                   )}
                 />
@@ -553,22 +552,22 @@ export function PublishTripPage() {
                         onChange={(event) => field.onChange(Number(event.target.value) || 0)}
                         leading={<Wallet />}
                         error={form.formState.errors.pricePerSeat?.message}
-                        className="tnum font-display text-[17px] font-bold"
+                        className="tnum font-display text-title font-bold"
                         aria-label="Prix par place en FCFA"
                       />
                       {suggestedPrice > 0 ? (
-                        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-[var(--radius-control)] bg-[var(--surface-calm)] px-3 py-2.5">
-                          <span className="text-[13px] text-ink-2">
+                        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-[var(--radius-control)] bg-surface-2 px-3 py-2.5">
+                          <span className="text-label text-ink-2">
                             Prix conseillé pour {Math.round(distanceKm)} km :
                           </span>
-                          <span className="tnum font-display text-[15px] font-bold">
+                          <span className="tnum font-display text-base font-bold">
                             {formatFcfa(suggestedPrice)}
                           </span>
                           {field.value !== suggestedPrice ? (
                             <button
                               type="button"
                               onClick={() => field.onChange(suggestedPrice)}
-                              className="ml-auto text-[13px] font-semibold text-[var(--indigo)] underline-offset-4 hover:underline"
+                              className="ml-auto min-h-8 text-label font-semibold text-primary-ink underline-offset-4 hover:underline"
                             >
                               Appliquer
                             </button>
@@ -580,7 +579,7 @@ export function PublishTripPage() {
                           )}
                         </div>
                       ) : null}
-                      <p className="mt-2 text-[12px] leading-relaxed text-muted">
+                      <p className="mt-2 text-caption leading-relaxed text-muted">
                         Un prix proche du conseil augmente nettement les réservations. Le passager règle un acompte
                         en ligne ; vous encaissez environ{' '}
                         {formatFcfa(estimatePaymentPlan(field.value, 'MOMO_DEPOSIT').balanceAmount)} en espèces à
@@ -604,7 +603,7 @@ export function PublishTripPage() {
                         const suggested = previous > 0 ? previous : Math.max(100, Math.round(form.getValues('pricePerSeat') / 200) * 100)
                         stopsField.append({ label: '', lat: undefined as unknown as number, lng: undefined as unknown as number, priceFromOrigin: suggested, time: '' })
                       }}
-                      className="flex items-center gap-1 text-[13px] font-semibold text-[var(--indigo)] underline-offset-4 hover:underline"
+                      className="flex min-h-8 items-center gap-1 text-label font-semibold text-primary-ink underline-offset-4 hover:underline"
                     >
                       <Plus className="size-3.5" aria-hidden />
                       Ajouter
@@ -614,7 +613,7 @@ export function PublishTripPage() {
                   Arrêts intermédiaires
                 </SectionTitle>
                 {stopsField.fields.length === 0 ? (
-                  <p className="text-[13px] text-muted">
+                  <p className="text-label text-muted">
                     Facultatif. Un arrêt permet de prendre des passagers en cours de route, avec leur propre tarif et,
                     si vous le souhaitez, une heure de passage.
                   </p>
@@ -655,7 +654,7 @@ export function PublishTripPage() {
                             type="button"
                             onClick={() => stopsField.remove(index)}
                             aria-label={`Supprimer l'arrêt ${index + 1}`}
-                            className="flex size-11 shrink-0 items-center justify-center rounded-[var(--radius-control)] text-muted transition-colors hover:bg-[var(--vermillon-soft)] hover:text-[var(--vermillon)]"
+                            className="flex size-11 shrink-0 items-center justify-center rounded-[var(--radius-control)] text-muted transition-colors hover:bg-danger-soft hover:text-danger-ink"
                           >
                             <Trash2 className="size-4" aria-hidden />
                           </button>
@@ -710,23 +709,24 @@ export function PublishTripPage() {
               {/* Récapitulatif */}
               <Card className="p-4">
                 <SectionTitle>Récapitulatif</SectionTitle>
-                <dl className="space-y-2 text-[14px]">
+                <dl className="space-y-2 text-body">
                   <SummaryRow label="Trajet">
                     {origin?.label ?? '—'} → {destination?.label ?? '—'}
                   </SummaryRow>
                   <SummaryRow label="Type">
-                    {values.tripType === 'QUOTIDIEN' ? 'Navette quotidienne' : 'Interurbain'}
+                    {tripType === 'QUOTIDIEN' ? 'Navette quotidienne' : 'Interurbain'}
                   </SummaryRow>
                   <SummaryRow label="Premier départ">
-                    {values.date} à {values.time}
+                    {date} à {time}
+                    {clockDiffers ? ` (${BENIN_TIME_HINT})` : ''}
                   </SummaryRow>
-                  {values.tripType === 'QUOTIDIEN' ? (
+                  {tripType === 'QUOTIDIEN' ? (
                     <SummaryRow label="Jours">
-                      {values.weekdays.length === 0
+                      {weekdays.length === 0
                         ? 'Aucun'
-                        : WEEKDAYS.filter((d) => values.weekdays.includes(d.value))
-                            .map((d) => d.letter)
-                            .join(' ')}
+                        : WEEKDAYS.filter((d) => weekdays.includes(d.value))
+                            .map((d) => d.short)
+                            .join(', ')}
                     </SummaryRow>
                   ) : null}
                   {selectedVehicle ? (
@@ -734,26 +734,26 @@ export function PublishTripPage() {
                       {selectedVehicle.brand} {selectedVehicle.model}
                     </SummaryRow>
                   ) : null}
-                  <SummaryRow label="Places">{values.seatsTotal}</SummaryRow>
-                  <SummaryRow label="Prix par place">{formatFcfa(values.pricePerSeat)}</SummaryRow>
-                  {values.stops.length > 0 ? (
+                  <SummaryRow label="Places">{seatsTotal}</SummaryRow>
+                  <SummaryRow label="Prix par place">{formatFcfa(pricePerSeat)}</SummaryRow>
+                  {stopsValue.length > 0 ? (
                     <SummaryRow label="Arrêts">
-                      {values.stops.map((s) => (s.time ? `${s.label} (${s.time})` : s.label)).join(', ')}
+                      {stopsValue.map((s) => (s.time ? `${s.label} (${s.time})` : s.label)).join(', ')}
                     </SummaryRow>
                   ) : null}
                 </dl>
 
-                <p className="mt-3 text-[12px] leading-relaxed text-muted">
+                <p className="mt-3 text-caption leading-relaxed text-muted">
                   Les passagers réservent directement : une place est confirmée dès que l'acompte est reçu (ou
                   immédiatement en espèces). Vous retrouvez la liste d'appel dans « Mes trajets ».
                 </p>
 
-                <div className="mt-4 flex items-center gap-2 rounded-[var(--radius-control)] bg-[var(--indigo-soft)] px-3 py-3">
-                  <Repeat className="size-4 shrink-0 text-[var(--indigo-deep)]" aria-hidden />
-                  <span className="tnum text-[14px] font-semibold text-[var(--indigo-deep)]">
+                <div className="mt-4 flex items-center gap-2 rounded-[var(--radius-control)] bg-primary-soft px-3 py-3">
+                  <Repeat className="size-4 shrink-0 text-primary-ink" aria-hidden />
+                  <span className="tnum text-body font-semibold text-primary-ink">
                     {departuresCount} départ{departuresCount > 1 ? 's' : ''} publié
                     {departuresCount > 1 ? 's' : ''} · revenu potentiel{' '}
-                    {formatFcfa(departuresCount * values.seatsTotal * values.pricePerSeat)}
+                    {formatFcfa(departuresCount * seatsTotal * pricePerSeat)}
                   </span>
                 </div>
               </Card>

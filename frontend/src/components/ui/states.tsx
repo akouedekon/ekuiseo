@@ -6,6 +6,9 @@ import { Button } from './button'
 import { Card } from './card'
 import { Skeleton } from './misc'
 
+/** Niveau de titre d'un etat (h2 par defaut : un etat vide est une section de la page, audit F330). */
+export type HeadingLevel = 'h1' | 'h2' | 'h3' | 'h4'
+
 /** Etat vide : jamais un simple texte gris, toujours une action a portee. */
 export function EmptyState({
   icon: Icon,
@@ -13,12 +16,14 @@ export function EmptyState({
   description,
   action,
   className,
+  headingLevel: Heading = 'h2',
 }: {
   icon: LucideIcon
   title: string
   description?: string
   action?: ReactNode
   className?: string
+  headingLevel?: HeadingLevel
 }) {
   return (
     <div className={cn('relative flex flex-col items-center gap-3 overflow-hidden px-6 py-12 text-center', className)}>
@@ -27,7 +32,7 @@ export function EmptyState({
         <Icon className="size-6" aria-hidden />
       </span>
       <div className="relative max-w-xs">
-        <h3 className="font-display text-title font-bold tracking-[-0.02em]">{title}</h3>
+        <Heading className="font-display text-title font-bold tracking-[-0.02em]">{title}</Heading>
         {description ? <p className="mt-1 text-body leading-relaxed text-muted">{description}</p> : null}
       </div>
       {action ? <div className="relative mt-1">{action}</div> : null}
@@ -35,17 +40,23 @@ export function EmptyState({
   )
 }
 
-/** Erreur de chargement, avec reessai explicite (reseau irregulier). */
+/**
+ * Erreur de chargement. Le bouton « Reessayer » n'apparait que si l'appelant le
+ * fournit : pour une erreur definitive (400, 403, 404), passer `onRetry`
+ * `undefined` et une description issue de `describeError` (audit F246).
+ */
 export function ErrorState({
   title = 'Chargement impossible',
   description = "Vérifiez votre connexion, puis réessayez.",
   onRetry,
   className,
+  headingLevel: Heading = 'h2',
 }: {
   title?: string
   description?: string
   onRetry?: () => void
   className?: string
+  headingLevel?: HeadingLevel
 }) {
   return (
     <div className={cn('flex flex-col items-center gap-3 px-6 py-10 text-center', className)} role="alert">
@@ -53,7 +64,7 @@ export function ErrorState({
         <AlertTriangle className="size-6" aria-hidden />
       </span>
       <div className="max-w-xs">
-        <h3 className="font-display text-title font-bold tracking-[-0.02em]">{title}</h3>
+        <Heading className="font-display text-title font-bold tracking-[-0.02em]">{title}</Heading>
         <p className="mt-1 text-body leading-relaxed text-muted">{description}</p>
       </div>
       {onRetry ? (
@@ -80,11 +91,13 @@ export function OfflineState({
   description = "Cet écran n'a pas encore été enregistré sur cet appareil. Il s'affichera dès que la connexion reviendra.",
   onRetry,
   className,
+  headingLevel: Heading = 'h2',
 }: {
   title?: string
   description?: string
   onRetry?: () => void
   className?: string
+  headingLevel?: HeadingLevel
 }) {
   return (
     <div className={cn('flex flex-col items-center gap-3 px-6 py-10 text-center', className)} role="status">
@@ -92,7 +105,7 @@ export function OfflineState({
         <WifiOff className="size-6" aria-hidden />
       </span>
       <div className="max-w-xs">
-        <h3 className="font-display text-title font-bold tracking-[-0.02em]">{title}</h3>
+        <Heading className="font-display text-title font-bold tracking-[-0.02em]">{title}</Heading>
         <p className="mt-1 text-body leading-relaxed text-muted">{description}</p>
       </div>
       {onRetry ? (
@@ -104,8 +117,28 @@ export function OfflineState({
   )
 }
 
+/**
+ * Chargement qui s'eternise (audit F252) : apres 8 s, le squelette seul ressemble
+ * a un ecran mort. Ce message, annonce par `role="status"`, dit que l'application
+ * continue d'essayer - a afficher au-dessus du squelette, jamais a sa place.
+ */
+export function SlowNetworkNotice({ className }: { className?: string }) {
+  return (
+    <p
+      role="status"
+      className={cn(
+        'flex items-center gap-2 rounded-[var(--radius-control)] bg-accent-soft px-3 py-2 text-label font-medium text-accent-ink',
+        className,
+      )}
+    >
+      <WifiOff className="size-4 shrink-0" aria-hidden />
+      Le réseau est lent, nous continuons d'essayer.
+    </p>
+  )
+}
+
 /** Squelette de carte trajet : reprend exactement la metrique de TripCard. */
-export function TripCardSkeleton() {
+function TripCardSkeleton() {
   return (
     <Card className="p-4">
       <div className="flex items-start justify-between gap-4">

@@ -102,8 +102,8 @@ export function OtpInput({
           aria-invalid={error || undefined}
           className={cn(
             'tnum h-14 w-full min-w-0 rounded-[var(--radius-control)] border-2 bg-surface text-center font-display text-2xl font-bold text-ink transition-colors',
-            'focus:border-[var(--indigo)] focus:outline-none',
-            error ? 'border-[var(--vermillon)]' : value[index] ? 'border-[var(--indigo)]' : 'border-rule-strong',
+            'focus:border-primary focus:outline-none',
+            error ? 'border-danger' : value[index] ? 'border-primary' : 'border-rule-strong',
             disabled && 'opacity-60',
           )}
         />

@@ -114,7 +114,10 @@ export interface BookingQuoteRequest {
 
 export interface PaymentStatusResponse {
   paymentId: string
-  bookingId: string
+  /** Reservation reglee ; null pour un paiement d'abonnement. */
+  bookingId: string | null
+  /** Abonnement regle ; null pour un acompte de reservation. */
+  subscriptionId?: string | null
   transactionRef: string
   provider: PaymentProvider | null
   status: PaymentStatus
@@ -195,15 +198,22 @@ export interface IdentityVerificationResponse {
 
 /* ------------------------------------------------------------ Geocodage */
 
-/** Lieu du referentiel serveur (GET /api/v1/geo/search, migration V3). */
+/**
+ * Lieu du referentiel serveur (GET /api/v1/geo/places, liste complete publique
+ * mise en cache 24 h ; GET /api/v1/geo/search pour une recherche). Le referentiel
+ * `geo_places` est la seule source des villes (audit F411) ; `parentName` porte la
+ * ville de rattachement d'un quartier ou d'une gare (« Agla — Cotonou », audit F422).
+ */
 export interface GeoPlaceResponse {
   id: string
   name: string
   region: string | null
-  countryCode: string
-  kind: 'CITY' | 'DISTRICT'
+  countryCode?: string
+  kind: 'CITY' | 'DISTRICT' | 'STATION'
   lat: number
   lng: number
+  parentId?: string | null
+  parentName?: string | null
 }
 
 /** Axe le plus propose en ce moment (GET /api/v1/trips/popular), raccourcis de l'accueil. */
@@ -249,7 +259,8 @@ export interface TripAlertRequest {
   destLng: number
   date: string | null
   seats: number
-  tripType: TripType
+  /** null = tous les modes (recherche lancee sans `type`). */
+  tripType: TripType | null
 }
 
 /** GET /api/v1/trip-alerts (liste), POST (200 si une alerte identique est reutilisee, 422 au-dela de 10), DELETE /{id} → 204. */
@@ -377,6 +388,41 @@ export interface AdminLiquidityResponse {
     searchesWithoutResults: number
     lastSearchedAt: string | null
   }[]
+}
+
+/**
+ * Retention, paiement et panier : GET /api/v1/admin/stats/retention?days=N
+ * (export CSV sur /retention/export). Les taux sont des fractions 0..1 (ou null
+ * quand la cohorte est vide) calcules en SQL agrege cote serveur, jamais ici ;
+ * `previous` porte les memes scalaires sur la periode precedente pour la variation.
+ */
+export interface AdminRetentionScalars {
+  /** Conducteurs ayant republie la semaine suivant leur premiere publication / cohorte. */
+  driverRetentionW1: number | null
+  /** Idem, quatre semaines apres. */
+  driverRetentionW4: number | null
+  /** Passagers ayant reserve a nouveau sous 30 jours. */
+  passengerRetention30d: number | null
+  /** Part des reservations en mode quotidien. */
+  dailyModeShare: number | null
+  activeRecurringTemplates: number
+  /** Places reellement remplies par occurrence de navette, en moyenne. */
+  avgFilledSeatsPerOccurrence: number | null
+  /** Reservations dont l'acompte a ete encaisse / reservations en mobile money. */
+  bookingToDepositRate: number | null
+  /** Reservations expirees faute d'acompte sous 20 min / reservations en mobile money. */
+  expiredBookingShare: number | null
+  averageBasketFcfa: number | null
+  seatsPerBooking: number | null
+}
+
+export interface AdminRetentionResponse extends AdminRetentionScalars {
+  days: number
+  /** Tentatives et echecs Kkiapay par operateur : une panne MTN doit se voir en minutes. */
+  kkiapayFailureByOperator: { operator: PaymentProvider | string; attempts: number; failures: number }[]
+  /** Repartition des modes de paiement ; la part CASH echappe a la commission. */
+  paymentMethodShare: { method: PaymentMethod; count: number; amountFcfa: number }[]
+  previous: AdminRetentionScalars
 }
 
 export type ReportStatus = 'OPEN' | 'IN_REVIEW' | 'RESOLVED' | 'DISMISSED'
@@ -625,6 +671,10 @@ export interface AdminUserResponse {
   createdAt: string
   identityVerified: boolean
   phoneVerified: boolean
+  /** L'adresse a recu et valide un code de connexion. */
+  emailVerified?: boolean
+  /** Derniere ouverture de session ; null pour un compte jamais connecte. */
+  lastLoginAt?: string | null
   suspended: boolean
   /**
    * Compte anonymise (droit a l'effacement) : profil remplace, connexion impossible.
@@ -696,6 +746,8 @@ export interface AdminUserDetailResponse {
     documentLast4: string | null
   } | null
   identityVerified: boolean
+  emailVerified?: boolean
+  lastLoginAt?: string | null
   vehicles: AdminUserVehicle[]
   paymentAccounts: AdminUserPaymentAccount[]
   tripsPublished: number

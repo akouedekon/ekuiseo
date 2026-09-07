@@ -11,13 +11,13 @@ import { ErrorState } from '@/components/ui/states'
 import { SectionTitle } from '@/components/layout/PageContainer'
 import { apiClient } from '@/api/client'
 import { useMySubscription, useSubscribe } from '@/hooks/useAccount'
-import { describeError } from '@/lib/errors'
+import { useKkiapayCheckout } from '@/hooks/useKkiapayCheckout'
 import { formatDayShort, formatFcfa } from '@/lib/format'
-import { openKkiapay } from '@/lib/kkiapay'
 import type { PaymentStatusResponse } from '@/api/extended'
 import type { UserResponse } from '@/api/types'
 
 const PENDING_CONFIRM_KEY = 'ekuiseo.subscription.pendingConfirm'
+const SUBSCRIPTION_KEY = ['me', 'subscription'] as const
 
 function readPendingConfirm(): { paymentId: string; transactionId: string } | null {
   try {
@@ -46,30 +46,48 @@ function clearPendingConfirm() {
 
 /**
  * Abonnement conducteur (regle metier n.10) : 2 000 FCFA/mois, commission
- * ramenee a 0 %. Le paiement passe par le widget Kkiapay, puis le serveur
- * reverifie la transaction (POST /payments/{id}/confirm) avant d'activer.
+ * ramenee a 0 %. Le paiement passe par le parcours Kkiapay partage avec la
+ * reservation (useKkiapayCheckout, audit F243) : le serveur reverifie la
+ * transaction (POST /payments/{id}/confirm) avant d'activer.
  */
 export function SubscriptionSection({ user }: { user: UserResponse }) {
   const subscription = useMySubscription()
   const subscribe = useSubscribe()
   const queryClient = useQueryClient()
   const [confirmOpen, setConfirmOpen] = useState(false)
-  const [paying, setPaying] = useState(false)
 
-  /*
-   * Reprise : si le widget a reussi mais que la confirmation serveur a echoue (reseau,
-   * onglet ferme), paymentId + transactionId sont conserves pour rejouer /confirm avec
-   * le MEME paiement au lieu d'en creer un nouveau (constat F206).
-   */
+  const checkout = useKkiapayCheckout({
+    initiate: () => subscribe.mutateAsync(),
+    payer: user,
+    invalidate: [SUBSCRIPTION_KEY],
+    onConfirmed: (status) => {
+      clearPendingConfirm()
+      if (status.status === 'SUCCEEDED') {
+        toast.success('Abonnement activé', { description: 'Plus aucune commission sur vos trajets ce mois-ci.' })
+      } else {
+        toast.message('Paiement en cours de vérification', {
+          description: "L'abonnement s'activera dès que l'opérateur aura confirmé. Vous serez prévenu.",
+        })
+      }
+    },
+    /*
+     * Reprise : si le widget a reussi mais que la confirmation serveur a echoue (reseau,
+     * onglet ferme), paymentId + transactionId sont conserves pour rejouer /confirm avec
+     * le MEME paiement au lieu d'en creer un nouveau (constat F206).
+     */
+    onUnlinked: (transactionId, payment) => savePendingConfirm({ paymentId: payment.paymentId, transactionId }),
+    onFailed: () => void queryClient.invalidateQueries({ queryKey: SUBSCRIPTION_KEY }),
+  })
+
   useEffect(() => {
     const raw = readPendingConfirm()
     if (!raw) return
     apiClient
-      .post<PaymentStatusResponse>(`/api/v1/payments//confirm`, { transactionId: raw.transactionId })
+      .post<PaymentStatusResponse>(`/api/v1/payments/${raw.paymentId}/confirm`, { transactionId: raw.transactionId })
       .then(async (status) => {
         if (status.status === 'SUCCEEDED') {
           clearPendingConfirm()
-          await queryClient.invalidateQueries({ queryKey: ['me', 'subscription'] })
+          await queryClient.invalidateQueries({ queryKey: SUBSCRIPTION_KEY })
           toast.success('Abonnement activé', { description: 'Votre paiement précédent a été retrouvé et confirmé.' })
         } else if (status.status === 'FAILED') {
           clearPendingConfirm()
@@ -77,44 +95,6 @@ export function SubscriptionSection({ user }: { user: UserResponse }) {
       })
       .catch(() => undefined)
   }, [queryClient])
-
-  const start = async () => {
-    setConfirmOpen(false)
-    setPaying(true)
-    let pending: { paymentId: string; transactionId: string } | null = null
-    try {
-      const payment = await subscribe.mutateAsync()
-      const result = await openKkiapay({
-        amount: payment.amount,
-        publicKey: payment.kkiapayPublicKey,
-        sandbox: payment.sandbox,
-        phone: user.phone,
-        name: `${user.firstName} ${user.lastName}`.trim(),
-        email: user.email ?? undefined,
-        data: payment.widgetData,
-      })
-      pending = { paymentId: payment.paymentId, transactionId: result.transactionId }
-      savePendingConfirm(pending)
-      await apiClient.post<PaymentStatusResponse>(`/api/v1/payments//confirm`, {
-        transactionId: result.transactionId,
-      })
-      clearPendingConfirm()
-      await queryClient.invalidateQueries({ queryKey: ['me', 'subscription'] })
-      toast.success('Abonnement activé', { description: 'Plus aucune commission sur vos trajets ce mois-ci.' })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : ''
-      if (message.startsWith('Kkiapay :')) {
-        toast.error('La fenêtre de paiement ne peut pas s’ouvrir', {
-          description: 'Vérifiez votre connexion ou un éventuel bloqueur de contenu, puis réessayez.',
-        })
-      } else {
-        toast.error(describeError(error, "Le paiement n'a pas abouti. Aucun montant n'a été débité."))
-      }
-      await queryClient.invalidateQueries({ queryKey: ['me', 'subscription'] })
-    } finally {
-      setPaying(false)
-    }
-  }
 
   if (subscription.isPending) return <Skeleton className="h-32 rounded-[var(--radius-card)]" />
   if (subscription.isError) return <ErrorState onRetry={() => subscription.refetch()} />
@@ -132,7 +112,7 @@ export function SubscriptionSection({ user }: { user: UserResponse }) {
           <span
             className={
               active
-                ? 'flex size-11 shrink-0 items-center justify-center rounded-full bg-[var(--vert-soft)] text-[var(--vert)]'
+                ? 'flex size-11 shrink-0 items-center justify-center rounded-full bg-success-soft text-success-ink'
                 : 'flex size-11 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary-ink'
             }
           >
@@ -154,7 +134,7 @@ export function SubscriptionSection({ user }: { user: UserResponse }) {
           </div>
         </div>
         {!active ? (
-          <Button block className="mt-4" onClick={() => setConfirmOpen(true)} loading={paying || subscribe.isPending}>
+          <Button block className="mt-4" onClick={() => setConfirmOpen(true)} loading={checkout.busy || subscribe.isPending}>
             {data.status === 'PENDING_PAYMENT' ? 'Reprendre le paiement' : `S'abonner pour ${formatFcfa(data.priceFcfa)}`}
           </Button>
         ) : null}
@@ -166,7 +146,10 @@ export function SubscriptionSection({ user }: { user: UserResponse }) {
         title="Activer l'abonnement conducteur ?"
         description={`${formatFcfa(data.priceFcfa)} seront débités par mobile money via Kkiapay. L'abonnement dure 30 jours et ne se renouvelle pas automatiquement.`}
         confirmLabel={`Payer ${formatFcfa(data.priceFcfa)}`}
-        onConfirm={start}
+        onConfirm={() => {
+          setConfirmOpen(false)
+          void checkout.start()
+        }}
       />
     </section>
   )

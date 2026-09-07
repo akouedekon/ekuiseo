@@ -9,6 +9,7 @@ import type {
   AdminPayoutResponse,
   AdminReportConversationResponse,
   AdminReportResponse,
+  AdminRetentionResponse,
   AdminStatsResponse,
   AdminUserBookingResponse,
   AdminUserDetailResponse,
@@ -62,7 +63,7 @@ function toQuery(params: Record<string, string | number | undefined>): string {
 export function useAdminStats(days: number, enabled = true) {
   return useQuery<AdminStatsResponse>({
     queryKey: ['admin', 'stats', days],
-    queryFn: () => apiClient.get<AdminStatsResponse>(`/api/v1/admin/stats?days=${days}`),
+    queryFn: ({ signal }) => apiClient.get<AdminStatsResponse>(`/api/v1/admin/stats?days=${days}`, { signal }),
     staleTime: 5 * 60_000,
     enabled,
   })
@@ -72,7 +73,7 @@ export function useAdminStats(days: number, enabled = true) {
 export function useAdminLiquidity(days: number, enabled = true) {
   return useQuery<AdminLiquidityResponse>({
     queryKey: ['admin', 'liquidity', days],
-    queryFn: () => apiClient.get<AdminLiquidityResponse>(`/api/v1/admin/stats/liquidity?days=${days}`),
+    queryFn: ({ signal }) => apiClient.get<AdminLiquidityResponse>(`/api/v1/admin/stats/liquidity?days=${days}`, { signal }),
     staleTime: 5 * 60_000,
     enabled,
   })
@@ -83,6 +84,21 @@ export function downloadLiquidityCsv(days: number): Promise<void> {
   return downloadFile(`/api/v1/admin/stats/liquidity/export?days=${days}`, `liquidite-${days}j.csv`)
 }
 
+/** GET /api/v1/admin/stats/retention?days=N : retention, paiement et panier, avec la periode precedente. */
+export function useAdminRetention(days: number, enabled = true) {
+  return useQuery<AdminRetentionResponse>({
+    queryKey: ['admin', 'retention', days],
+    queryFn: ({ signal }) => apiClient.get<AdminRetentionResponse>(`/api/v1/admin/stats/retention?days=${days}`, { signal }),
+    staleTime: 5 * 60_000,
+    enabled,
+  })
+}
+
+/** GET /api/v1/admin/stats/retention/export?days=N (CSV). */
+export function downloadRetentionCsv(days: number): Promise<void> {
+  return downloadFile(`/api/v1/admin/stats/retention/export?days=${days}`, `retention-${days}j.csv`)
+}
+
 /**
  * GET /api/v1/admin/overview : files d'attente (signalements, verifications,
  * reversements, remboursements). Rafraichi chaque minute tant que le back-office
@@ -91,7 +107,7 @@ export function downloadLiquidityCsv(days: number): Promise<void> {
 export function useAdminOverview(enabled = true) {
   return useQuery<AdminOverviewResponse>({
     queryKey: ['admin', 'overview'],
-    queryFn: () => apiClient.get<AdminOverviewResponse>('/api/v1/admin/overview'),
+    queryFn: ({ signal }) => apiClient.get<AdminOverviewResponse>('/api/v1/admin/overview', { signal }),
     refetchInterval: 60_000,
     staleTime: 30_000,
     enabled,
@@ -104,8 +120,8 @@ export function useAdminOverview(enabled = true) {
 export function useAdminReports(status: ReportStatus | 'ALL') {
   return useQuery<AdminReportResponse[]>({
     queryKey: ['admin', 'reports', status],
-    queryFn: () =>
-      apiClient.get<AdminReportResponse[]>(`/api/v1/admin/reports${status === 'ALL' ? '' : `?status=${status}`}`),
+    queryFn: ({ signal }) =>
+      apiClient.get<AdminReportResponse[]>(`/api/v1/admin/reports${status === 'ALL' ? '' : `?status=${status}`}`, { signal }),
   })
 }
 
@@ -143,7 +159,7 @@ export function useResolveReport() {
 export function useReportConversations(reportId: string | null) {
   return useQuery<AdminReportConversationResponse[]>({
     queryKey: ['admin', 'reports', 'conversations', reportId],
-    queryFn: () => apiClient.get<AdminReportConversationResponse[]>(`/api/v1/admin/reports/${reportId}/conversations`),
+    queryFn: ({ signal }) => apiClient.get<AdminReportConversationResponse[]>(`/api/v1/admin/reports/${reportId}/conversations`, { signal }),
     enabled: reportId !== null,
     staleTime: 60_000,
   })
@@ -155,7 +171,7 @@ export function useReportConversations(reportId: string | null) {
 export function useAdminVerifications(status: IdentityVerificationStatus = 'PENDING') {
   return useQuery<AdminVerificationResponse[]>({
     queryKey: ['admin', 'verifications', status],
-    queryFn: () => apiClient.get<AdminVerificationResponse[]>(`/api/v1/admin/verifications?status=${status}`),
+    queryFn: ({ signal }) => apiClient.get<AdminVerificationResponse[]>(`/api/v1/admin/verifications?status=${status}`, { signal }),
   })
 }
 
@@ -182,7 +198,7 @@ export function useReviewVerification() {
 export function useAdminPayouts() {
   return useQuery<AdminPayoutResponse[]>({
     queryKey: ['admin', 'payouts'],
-    queryFn: () => apiClient.get<AdminPayoutResponse[]>('/api/v1/admin/payouts'),
+    queryFn: ({ signal }) => apiClient.get<AdminPayoutResponse[]>('/api/v1/admin/payouts', { signal }),
   })
 }
 
@@ -234,7 +250,7 @@ export function useRunPayoutBatch() {
 export function useAdminUsers(query: string) {
   return useQuery<AdminUserResponse[]>({
     queryKey: ['admin', 'users', query],
-    queryFn: () => apiClient.get<AdminUserResponse[]>(`/api/v1/admin/users?q=${encodeURIComponent(query)}`),
+    queryFn: ({ signal }) => apiClient.get<AdminUserResponse[]>(`/api/v1/admin/users?q=${encodeURIComponent(query)}`, { signal }),
   })
 }
 
@@ -242,7 +258,7 @@ export function useAdminUsers(query: string) {
 export function useAdminUserDetail(id: string | undefined) {
   return useQuery<AdminUserDetailResponse>({
     queryKey: ['admin', 'user', id],
-    queryFn: () => apiClient.get<AdminUserDetailResponse>(`/api/v1/admin/users/${id}`),
+    queryFn: ({ signal }) => apiClient.get<AdminUserDetailResponse>(`/api/v1/admin/users/${id}`, { signal }),
     enabled: Boolean(id),
   })
 }
@@ -251,7 +267,8 @@ export function useAdminUserDetail(id: string | undefined) {
 export function useAdminUserBookings(id: string | undefined, page: number, size = 10) {
   return useQuery<Page<AdminUserBookingResponse>>({
     queryKey: ['admin', 'user', id, 'bookings', page, size],
-    queryFn: () => apiClient.get<Page<AdminUserBookingResponse>>(`/api/v1/admin/users/${id}/bookings${toQuery({ page, size })}`),
+    queryFn: ({ signal }) =>
+      apiClient.get<Page<AdminUserBookingResponse>>(`/api/v1/admin/users/${id}/bookings${toQuery({ page, size })}`, { signal }),
     enabled: Boolean(id),
     placeholderData: (previous) => previous,
   })
@@ -261,7 +278,8 @@ export function useAdminUserBookings(id: string | undefined, page: number, size 
 export function useAdminUserTrips(id: string | undefined, page: number, size = 10) {
   return useQuery<Page<TripResponse>>({
     queryKey: ['admin', 'user', id, 'trips', page, size],
-    queryFn: () => apiClient.get<Page<TripResponse>>(`/api/v1/admin/users/${id}/trips${toQuery({ page, size })}`),
+    queryFn: ({ signal }) =>
+      apiClient.get<Page<TripResponse>>(`/api/v1/admin/users/${id}/trips${toQuery({ page, size })}`, { signal }),
     enabled: Boolean(id),
     placeholderData: (previous) => previous,
   })
@@ -271,7 +289,8 @@ export function useAdminUserTrips(id: string | undefined, page: number, size = 1
 export function useAdminUserPayments(id: string | undefined, page: number, size = 10) {
   return useQuery<Page<AdminPaymentResponse>>({
     queryKey: ['admin', 'user', id, 'payments', page, size],
-    queryFn: () => apiClient.get<Page<AdminPaymentResponse>>(`/api/v1/admin/users/${id}/payments${toQuery({ page, size })}`),
+    queryFn: ({ signal }) =>
+      apiClient.get<Page<AdminPaymentResponse>>(`/api/v1/admin/users/${id}/payments${toQuery({ page, size })}`, { signal }),
     enabled: Boolean(id),
     placeholderData: (previous) => previous,
   })
@@ -346,7 +365,7 @@ export function useAdminPayments(filter: AdminPaymentsFilter) {
   const status = filter === 'TODO' ? '' : `?status=${filter}`
   return useQuery<AdminPaymentResponse[]>({
     queryKey: ['admin', 'payments', filter],
-    queryFn: () => apiClient.get<AdminPaymentResponse[]>(`/api/v1/admin/payments${status}`),
+    queryFn: ({ signal }) => apiClient.get<AdminPaymentResponse[]>(`/api/v1/admin/payments${status}`, { signal }),
     refetchInterval: filter === 'TODO' ? 60_000 : false,
   })
 }
@@ -382,7 +401,7 @@ export function useMarkPaymentRefunded() {
 export function useAdminPaymentAccounts(verified: boolean) {
   return useQuery<AdminPaymentAccountResponse[]>({
     queryKey: ['admin', 'payment-accounts', verified],
-    queryFn: () => apiClient.get<AdminPaymentAccountResponse[]>(`/api/v1/admin/payment-accounts?verified=${verified}`),
+    queryFn: ({ signal }) => apiClient.get<AdminPaymentAccountResponse[]>(`/api/v1/admin/payment-accounts?verified=${verified}`, { signal }),
   })
 }
 
@@ -407,7 +426,8 @@ export function useVerifyPaymentAccount() {
 export function useAuditLog(page: number, size = 25, filters: AuditLogFilters = {}) {
   return useQuery<Page<AuditLogResponse>>({
     queryKey: ['admin', 'audit-log', page, size, filters],
-    queryFn: () => apiClient.get<Page<AuditLogResponse>>(`/api/v1/admin/audit-log${toQuery({ page, size, ...filters })}`),
+    queryFn: ({ signal }) =>
+      apiClient.get<Page<AuditLogResponse>>(`/api/v1/admin/audit-log${toQuery({ page, size, ...filters })}`, { signal }),
     placeholderData: (previous) => previous,
   })
 }

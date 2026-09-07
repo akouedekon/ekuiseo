@@ -6,7 +6,7 @@ import type { AuthResponse, ProblemDetail } from './types'
  * developpement (proxy Vite vers le backend, voir vite.config.ts). Une URL
  * absolue n'est necessaire que pour un front heberge ailleurs que l'API.
  */
-export const API_BASE_URL = ((import.meta.env.VITE_API_URL as string | undefined) ?? '').replace(/\/$/, '')
+const API_BASE_URL = ((import.meta.env.VITE_API_URL as string | undefined) ?? '').replace(/\/$/, '')
 
 /** Delai au-dela duquel une requete est abandonnee (reseau mobile degrade compris). */
 const REQUEST_TIMEOUT_MS = 20_000
@@ -82,9 +82,6 @@ export const authStore = {
   },
 }
 
-/** Alias historique, conserve pour les rares appels hors hooks. */
-export const tokenStorage = authStore
-
 /* ------------------------------------------------------------- Erreurs */
 
 export class ApiError extends Error {
@@ -148,11 +145,43 @@ async function refreshAccessToken(): Promise<string | null> {
   return refreshPromise
 }
 
+/**
+ * Compose le signal de l'appelant (TanStack Query : `cancelQueries`, demontage
+ * d'un ecran) avec le delai maximal. Sans `AbortSignal.any` (navigateurs anciens),
+ * la composition est faite a la main : le signal amont ET le delai annulent la
+ * requete (audit F244 : le delai seul laissait courir les requetes abandonnees).
+ */
 function withTimeout(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
   const timeout = AbortSignal.timeout(timeoutMs)
   if (!signal) return timeout
   if (typeof AbortSignal.any === 'function') return AbortSignal.any([signal, timeout])
-  return signal
+  const controller = new AbortController()
+  const abort = (source: AbortSignal) => () => controller.abort(source.reason)
+  if (signal.aborted) controller.abort(signal.reason)
+  else signal.addEventListener('abort', abort(signal), { once: true })
+  timeout.addEventListener('abort', abort(timeout), { once: true })
+  return controller.signal
+}
+
+/* ------------------------------------------------------------- Suspension */
+
+type SuspensionListener = (problem: ProblemDetail) => void
+const suspensionListeners = new Set<SuspensionListener>()
+
+/**
+ * Compte suspendu (403 RFC 7807 de type « account-suspended », audit F257) :
+ * l'ecran dedie s'affiche au lieu d'une redirection vers la connexion. Le client
+ * HTTP le signale une seule fois par reponse ; AppShell s'y abonne.
+ */
+export const suspensionStore = {
+  subscribe(listener: SuspensionListener): () => void {
+    suspensionListeners.add(listener)
+    return () => suspensionListeners.delete(listener)
+  },
+}
+
+function notifySuspension(problem: ProblemDetail) {
+  for (const listener of suspensionListeners) listener(problem)
 }
 
 function toNetworkError(error: unknown): NetworkError {
@@ -222,7 +251,12 @@ async function toApiError(res: Response): Promise<ApiError> {
   } catch {
     /* corps non JSON (ex: erreur reseau/proxy) */
   }
+  if (res.status === 403 && problem && isSuspendedProblem(problem)) notifySuspension(problem)
   return new ApiError(res.status, problem, `Erreur HTTP ${res.status}`)
+}
+
+function isSuspendedProblem(problem: ProblemDetail): boolean {
+  return [problem.type, problem.title].some((value) => typeof value === 'string' && value.includes('account-suspended'))
 }
 
 /**

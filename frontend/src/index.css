@@ -30,6 +30,12 @@
   --muted: #6b6b70; /* 4,9:1 sur le fond, 4,6:1 sur surface-2 — ne jamais eclaircir */
   --rule: #e6e5e0;
   --rule-strong: #d1d0c9;
+  /*
+   * Bordure des controles de saisie (champs, cases, radios, interrupteur au repos) :
+   * WCAG 1.4.11 exige 3:1 contre le fond pour qu'un contour reste visible au soleil.
+   * --rule-strong (1,55:1) reste reserve aux separateurs et boutons secondaires.
+   */
+  --field-border: #82827c;
 
   /*
    * --- Teintes de signal : les couleurs du drapeau ---
@@ -137,6 +143,7 @@
   --muted: #979690;
   --rule: #27272c;
   --rule-strong: #373741;
+  --field-border: #75757f;
 
   --primary: #4ccb8f;
   --primary-hover: #63d49f;
@@ -193,6 +200,7 @@
   --color-muted: var(--muted);
   --color-rule: var(--rule);
   --color-rule-strong: var(--rule-strong);
+  --color-field-border: var(--field-border);
 
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
@@ -263,9 +271,13 @@
   --shadow-sheet: var(--shadow-sheet);
 
   /*
-   * Echelle typographique nommee (text-caption, text-label, text-body...).
-   * Une taille arbitraire (text-[13px]) est un signal qu'il manque un cran.
+   * Echelle typographique nommee (text-micro, text-caption, text-label, text-body...).
+   * Une taille arbitraire (13 px ecrits en dur) est un signal qu'il manque un cran ;
+   * scripts/check-tokens.mjs la refuse. `text-micro` (11 px) est reserve aux
+   * pastilles de compteur et aux libelles de la barre de navigation basse.
    */
+  --text-micro: 11px;
+  --text-micro--line-height: 14px;
   --text-caption: 12px;
   --text-caption--line-height: 16px;
   --text-label: 13px;
@@ -374,7 +386,7 @@
    * pale au focus, filet danger en erreur, fond creux desactive.
    */
   .ek-field {
-    border: 1px solid var(--rule-strong);
+    border: 1px solid var(--field-border);
     background: var(--surface);
     color: var(--ink);
     transition:
@@ -383,7 +395,7 @@
       background-color var(--duration-fast) var(--ease-standard);
   }
   .ek-field:hover:not(:disabled):not([data-disabled]) {
-    border-color: color-mix(in srgb, var(--rule-strong) 55%, var(--ink-2));
+    border-color: color-mix(in srgb, var(--field-border) 55%, var(--ink-2));
   }
   .ek-field:focus,
   .ek-field:focus-within,
@@ -541,11 +553,6 @@
 .ek-anim-pop[data-state="open"] { animation: ek-pop-in 0.18s cubic-bezier(0.22, 1, 0.36, 1) }
 .ek-anim-pop[data-state="closed"] { animation: ek-fade-out 0.12s ease-in }
 
-@keyframes ek-acc-down { from { height: 0 } to { height: var(--radix-accordion-content-height) } }
-@keyframes ek-acc-up { from { height: var(--radix-accordion-content-height) } to { height: 0 } }
-.ek-acc[data-state="open"] { animation: ek-acc-down 0.22s cubic-bezier(0.22, 1, 0.36, 1) }
-.ek-acc[data-state="closed"] { animation: ek-acc-up 0.18s cubic-bezier(0.65, 0, 0.35, 1) }
-
 /* MapLibre : neutralise le style par defaut pour rester dans la charte. */
 .maplibregl-map {
   font-family: var(--font-sans) !important;
@@ -556,6 +563,16 @@
 }
 .maplibregl-ctrl-attrib a {
   color: var(--muted) !important;
+}
+
+/* Rotation continue des indicateurs d'attente (CSS, donc couverte par la regle reduced-motion ci-dessous). */
+@keyframes ek-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.ek-spin {
+  animation: ek-spin 1.1s linear infinite;
 }
 
 /* Respect strict de prefers-reduced-motion : aucune animation n'est porteuse d'information. */

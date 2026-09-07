@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Map as MapIcon } from 'lucide-react'
+import { Map as MapIcon, Maximize2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/cn'
 import { estimateDurationMinutes, haversineKm } from '@/lib/cities'
 import { formatDuration } from '@/lib/format'
@@ -29,18 +30,45 @@ export function RouteMap({
   points,
   className,
   interactive = true,
+  activation = 'always',
 }: {
   points: RouteMapPoint[]
   className?: string
   interactive?: boolean
+  /**
+   * `always` : la carte repond au doigt des l'affichage. `on-demand` (mobile,
+   * audit L8) : elle n'intercepte ni le defilement ni le pincement tant que
+   * l'utilisateur n'a pas touche « Agrandir la carte ».
+   */
+  activation?: 'always' | 'on-demand'
 }) {
+  const [activated, setActivated] = useState(activation === 'always')
   if (!MAP_STYLE_URL || points.length < 2) {
     return <StylisedRoute points={points} className={className} />
   }
-  return <LiveMap points={points} className={className} interactive={interactive} />
+  return (
+    <div className={cn('relative', className)}>
+      <LiveMap points={points} className="size-full" interactive={interactive && activated} />
+      {!activated ? (
+        <div className="absolute inset-x-0 bottom-3 flex justify-center">
+          <Button variant="secondary" size="sm" onClick={() => setActivated(true)}>
+            <Maximize2 className="size-4" aria-hidden />
+            Agrandir la carte
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  )
 }
 
 /* ------------------------------------------------------------- Vraie carte */
+
+/** Lit un token de couleur du theme courant (ex. `--primary`), tel que resolu sur <html>. */
+function readToken(name: string, fallback: string): string {
+  if (typeof window === 'undefined') return fallback
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return value || fallback
+}
 
 function LiveMap({
   points,
@@ -57,6 +85,7 @@ function LiveMap({
   useEffect(() => {
     let disposed = false
     let map: { remove: () => void } | null = null
+    let observer: MutationObserver | null = null
 
     // Chargement paresseux : maplibre-gl pese lourd, il ne doit pas entrer
     // dans le paquet initial de l'ecran d'accueil.
@@ -76,6 +105,13 @@ function LiveMap({
         })
         map = instance
 
+        // Couleur du trace lue dans le theme (audit F319), reappliquee au changement clair / sombre.
+        const applyLineColor = () => {
+          if (instance.getLayer('route-line')) {
+            instance.setPaintProperty('route-line', 'line-color', readToken('--primary', '#0e7c4a'))
+          }
+        }
+
         instance.on('load', () => {
           instance.addSource('route', {
             type: 'geojson',
@@ -90,14 +126,16 @@ function LiveMap({
             type: 'line',
             source: 'route',
             layout: { 'line-cap': 'round', 'line-join': 'round' },
-            paint: { 'line-color': '#2E3FA8', 'line-width': 4 },
+            paint: { 'line-color': readToken('--primary', '#0e7c4a'), 'line-width': 4 },
           })
+          observer = new MutationObserver(applyLineColor)
+          observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
         })
 
         for (const point of points) {
           const el = document.createElement('span')
           el.setAttribute('aria-label', point.label)
-          el.style.cssText = `width:${point.kind === 'stop' ? 10 : 14}px;height:${point.kind === 'stop' ? 10 : 14}px;border-radius:${point.kind === 'destination' ? '3px' : '50%'};background:${point.kind === 'destination' ? 'var(--vermillon)' : point.kind === 'origin' ? 'var(--indigo)' : 'var(--rule-strong)'};border:2px solid var(--surface);box-shadow:0 1px 3px rgba(0,0,0,.35)`
+          el.style.cssText = `width:${point.kind === 'stop' ? 10 : 14}px;height:${point.kind === 'stop' ? 10 : 14}px;border-radius:${point.kind === 'destination' ? '3px' : '50%'};background:${point.kind === 'destination' ? 'var(--danger)' : point.kind === 'origin' ? 'var(--primary)' : 'var(--rule-strong)'};border:2px solid var(--surface);box-shadow:0 1px 3px rgba(0,0,0,.35)`
           new Marker({ element: el }).setLngLat([point.lng, point.lat]).addTo(instance)
         }
 
@@ -113,6 +151,7 @@ function LiveMap({
 
     return () => {
       disposed = true
+      observer?.disconnect()
       map?.remove()
     }
   }, [points, interactive])
@@ -124,7 +163,7 @@ function LiveMap({
       ref={containerRef}
       role="img"
       aria-label={`Carte du trajet de ${points[0]?.label} à ${points[points.length - 1]?.label}`}
-      className={cn('overflow-hidden rounded-[var(--radius-card)] border border-rule bg-[var(--surface-calm)]', className)}
+      className={cn('overflow-hidden rounded-[var(--radius-card)] border border-rule bg-surface-2', className)}
     />
   )
 }
@@ -176,7 +215,7 @@ function StylisedRoute({ points, className }: { points: RouteMapPoint[]; classNa
   return (
     <div
       className={cn(
-        'relative overflow-hidden rounded-[var(--radius-card)] border border-rule bg-[var(--surface-calm)]',
+        'relative overflow-hidden rounded-[var(--radius-card)] border border-rule bg-surface-2',
         className,
       )}
     >
@@ -203,7 +242,7 @@ function StylisedRoute({ points, className }: { points: RouteMapPoint[]; classNa
             <polyline
               points={placed.map((p) => `${p.x},${p.y}`).join(' ')}
               fill="none"
-              stroke="var(--indigo)"
+              stroke="var(--primary)"
               strokeWidth="3"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -212,7 +251,7 @@ function StylisedRoute({ points, className }: { points: RouteMapPoint[]; classNa
             <polyline
               points={placed.map((p) => `${p.x},${p.y}`).join(' ')}
               fill="none"
-              stroke="var(--indigo)"
+              stroke="var(--primary)"
               strokeWidth="3"
               strokeDasharray="6 8"
               strokeLinecap="round"
@@ -238,7 +277,7 @@ function StylisedRoute({ points, className }: { points: RouteMapPoint[]; classNa
                     width="10"
                     height="10"
                     rx="2"
-                    fill="var(--vermillon)"
+                    fill="var(--danger)"
                     stroke="var(--surface)"
                     strokeWidth="2"
                   />
@@ -247,7 +286,7 @@ function StylisedRoute({ points, className }: { points: RouteMapPoint[]; classNa
                     cx={point.x}
                     cy={point.y}
                     r={point.kind === 'origin' ? 5.5 : 4}
-                    fill={point.kind === 'origin' ? 'var(--indigo)' : 'var(--rule-strong)'}
+                    fill={point.kind === 'origin' ? 'var(--primary)' : 'var(--rule-strong)'}
                     stroke="var(--surface)"
                     strokeWidth="2"
                   />
@@ -259,9 +298,9 @@ function StylisedRoute({ points, className }: { points: RouteMapPoint[]; classNa
       </svg>
 
       {/* Legende : la carte reelle n'etant pas disponible, on annonce l'ordre de grandeur. */}
-      <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 border-t border-rule bg-[color-mix(in_srgb,var(--surface)_92%,transparent)] px-3 py-2 text-[12px] text-muted backdrop-blur-sm">
+      <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 border-t border-rule bg-[color-mix(in_srgb,var(--surface)_92%,transparent)] px-3 py-2 text-caption text-muted backdrop-blur-sm">
         <MapIcon className="size-3.5 shrink-0" aria-hidden />
-        <span className="tnum">
+        <span className="tnum" title="Distance et durée estimées à vol d'oiseau">
           ≈ {Math.round(km)} km · {formatDuration(estimateDurationMinutes(km))}
         </span>
         <span className="ml-auto truncate">Tracé schématique</span>

@@ -9,18 +9,20 @@ import { Checkbox } from '@/components/ui/misc'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet } from '@/components/ui/sheet'
 import { Slider } from '@/components/ui/misc'
-import { EmptyState, ErrorState, ListSkeleton, OfflineState, isOfflineWithoutData } from '@/components/ui/states'
+import { SegmentedToggle } from '@/components/ui/tabs'
+import { EmptyState, ErrorState, ListSkeleton, OfflineState, SlowNetworkNotice, isOfflineWithoutData } from '@/components/ui/states'
 import { PageContainer } from '@/components/layout/PageContainer'
+import { PageMeta } from '@/components/layout/PageMeta'
 import { RouteMap } from '@/components/trip/RouteMap'
 import { TripCard } from '@/components/trip/TripCard'
 import { useCreateTripAlert } from '@/hooks/useAlerts'
 import { useIsAuthenticated } from '@/hooks/useAuth'
 import { useIsDesktop } from '@/hooks/useMediaQuery'
-import { useOnlineStatus, useStaleAge } from '@/hooks/useNetwork'
+import { useOnlineStatus, useSlow, useStaleAge } from '@/hooks/useNetwork'
 import { useTripSearchPages, type TripSearchParams, type TripSearchSort } from '@/hooks/useTrips'
-import { describeError, errorStatus } from '@/lib/errors'
-import { haversineKm, searchRadiusKm } from '@/lib/cities'
-import { formatDayShort, formatFcfa } from '@/lib/format'
+import { describeError, errorStatus, isDefinitiveError } from '@/lib/errors'
+import { haversineKm, searchRadiusKm, type PlaceKind } from '@/lib/cities'
+import { BENIN_TIME_HINT, deviceClockDiffersFromBenin, formatDayShort, formatFcfa, toInputDate } from '@/lib/format'
 import { listContainer } from '@/lib/motion'
 import type { TripResponse, TripType } from '@/api/types'
 
@@ -29,21 +31,35 @@ const NO_TRIPS: TripResponse[] = []
 
 const SORT_KEYS: TripSearchSort[] = ['departure', 'price', 'rating']
 const RATING_STEPS = [0, 3.5, 4, 4.5]
+const TRIP_TYPES: TripType[] = ['INTERURBAIN', 'QUOTIDIEN']
+const PLACE_KINDS: PlaceKind[] = ['CITY', 'DISTRICT', 'STATION']
 
 /**
  * Tri et filtres vivent dans l'URL et sont appliques PAR LE SERVEUR (audit F137,
  * F219) : ils portent sur l'ensemble des departs, pas sur la page chargee, et
  * « Voir plus » reste toujours accessible. Un lien partage reproduit la meme vue.
+ * Seul « places disponibles uniquement » (audit F334) se regle ici, sur les
+ * cartes chargees : il masque les departs complets, actif par defaut.
  */
 interface Filters {
   /** null = aucun plafond. */
   maxPrice: number | null
   minRating: number
   verifiedOnly: boolean
+  availableOnly: boolean
 }
 
 function readSort(value: string | null): TripSearchSort {
   return SORT_KEYS.includes(value as TripSearchSort) ? (value as TripSearchSort) : 'departure'
+}
+
+/** `type` n'est envoye que s'il est valide (audit F246) : une valeur inconnue dans l'URL ne fabrique pas un 400. */
+function readTripType(value: string | null): TripType | undefined {
+  return TRIP_TYPES.includes(value as TripType) ? (value as TripType) : undefined
+}
+
+function readKind(value: string | null): PlaceKind | undefined {
+  return PLACE_KINDS.includes(value as PlaceKind) ? (value as PlaceKind) : undefined
 }
 
 function readFilters(params: URLSearchParams): Filters {
@@ -53,6 +69,7 @@ function readFilters(params: URLSearchParams): Filters {
     maxPrice: Number.isFinite(maxPrice) && maxPrice > 0 ? maxPrice : null,
     minRating: RATING_STEPS.includes(minRating) ? minRating : 0,
     verifiedOnly: params.get('verifiedOnly') === 'true',
+    availableOnly: params.get('showFull') !== 'true',
   }
 }
 
@@ -68,6 +85,9 @@ export function SearchResultsPage() {
 
   const sort = readSort(searchParams.get('sort'))
   const filters = useMemo(() => readFilters(searchParams), [searchParams])
+  const tripType = readTripType(searchParams.get('type'))
+  /** Mode de l'alerte : celui de la recherche, ou « les deux » si la recherche n'en avait pas. */
+  const [alertType, setAlertType] = useState<TripType | 'ALL'>(tripType ?? 'ALL')
 
   /** Met a jour tri ou filtres dans l'URL sans toucher au reste de la recherche. */
   const updateParams = (patch: Record<string, string | null>) => {
@@ -84,8 +104,14 @@ export function SearchResultsPage() {
       maxPrice: next.maxPrice === null ? null : String(next.maxPrice),
       minRating: next.minRating > 0 ? String(next.minRating) : null,
       verifiedOnly: next.verifiedOnly ? 'true' : null,
+      showFull: next.availableOnly ? null : 'true',
     })
-  const resetFilters = () => setFilters({ maxPrice: null, minRating: 0, verifiedOnly: false })
+  const resetFilters = () => setFilters({ maxPrice: null, minRating: 0, verifiedOnly: false, availableOnly: true })
+
+  const dateParam = searchParams.get('date')
+  const today = toInputDate(new Date())
+  // Une date passee ne se cherche pas (audit F248) : un lien ancien ou une URL modifiee arrive ici.
+  const dateInPast = dateParam !== null && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) && dateParam < today
 
   const query = useMemo(() => {
     const fromLat = Number(searchParams.get('fromLat'))
@@ -93,6 +119,7 @@ export function SearchResultsPage() {
     const toLat = Number(searchParams.get('toLat'))
     const toLng = Number(searchParams.get('toLng'))
     if ([fromLat, fromLng, toLat, toLng].some((n) => Number.isNaN(n) || n === 0)) return null
+    if (dateInPast) return null
     const params: TripSearchParams = {
       originLat: fromLat,
       originLng: fromLng,
@@ -100,11 +127,14 @@ export function SearchResultsPage() {
       destLng: toLng,
       originLabel: searchParams.get('from') ?? undefined,
       destLabel: searchParams.get('to') ?? undefined,
-      date: searchParams.get('date') ?? undefined,
+      date: dateParam ?? undefined,
       seats: Number(searchParams.get('seats')) || 1,
-      tripType: (searchParams.get('type') as TripType | null) ?? undefined,
-      // 5 km en urbain, 15 km en interurbain, jamais plus de la moitie de l'axe (sens de circulation).
-      radiusKm: searchRadiusKm(haversineKm(fromLat, fromLng, toLat, toLng)),
+      tripType,
+      // 4 km pour un quartier ou une gare, 5 km en urbain, 15 km en interurbain, jamais plus de la moitie de l'axe.
+      radiusKm: searchRadiusKm(haversineKm(fromLat, fromLng, toLat, toLng), {
+        origin: readKind(searchParams.get('fromKind')),
+        destination: readKind(searchParams.get('toKind')),
+      }),
       sort: sort === 'departure' ? undefined : sort,
       maxPrice: filters.maxPrice ?? undefined,
       minRating: filters.minRating > 0 ? filters.minRating : undefined,
@@ -112,22 +142,28 @@ export function SearchResultsPage() {
       size: 20,
     }
     return params
-  }, [searchParams, sort, filters])
+  }, [searchParams, sort, filters, tripType, dateParam, dateInPast])
 
   const fromLabel = searchParams.get('from') ?? 'Départ'
   const toLabel = searchParams.get('to') ?? 'Arrivée'
-  const dateParam = searchParams.get('date')
   const seats = Number(searchParams.get('seats')) || 1
+  const clockDiffers = deviceClockDiffersFromBenin()
 
   const search = useTripSearchPages(query)
+  const slow = useSlow(search.isFetching)
   const staleMinutes = useStaleAge(search.dataUpdatedAt || undefined)
   // Pages cumulees ; reference stable sans resultat.
-  const trips = useMemo(() => search.data?.pages.flatMap((page) => page.content) ?? NO_TRIPS, [search.data])
-  const totalResults = search.data?.pages[0]?.totalElements ?? trips.length
+  const loaded = useMemo(() => search.data?.pages.flatMap((page) => page.content) ?? NO_TRIPS, [search.data])
+  const trips = useMemo(
+    () => (filters.availableOnly ? loaded.filter((trip) => trip.seatsAvailable > 0) : loaded),
+    [loaded, filters.availableOnly],
+  )
+  const hiddenFull = loaded.length - trips.length
+  const totalResults = search.data?.pages[0]?.totalElements ?? loaded.length
   // Borne du curseur de prix : le plus cher des resultats charges, arrondi aux 500 F superieurs.
   const priceCeiling = useMemo(
-    () => Math.max(5_000, Math.ceil(Math.max(0, ...trips.map((t) => t.pricePerSeat)) / 500) * 500),
-    [trips],
+    () => Math.max(5_000, Math.ceil(Math.max(0, ...loaded.map((t) => t.pricePerSeat)) / 500) * 500),
+    [loaded],
   )
 
   const activeFilterCount =
@@ -164,7 +200,8 @@ export function SearchResultsPage() {
         destLng: toLng,
         date: dateParam,
         seats,
-        tripType: (searchParams.get('type') as TripType | null) ?? 'INTERURBAIN',
+        // null = tous les modes (contrat de l'API).
+        tripType: alertType === 'ALL' ? null : alertType,
       },
       {
         onSuccess: () => {
@@ -184,11 +221,32 @@ export function SearchResultsPage() {
     )
   }
 
+  const pageTitle = `${fromLabel} → ${toLabel}${dateParam ? ` · ${formatDayShort(dateParam)}` : ''}`
+
+  if (dateInPast) {
+    return (
+      <PageContainer width="md">
+        <PageMeta title={pageTitle} noindex />
+        <EmptyState
+          icon={SearchX}
+          headingLevel="h1"
+          title="Cette date est passée"
+          description={`Le ${formatDayShort(dateParam)} est derrière nous : choisissez aujourd'hui ou un jour à venir pour ${fromLabel} → ${toLabel}.`}
+          action={
+            <Button onClick={() => updateParams({ date: today })}>Chercher pour aujourd'hui</Button>
+          }
+        />
+      </PageContainer>
+    )
+  }
+
   if (!query) {
     return (
       <PageContainer width="md">
+        <PageMeta title="Recherche incomplète" noindex />
         <EmptyState
           icon={SearchX}
+          headingLevel="h1"
           title="Recherche incomplète"
           description="Le départ et l'arrivée n'ont pas été transmis. Relancez la recherche depuis l'accueil."
           action={
@@ -201,26 +259,33 @@ export function SearchResultsPage() {
     )
   }
 
+  const errorIsFinal = search.isError && isDefinitiveError(search.error)
+
   return (
     <PageContainer width="lg">
+      <PageMeta
+        title={pageTitle}
+        description={`Covoiturages ${fromLabel} → ${toLabel}${dateParam ? ` le ${formatDayShort(dateParam)}` : ''} : acompte en mobile money, solde en espèces à bord.`}
+      />
       {/* --- En-tete de recherche : rappel du critere, toujours visible --- */}
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-x-3">
         <div className="min-w-0 sm:flex-1">
-          <h1 className="flex min-w-0 items-center gap-2 font-display text-[22px] font-extrabold tracking-[-0.03em] sm:text-[26px]">
+          <h1 tabIndex={-1} className="flex min-w-0 items-center gap-2 font-display text-heading font-extrabold tracking-[-0.03em] outline-none sm:text-display">
             <span className="truncate">{fromLabel}</span>
             <ArrowUpDown className="size-4 shrink-0 rotate-90 text-muted" aria-hidden />
             <span className="truncate">{toLabel}</span>
           </h1>
-          <p className="mt-0.5 text-[13px] text-muted">
+          <p className="mt-0.5 text-label text-muted">
             {dateParam ? formatDayShort(dateParam) : 'Toutes dates'} · {seats} place{seats > 1 ? 's' : ''}
             {search.isFetched ? ` · ${totalResults} départ${totalResults > 1 ? 's' : ''}` : ''}
+            {clockDiffers ? ` · ${BENIN_TIME_HINT}` : ''}
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <Select value={sort} onValueChange={(v) => setSort(readSort(v))}>
             <SelectTrigger
-              className="h-11 min-w-0 flex-1 gap-2 text-[14px] sm:w-auto sm:min-w-[148px] sm:flex-none"
+              className="h-11 min-w-0 flex-1 gap-2 text-body sm:w-auto sm:min-w-[148px] sm:flex-none"
               aria-label="Trier les résultats"
             >
               <SelectValue />
@@ -236,7 +301,7 @@ export function SearchResultsPage() {
             <SlidersHorizontal className="size-4" aria-hidden />
             Filtres
             {activeFilterCount > 0 ? (
-              <span className="tnum ml-1 flex size-5 items-center justify-center rounded-full bg-[var(--indigo)] text-[11px] font-bold text-[var(--indigo-contrast)]">
+              <span className="tnum ml-1 flex size-5 items-center justify-center rounded-full bg-primary text-micro font-bold text-on-primary">
                 {activeFilterCount}
               </span>
             ) : null}
@@ -246,7 +311,7 @@ export function SearchResultsPage() {
 
       {/* --- Rappel « donnees enregistrees » quand on est hors ligne --- */}
       {!online && staleMinutes !== null ? (
-        <Card className="mb-3 flex items-center gap-2.5 border-[var(--ocre)] bg-[var(--ocre-soft)] px-3 py-2.5 text-[13px] font-medium text-[var(--ocre-ink)]">
+        <Card className="mb-3 flex items-center gap-2.5 border-accent bg-accent-soft px-3 py-2.5 text-label font-medium text-accent-ink">
           <WifiOff className="size-4 shrink-0" aria-hidden />
           <span>
             Résultats enregistrés il y a {staleMinutes < 1 ? "moins d'une minute" : `${staleMinutes} min`}. Ils
@@ -275,7 +340,7 @@ export function SearchResultsPage() {
           <button
             type="button"
             onClick={resetFilters}
-            className="ml-1 text-[13px] font-medium text-[var(--indigo)] underline-offset-4 hover:underline"
+            className="ml-1 min-h-8 text-label font-medium text-primary-ink underline-offset-4 hover:underline"
           >
             Tout effacer
           </button>
@@ -285,6 +350,7 @@ export function SearchResultsPage() {
       {/* --- Deux colonnes au-dela de 1024 px : liste + carte collante --- */}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div>
+          {slow ? <SlowNetworkNotice className="mb-3" /> : null}
           {isOfflineWithoutData(search) ? (
             <OfflineState
               description="Cette recherche n'a pas encore été enregistrée sur cet appareil. Elle se lancera dès que la connexion reviendra."
@@ -293,15 +359,27 @@ export function SearchResultsPage() {
           ) : search.isPending ? (
             <ListSkeleton count={5} />
           ) : search.isError ? (
-            <ErrorState onRetry={() => search.refetch()} />
+            <ErrorState
+              title={errorIsFinal ? 'Recherche impossible' : 'Chargement impossible'}
+              description={describeError(search.error)}
+              onRetry={errorIsFinal ? undefined : () => search.refetch()}
+            />
           ) : trips.length === 0 ? (
             <EmptyState
               icon={SearchX}
-              title={activeFilterCount > 0 ? 'Aucun trajet ne passe vos filtres' : 'Aucun trajet ce jour-là'}
+              title={
+                activeFilterCount > 0
+                  ? 'Aucun trajet ne passe vos filtres'
+                  : hiddenFull > 0
+                    ? 'Tous les départs sont complets'
+                    : 'Aucun trajet ce jour-là'
+              }
               description={
                 activeFilterCount > 0
                   ? 'Élargissez vos critères pour voir les autres départs disponibles.'
-                  : `Personne ne part encore de ${fromLabel} vers ${toLabel} à cette date. Créez une alerte : nous vous prévenons dès qu'une place se libère.`
+                  : hiddenFull > 0
+                    ? `${hiddenFull} départ${hiddenFull > 1 ? 's' : ''} sans place restante ${hiddenFull > 1 ? 'sont masqués' : 'est masqué'}. Créez une alerte : nous vous prévenons dès qu'une place se libère.`
+                    : `Personne ne part encore de ${fromLabel} vers ${toLabel} à cette date. Créez une alerte : nous vous prévenons dès qu'une place se libère.`
               }
               action={
                 activeFilterCount > 0 ? (
@@ -327,9 +405,22 @@ export function SearchResultsPage() {
                 className="space-y-3"
               >
                 {trips.map((trip) => (
-                  <TripCard key={trip.id} trip={trip} />
+                  <TripCard key={trip.id} trip={trip} seats={seats} />
                 ))}
               </m.div>
+
+              {hiddenFull > 0 ? (
+                <p className="mt-3 text-center text-label text-muted">
+                  {hiddenFull} départ{hiddenFull > 1 ? 's' : ''} complet{hiddenFull > 1 ? 's' : ''} masqué{hiddenFull > 1 ? 's' : ''}.{' '}
+                  <button
+                    type="button"
+                    onClick={() => setFilters({ ...filters, availableOnly: false })}
+                    className="font-medium text-primary-ink underline-offset-4 hover:underline"
+                  >
+                    Les afficher
+                  </button>
+                </p>
+              ) : null}
 
               {search.hasNextPage ? (
                 <Button
@@ -339,13 +430,13 @@ export function SearchResultsPage() {
                   loading={search.isFetchingNextPage}
                   onClick={() => search.fetchNextPage()}
                 >
-                  Voir plus de départs ({totalResults - trips.length} restants)
+                  Voir plus de départs ({totalResults - loaded.length} restants)
                 </Button>
               ) : null}
 
               <Card className="mt-4 flex flex-col items-start gap-3 p-4 sm:flex-row sm:items-center">
-                <BellPlus className="size-5 shrink-0 text-[var(--indigo)]" aria-hidden />
-                <p className="flex-1 text-[14px] text-ink-2">
+                <BellPlus className="size-5 shrink-0 text-primary-ink" aria-hidden />
+                <p className="flex-1 text-body text-ink-2">
                   Aucun de ces départs ne convient ? Créez une alerte pour cet axe.
                 </p>
                 <Button variant="secondary" size="sm" onClick={() => setAlertOpen(true)}>
@@ -362,20 +453,20 @@ export function SearchResultsPage() {
             <div className="sticky top-24 space-y-3">
               <RouteMap points={mapPoints} className="h-[280px]" />
               <Card className="p-4">
-                <h2 className="font-display text-[14px] font-bold uppercase tracking-[0.06em] text-muted">
+                <h2 className="font-display text-body font-bold uppercase tracking-[0.06em] text-muted">
                   Repères de prix
                 </h2>
-                {trips.length > 0 ? (
-                  <dl className="mt-3 space-y-2 text-[14px]">
-                    <PriceRow label="Le moins cher" value={Math.min(...trips.map((t) => t.pricePerSeat))} />
-                    <PriceRow label="Prix médian" value={median(trips.map((t) => t.pricePerSeat))} />
-                    <PriceRow label="Le plus cher" value={Math.max(...trips.map((t) => t.pricePerSeat))} />
+                {loaded.length > 0 ? (
+                  <dl className="mt-3 space-y-2 text-body">
+                    <PriceRow label="Le moins cher" value={Math.min(...loaded.map((t) => t.pricePerSeat))} />
+                    <PriceRow label="Prix médian" value={median(loaded.map((t) => t.pricePerSeat))} />
+                    <PriceRow label="Le plus cher" value={Math.max(...loaded.map((t) => t.pricePerSeat))} />
                   </dl>
                 ) : (
-                  <p className="mt-2 text-[13px] text-muted">Pas encore de repère pour cet axe.</p>
+                  <p className="mt-2 text-label text-muted">Pas encore de repère pour cet axe.</p>
                 )}
                 {search.hasNextPage ? (
-                  <p className="mt-2 text-[12px] text-muted">Sur les {trips.length} premiers départs affichés.</p>
+                  <p className="mt-2 text-caption text-muted">Sur les {loaded.length} premiers départs affichés.</p>
                 ) : null}
               </Card>
             </div>
@@ -403,8 +494,8 @@ export function SearchResultsPage() {
         <div className="space-y-6 py-2">
           <div>
             <div className="mb-1 flex items-baseline justify-between">
-              <span className="text-[14px] font-semibold">Prix maximum</span>
-              <span className="tnum font-display text-[16px] font-bold">
+              <span className="text-body font-semibold">Prix maximum</span>
+              <span className="tnum font-display text-lead font-bold">
                 {filters.maxPrice === null ? 'Sans limite' : formatFcfa(filters.maxPrice)}
               </span>
             </div>
@@ -419,7 +510,7 @@ export function SearchResultsPage() {
           </div>
 
           <fieldset>
-            <legend className="mb-2 text-[14px] font-semibold">Note minimale du conducteur</legend>
+            <legend className="mb-2 text-body font-semibold">Note minimale du conducteur</legend>
             <div className="flex gap-2">
               {RATING_STEPS.map((value) => (
                 <button
@@ -429,22 +520,22 @@ export function SearchResultsPage() {
                   onClick={() => setFilters({ ...filters, minRating: value })}
                   className={
                     filters.minRating === value
-                      ? 'flex min-h-11 flex-1 items-center justify-center gap-1 rounded-[var(--radius-control)] border border-[var(--indigo)] bg-[var(--indigo-soft)] text-[13px] font-semibold text-[var(--indigo-deep)]'
-                      : 'flex min-h-11 flex-1 items-center justify-center gap-1 rounded-[var(--radius-control)] border border-rule-strong bg-surface text-[13px] font-medium text-ink-2'
+                      ? 'flex min-h-11 flex-1 items-center justify-center gap-1 rounded-[var(--radius-control)] border border-primary bg-primary-soft text-label font-semibold text-primary-ink'
+                      : 'flex min-h-11 flex-1 items-center justify-center gap-1 rounded-[var(--radius-control)] border border-field-border bg-surface text-label font-medium text-ink-2'
                   }
                 >
                   {value === 0 ? (
                     'Toutes'
                   ) : (
                     <>
-                      <Star className="size-3.5 fill-[var(--ocre)] text-[var(--ocre)]" aria-hidden />
+                      <Star className="size-3.5 fill-accent text-accent-ink" aria-hidden />
                       {value.toFixed(1).replace('.', ',')}
                     </>
                   )}
                 </button>
               ))}
             </div>
-            <p className="mt-1.5 text-[12px] text-muted">Un conducteur sans avis reste affiché.</p>
+            <p className="mt-1.5 text-caption text-muted">Un conducteur sans avis reste affiché.</p>
           </fieldset>
 
           <div className="divide-y divide-rule rounded-[var(--radius-card)] border border-rule">
@@ -454,8 +545,18 @@ export function SearchResultsPage() {
                 onCheckedChange={(checked) => setFilters({ ...filters, verifiedOnly: checked === true })}
               />
               <span className="flex-1">
-                <span className="block text-[14px] font-medium">Conducteurs vérifiés uniquement</span>
-                <span className="block text-[12px] text-muted">Pièce d'identité contrôlée par Ekuiseo</span>
+                <span className="block text-body font-medium">Conducteurs vérifiés uniquement</span>
+                <span className="block text-caption text-muted">Identité contrôlée par l'équipe Ekuiseo</span>
+              </span>
+            </label>
+            <label className="flex min-h-[56px] cursor-pointer items-center gap-3 px-4">
+              <Checkbox
+                checked={filters.availableOnly}
+                onCheckedChange={(checked) => setFilters({ ...filters, availableOnly: checked === true })}
+              />
+              <span className="flex-1">
+                <span className="block text-body font-medium">Places disponibles uniquement</span>
+                <span className="block text-caption text-muted">Masque les départs déjà complets</span>
               </span>
             </label>
           </div>
@@ -474,24 +575,35 @@ export function SearchResultsPage() {
           </Button>
         }
       >
-        <ul className="space-y-2 py-2 text-[14px]">
-          <li className="flex items-center gap-2.5 rounded-[var(--radius-control)] bg-[var(--surface-calm)] px-3 py-2.5">
-            <CircleDot className="size-4 shrink-0 text-[var(--indigo)]" aria-hidden />
+        <ul className="space-y-2 py-2 text-body">
+          <li className="flex items-center gap-2.5 rounded-[var(--radius-control)] bg-surface-2 px-3 py-2.5">
+            <CircleDot className="size-4 shrink-0 text-primary" aria-hidden />
             <span className="font-medium">{fromLabel}</span>
           </li>
-          <li className="flex items-center gap-2.5 rounded-[var(--radius-control)] bg-[var(--surface-calm)] px-3 py-2.5">
-            <Flag className="size-4 shrink-0 text-[var(--vermillon)]" aria-hidden />
+          <li className="flex items-center gap-2.5 rounded-[var(--radius-control)] bg-surface-2 px-3 py-2.5">
+            <Flag className="size-4 shrink-0 text-danger" aria-hidden />
             <span className="font-medium">{toLabel}</span>
           </li>
-          <li className="flex items-center justify-between rounded-[var(--radius-control)] bg-[var(--surface-calm)] px-3 py-2.5">
+          <li className="flex items-center justify-between rounded-[var(--radius-control)] bg-surface-2 px-3 py-2.5">
             <span className="text-muted">Date</span>
             <span className="font-medium">{dateParam ? formatDayShort(dateParam) : 'Toutes dates'}</span>
           </li>
-          <li className="flex items-center justify-between rounded-[var(--radius-control)] bg-[var(--surface-calm)] px-3 py-2.5">
+          <li className="flex items-center justify-between rounded-[var(--radius-control)] bg-surface-2 px-3 py-2.5">
             <span className="text-muted">Places</span>
             <span className="tnum font-medium">{seats}</span>
           </li>
         </ul>
+        <SegmentedToggle
+          label="Mode de trajet surveillé"
+          value={alertType}
+          onValueChange={setAlertType}
+          className="mt-3"
+          options={[
+            { value: 'INTERURBAIN', label: 'Interurbain' },
+            { value: 'QUOTIDIEN', label: 'Quotidien' },
+            { value: 'ALL', label: 'Les deux' },
+          ]}
+        />
       </Sheet>
     </PageContainer>
   )
@@ -512,7 +624,7 @@ function FilterChip({ label, onClear }: { label: string; onClear: () => void }) 
       type="button"
       onClick={onClear}
       aria-label={`Retirer le filtre ${label}`}
-      className="group inline-flex h-8 items-center gap-1 rounded-[var(--radius-chip)] bg-[var(--indigo-soft)] pl-2.5 pr-1.5 text-caption font-semibold text-[var(--indigo-deep)] transition-colors hover:bg-[var(--indigo)] hover:text-[var(--indigo-contrast)]"
+      className="group inline-flex h-8 items-center gap-1 rounded-[var(--radius-chip)] bg-primary-soft pl-2.5 pr-1.5 text-caption font-semibold text-primary-ink transition-colors hover:bg-primary hover:text-on-primary"
     >
       {label}
       <X className="size-3.5 opacity-70 group-hover:opacity-100" aria-hidden />

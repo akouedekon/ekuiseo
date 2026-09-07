@@ -22,13 +22,14 @@ import { Card } from '@/components/ui/card'
 import { Progress } from '@/components/ui/misc'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ErrorState, StatSkeleton } from '@/components/ui/states'
-import { useAdminLiquidity, useAdminOverview, useAdminStats } from '@/hooks/useAdmin'
+import { PageMeta } from '@/components/layout/PageMeta'
+import { useAdminLiquidity, useAdminOverview, useAdminRetention, useAdminStats } from '@/hooks/useAdmin'
 import { cn } from '@/lib/cn'
 import { describeError } from '@/lib/errors'
 import { formatFcfa, formatFcfaCompact, formatFromNow } from '@/lib/format'
 import { listContainer } from '@/lib/motion'
 import type { BookingStatus } from '@/api/types'
-import { CHART, formatHours, formatPercent, pointsDelta, relativeDelta } from './adminMetrics'
+import { CHART, formatHours, formatPercent, pointsDelta, ratioDelta, formatRatio, relativeDelta } from './adminMetrics'
 import { ChartTooltip, DeltaBadge, StatTile } from './AdminWidgets'
 
 const STATUS_LABEL: Record<BookingStatus, string> = {
@@ -63,11 +64,13 @@ export function AdminDashboard() {
   const [days, setDays] = useState(30)
   const stats = useAdminStats(days)
   const liquidity = useAdminLiquidity(days)
+  const retention = useAdminRetention(days)
 
   if (stats.isError) return <ErrorState description={describeError(stats.error)} onRetry={() => stats.refetch()} />
 
   const data = stats.data
   const liq = liquidity.data
+  const ret = retention.data
 
   const series =
     data?.series.map((row) => ({
@@ -86,14 +89,15 @@ export function AdminDashboard() {
 
   return (
     <div>
+      <PageMeta title="Tableau de bord · Back-office" noindex />
 
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="font-display text-heading font-extrabold tracking-[-0.03em]">Vue d'ensemble</h2>
-          <p className="mt-0.5 text-label text-muted">Métrique nord, liquidité, puis volume.</p>
+          <p className="mt-0.5 text-label text-muted">Métrique nord, liquidité, rétention, puis volume.</p>
         </div>
         <Select value={String(days)} onValueChange={(value) => setDays(Number(value))}>
-          <SelectTrigger className="h-10 w-auto min-w-[150px] gap-2 text-[14px]" aria-label="Période analysée">
+          <SelectTrigger className="h-10 w-auto min-w-[150px] gap-2 text-body" aria-label="Période analysée">
             <CalendarRange className="size-4 text-muted" aria-hidden />
             <SelectValue />
           </SelectTrigger>
@@ -128,10 +132,10 @@ export function AdminDashboard() {
                 </span>
                 Places confirmées sur la période
               </p>
-              <p className="tnum mt-3 font-display text-[44px] font-extrabold leading-none tracking-[-0.035em] text-ink">
+              <p className="tnum mt-3 font-display text-hero font-extrabold leading-none tracking-[-0.035em] text-ink">
                 {liq.northStar.confirmedSeats.toLocaleString('fr-FR')}
               </p>
-              <p className="mt-2 flex flex-wrap items-center gap-x-1.5 text-[13px]">
+              <p className="mt-2 flex flex-wrap items-center gap-x-1.5 text-label">
                 <DeltaBadge
                   delta={relativeDelta(liq.northStar.confirmedSeats, liq.northStar.previousConfirmedSeats)}
                   unit="%"
@@ -139,7 +143,7 @@ export function AdminDashboard() {
                 <span className="text-muted">vs période précédente</span>
               </p>
               <div className="mt-4">
-                <div className="flex items-baseline justify-between gap-3 text-[13px]">
+                <div className="flex items-baseline justify-between gap-3 text-label">
                   <span className="text-muted">Rythme mensuel</span>
                   <span className="tnum font-semibold">
                     {Math.round(liq.northStar.monthlyPace).toLocaleString('fr-FR')} /{' '}
@@ -148,13 +152,15 @@ export function AdminDashboard() {
                 </div>
                 <Progress
                   value={Math.min(100, liq.northStar.progressPercent)}
-                  tone={liq.northStar.progressPercent >= 100 ? 'vert' : liq.northStar.progressPercent >= 50 ? 'ocre' : 'vermillon'}
+                  tone={liq.northStar.progressPercent >= 100 ? 'success' : liq.northStar.progressPercent >= 50 ? 'accent' : 'danger'}
                   className="mt-1.5"
                   aria-label="Progression vers le seuil de viabilité"
                 />
-                <p className="mt-1.5 text-[12px] text-muted">
-                  {formatPercent(liq.northStar.progressPercent, 0)} du seuil de viabilité (2 000 places par mois). En
-                  dessous, le projet paie l'hébergement, pas un salaire.
+                {/* Le seuil vient de l'API (audit F311) : jamais recopie en dur dans la phrase. */}
+                <p className="mt-1.5 text-caption text-muted">
+                  {formatPercent(liq.northStar.progressPercent, 0)} du seuil de viabilité (
+                  {liq.northStar.monthlyTarget.toLocaleString('fr-FR')} places par mois). En dessous, le projet paie
+                  l'hébergement, pas un salaire.
                 </p>
               </div>
             </div>
@@ -169,7 +175,7 @@ export function AdminDashboard() {
                     axisLine={{ stroke: CHART.rule }}
                   />
                   <YAxis tick={{ fill: CHART.muted, fontSize: 11 }} tickLine={false} axisLine={false} width={44} />
-                  <RechartsTooltip content={<ChartTooltip />} cursor={{ fill: 'var(--surface-calm)' }} />
+                  <RechartsTooltip content={<ChartTooltip />} cursor={{ fill: 'var(--surface-2)' }} />
                   <ReferenceLine
                     y={weeklyTarget}
                     stroke={CHART.ocre}
@@ -186,10 +192,10 @@ export function AdminDashboard() {
 
       {/* --- Liquidite : quatre chiffres, le detail sur sa page --- */}
       <div className="mb-2 mt-5 flex items-baseline justify-between gap-3">
-        <h2 className="font-display text-[15px] font-bold">Liquidité</h2>
+        <h2 className="font-display text-base font-bold">Liquidité</h2>
         <Link
           to="/admin/liquidity"
-          className="inline-flex items-center gap-1 text-[13px] font-semibold text-[var(--indigo)] hover:underline"
+          className="inline-flex items-center gap-1 text-label font-semibold text-primary-ink hover:underline"
         >
           Axes en pénurie et remplissage
           <ArrowRight className="size-3.5" aria-hidden />
@@ -249,8 +255,68 @@ export function AdminDashboard() {
         </m.div>
       )}
 
+      {/* --- Retention : le produit retient-il, et la these du quotidien tient-elle ? --- */}
+      <div className="mb-2 mt-5 flex items-baseline justify-between gap-3">
+        <h2 className="font-display text-base font-bold">Rétention</h2>
+        <Link
+          to="/admin/retention"
+          className="inline-flex items-center gap-1 text-label font-semibold text-primary-ink hover:underline"
+        >
+          Cohortes, paiement et panier
+          <ArrowRight className="size-3.5" aria-hidden />
+        </Link>
+      </div>
+      {retention.isError ? (
+        <ErrorState
+          title="Rétention indisponible"
+          description={describeError(retention.error)}
+          onRetry={() => retention.refetch()}
+        />
+      ) : retention.isPending || !ret ? (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <StatSkeleton key={i} />
+          ))}
+        </div>
+      ) : (
+        <m.div variants={listContainer} initial="hidden" animate="show" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <StatTile
+            label="Conducteurs qui republient (S+1)"
+            value={formatRatio(ret.driverRetentionW1)}
+            delta={ratioDelta(ret.driverRetentionW1, ret.previous.driverRetentionW1)}
+            deltaUnit="pts"
+            hint="Un conducteur sans passager ne republie pas : ce chiffre le dit avant les plaintes."
+          />
+          <StatTile
+            label="Passagers qui reviennent (30 j)"
+            value={formatRatio(ret.passengerRetention30d)}
+            delta={ratioDelta(ret.passengerRetention30d, ret.previous.passengerRetention30d)}
+            deltaUnit="pts"
+            hint="Réservent à nouveau sous 30 jours"
+          />
+          <StatTile
+            label="Part du mode quotidien"
+            value={formatRatio(ret.dailyModeShare)}
+            delta={ratioDelta(ret.dailyModeShare, ret.previous.dailyModeShare)}
+            deltaUnit="pts"
+            hint={`${ret.activeRecurringTemplates.toLocaleString('fr-FR')} navettes actives · la thèse du modèle économique`}
+          />
+          <StatTile
+            label="Réservation → acompte encaissé"
+            value={formatRatio(ret.bookingToDepositRate)}
+            delta={ratioDelta(ret.bookingToDepositRate, ret.previous.bookingToDepositRate)}
+            deltaUnit="pts"
+            hint={
+              ret.expiredBookingShare == null
+                ? 'Réservations en mobile money'
+                : `${formatRatio(ret.expiredBookingShare)} expirent faute d'acompte sous 20 min`
+            }
+          />
+        </m.div>
+      )}
+
       {/* --- Volume --- */}
-      <h2 className="mb-2 mt-5 font-display text-[15px] font-bold">Volume</h2>
+      <h2 className="mb-2 mt-5 font-display text-base font-bold">Volume</h2>
       {stats.isPending || !data ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {[0, 1, 2, 3].map((i) => (
@@ -287,8 +353,8 @@ export function AdminDashboard() {
 
       {/* --- Volume : trajets et reservations --- */}
       <Card className="mt-4 p-4">
-        <h2 className="font-display text-[15px] font-bold">Activité quotidienne</h2>
-        <p className="mb-3 text-[13px] text-muted">Trajets publiés et réservations créées, par jour</p>
+        <h2 className="font-display text-base font-bold">Activité quotidienne</h2>
+        <p className="mb-3 text-label text-muted">Trajets publiés et réservations créées, par jour</p>
         <div className="h-[240px] w-full">
           {stats.isPending ? (
             <div className="shimmer size-full rounded-[var(--radius-control)]" />
@@ -330,8 +396,8 @@ export function AdminDashboard() {
       <div className="mt-4 grid gap-4 xl:grid-cols-2">
         {/* --- Volume d'affaires et revenus --- */}
         <Card className="p-4">
-          <h2 className="font-display text-[15px] font-bold">Volume et revenus</h2>
-          <p className="mb-3 text-[13px] text-muted">En FCFA, par jour</p>
+          <h2 className="font-display text-base font-bold">Volume et revenus</h2>
+          <p className="mb-3 text-label text-muted">En FCFA, par jour</p>
           <div className="h-[220px] w-full">
             {stats.isPending ? (
               <div className="shimmer size-full rounded-[var(--radius-control)]" />
@@ -379,8 +445,8 @@ export function AdminDashboard() {
 
         {/* --- Repartition par statut --- */}
         <Card className="p-4">
-          <h2 className="font-display text-[15px] font-bold">Réservations par statut</h2>
-          <p className="mb-3 text-[13px] text-muted">Sur la période</p>
+          <h2 className="font-display text-base font-bold">Réservations par statut</h2>
+          <p className="mb-3 text-label text-muted">Sur la période</p>
           <div className="h-[220px] w-full">
             {stats.isPending || !data ? (
               <div className="shimmer size-full rounded-[var(--radius-control)]" />
@@ -404,7 +470,7 @@ export function AdminDashboard() {
                     axisLine={false}
                     width={118}
                   />
-                  <RechartsTooltip content={<ChartTooltip />} cursor={{ fill: 'var(--surface-calm)' }} />
+                  <RechartsTooltip content={<ChartTooltip />} cursor={{ fill: 'var(--surface-2)' }} />
                   <Bar dataKey="count" name="Réservations" radius={[0, 4, 4, 0]} barSize={16}>
                     {data.bookingsByStatus.map((row) => (
                       <Cell key={row.status} fill={STATUS_COLOR[row.status]} />
@@ -420,13 +486,13 @@ export function AdminDashboard() {
       {/* --- Axes les plus actifs --- */}
       <Card className="mt-4">
         <div className="px-4 pt-4">
-          <h2 className="font-display text-[15px] font-bold">Axes les plus actifs</h2>
-          <p className="text-[13px] text-muted">Classés par volume d'affaires</p>
+          <h2 className="font-display text-base font-bold">Axes les plus actifs</h2>
+          <p className="text-label text-muted">Classés par volume d'affaires</p>
         </div>
         <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[420px] text-[14px]">
+          <table className="w-full min-w-[420px] text-body">
             <thead>
-              <tr className="border-y border-rule bg-[var(--surface-calm)] text-left text-[12px] uppercase tracking-wide text-muted">
+              <tr className="border-y border-rule bg-surface-2 text-left text-caption uppercase tracking-wide text-muted">
                 <th scope="col" className="px-4 py-2 font-semibold">Axe</th>
                 <th scope="col" className="px-4 py-2 text-right font-semibold">Trajets</th>
                 <th scope="col" className="px-4 py-2 text-right font-semibold">Volume</th>
@@ -435,7 +501,7 @@ export function AdminDashboard() {
             <tbody className="divide-y divide-rule">
               {data && data.topRoutes.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="px-4 py-6 text-center text-[13px] text-muted">
+                  <td colSpan={3} className="px-4 py-6 text-center text-label text-muted">
                     Aucun trajet publié sur la période.
                   </td>
                 </tr>
@@ -481,7 +547,7 @@ function QueuesBlock() {
 
   if (overview.isError) {
     return (
-      <Card className="mb-5 px-4 py-3 text-[13px] text-muted">
+      <Card className="mb-5 px-4 py-3 text-label text-muted">
         Files d'attente indisponibles.{' '}
         <button
           type="button"
@@ -536,10 +602,10 @@ function QueuesBlock() {
   return (
     <section aria-labelledby="admin-queues" className="mb-5">
       <div className="mb-2 flex items-baseline justify-between gap-3">
-        <h2 id="admin-queues" className="font-display text-[15px] font-bold">
+        <h2 id="admin-queues" className="font-display text-base font-bold">
           Files d'attente
         </h2>
-        <span className="text-[12px] text-muted">Rafraîchi chaque minute</span>
+        <span className="text-caption text-muted">Rafraîchi chaque minute</span>
       </div>
       {overview.isPending || !data ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -561,7 +627,7 @@ function QueuesBlock() {
                 >
                   <Card
                     interactive
-                    className={cn('flex h-full items-start gap-3 p-4', active && 'border-l-[3px] border-l-[var(--vermillon)]')}
+                    className={cn('flex h-full items-start gap-3 p-4', active && 'border-l-[3px] border-l-danger')}
                   >
                     <span
                       className={cn(
@@ -573,7 +639,7 @@ function QueuesBlock() {
                     </span>
                     <span className="min-w-0">
                       <span className="block text-label font-medium text-muted">{tile.label}</span>
-                      <span className="tnum mt-1 block font-display text-[26px] font-extrabold leading-none tracking-[-0.03em] text-ink">
+                      <span className="tnum mt-1 block font-display text-display font-extrabold leading-none tracking-[-0.03em] text-ink">
                         {tile.value.toLocaleString('fr-FR')}
                       </span>
                       <span className="mt-1.5 block text-caption text-muted">{tile.detail ?? 'Rien en attente'}</span>

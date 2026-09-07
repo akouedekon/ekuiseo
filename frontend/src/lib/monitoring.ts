@@ -122,10 +122,3 @@ export function isStaleChunkError(error: Error): boolean {
     error.message,
   )
 }
-
-/** Reserve aux tests : oublie les envois de la session. */
-export function resetMonitoringForTests(): void {
-  sent = 0
-  seen.clear()
-  installed = false
-}

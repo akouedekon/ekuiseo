@@ -4,9 +4,9 @@ import { Link } from 'react-router'
 import { Avatar, RatingStars } from '@/components/ui/misc'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/cn'
-import { estimateArrivalIso } from '@/lib/cities'
 import { formatDuration, formatFcfa, formatTime } from '@/lib/format'
 import { listItem } from '@/lib/motion'
+import { estimateArrival } from '@/lib/route'
 import type { TripResponse } from '@/api/types'
 
 /**
@@ -15,21 +15,34 @@ import type { TripResponse } from '@/api/types'
  * tabulaires), itineraire ensuite, conducteur en appui sous un filet.
  * Grille en trois lignes pour que l'axe horaire et l'axe geographique
  * restent alignes quelle que soit la longueur des libelles.
+ *
+ * Un trajet complet garde son contraste plein (audit F334) : l'etat se lit au
+ * badge danger et au filet lateral, pas a une opacite qui degrade tout le texte.
  */
-export function TripCard({ trip, animate = true }: { trip: TripResponse; animate?: boolean }) {
+export function TripCard({
+  trip,
+  animate = true,
+  seats = 1,
+}: {
+  trip: TripResponse
+  animate?: boolean
+  /** Places demandees par la recherche, propagees a la fiche (audit F249). */
+  seats?: number
+}) {
   // Arrivee et duree sont des ESTIMATIONS du front : aucune heure d'arrivee n'est saisie par le conducteur.
-  const arrival = estimateArrivalIso(trip)
-  const durationMin = Math.round((new Date(arrival).getTime() - new Date(trip.departureAt).getTime()) / 60_000)
+  const { arrivalIso, durationMinutes } = estimateArrival(trip)
   const full = trip.seatsAvailable === 0
   // Resultat apparie sur un troncon (arret intermediaire) : le prix affiche est celui du troncon.
   const segment = trip.segmentPriceFcfa != null && trip.segmentPriceFcfa > 0 ? trip.segmentPriceFcfa : null
+  const href = seats > 1 ? `/trips/${trip.id}?seats=${seats}` : `/trips/${trip.id}`
 
   const content = (
     <Link
-      to={`/trips/${trip.id}`}
+      to={href}
+      aria-label={`${trip.originLabel} vers ${trip.destLabel}, départ ${formatTime(trip.departureAt)}, ${formatFcfa(segment ?? trip.pricePerSeat)} par place${full ? ', complet' : ''}`}
       className={cn(
         'ek-lift group block rounded-[var(--radius-card)] border border-rule bg-surface shadow-e1',
-        full && 'opacity-70',
+        full && 'border-l-[3px] border-l-danger',
       )}
     >
       <div className="grid grid-cols-[auto_12px_minmax(0,1fr)_auto] items-center gap-x-3 px-5 pb-3.5 pt-4">
@@ -38,15 +51,15 @@ export function TripCard({ trip, animate = true }: { trip: TripResponse; animate
         <span aria-hidden className="mx-auto size-2.5 rounded-full border-2 border-primary bg-surface" />
         <span className="truncate font-display text-base font-bold leading-tight">{trip.originLabel}</span>
         <span className="row-span-3 self-start text-right">
-          <span className="tnum block font-display text-[22px] font-extrabold leading-none tracking-[-0.03em] text-ink">
+          <span className="tnum block font-display text-display font-extrabold leading-none tracking-[-0.03em] text-ink">
             {formatFcfa(segment ?? trip.pricePerSeat)}
           </span>
           <span className="mt-1 block text-caption text-muted">{segment ? 'par place, tronçon' : 'par place'}</span>
         </span>
 
         {/* Ligne 2 : duree du trajet, le long du filet */}
-        <span className="py-1 text-right text-[11px] leading-none text-muted" title="Durée estimée">
-          ≈ {formatDuration(durationMin)}
+        <span className="py-1 text-right text-micro leading-none text-muted" title="Durée estimée à vol d'oiseau">
+          ≈ {formatDuration(durationMinutes)}
         </span>
         <span aria-hidden className="mx-auto h-5 w-0.5 rounded-full bg-rule-strong" />
         <span aria-hidden />
@@ -54,13 +67,13 @@ export function TripCard({ trip, animate = true }: { trip: TripResponse; animate
         {/* Ligne 3 : arrivee */}
         <span
           className="tnum font-display text-title font-bold leading-none text-muted"
-          aria-label={`Arrivée estimée ${formatTime(arrival)}`}
+          aria-label={`Arrivée estimée ${formatTime(arrivalIso)}`}
           title="Arrivée estimée"
         >
-          <span className="font-sans text-[13px] font-normal" aria-hidden>
+          <span className="font-sans text-label font-normal" aria-hidden>
             ≈{' '}
           </span>
-          {formatTime(arrival)}
+          {formatTime(arrivalIso)}
         </span>
         <span aria-hidden className="mx-auto size-2.5 rounded-[3px] bg-danger" />
         <span className="truncate font-display text-base font-bold leading-tight text-ink-2">{trip.destLabel}</span>
@@ -79,7 +92,10 @@ export function TripCard({ trip, animate = true }: { trip: TripResponse; animate
         </span>
         <RatingStars value={trip.driver.ratingAvg} size={12} />
         {trip.driver.identityVerified ? (
-          <BadgeCheck className="size-4 text-success-ink" aria-label="Identité vérifiée" />
+          <span className="inline-flex">
+            <BadgeCheck className="size-4 text-success-ink" aria-hidden />
+            <span className="sr-only">Identité vérifiée</span>
+          </span>
         ) : null}
 
         <span className="ml-auto flex shrink-0 items-center gap-1.5">

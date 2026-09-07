@@ -103,7 +103,7 @@ const COLUMNS: DataTableColumn<AdminUserResponse>[] = [
     cell: (user) =>
       user.ratingAvg > 0 ? (
         <span className="inline-flex items-center gap-1 font-semibold">
-          <Star className="size-3.5 fill-[var(--ocre)] text-[var(--ocre)]" aria-hidden />
+          <Star className="size-3.5 fill-accent text-accent-ink" aria-hidden />
           {user.ratingAvg.toFixed(1).replace('.', ',')}
         </span>
       ) : (
@@ -181,7 +181,7 @@ export function AdminUsers() {
           rowKey={(user) => user.id}
           loading={users.isPending}
           initialSort={{ id: 'createdAt', direction: 'desc' }}
-          rowAccent={(user) => (user.suspended ? 'var(--vermillon)' : undefined)}
+          rowAccent={(user) => (user.suspended ? 'var(--danger)' : undefined)}
           empty={
             <EmptyState
               icon={UserX}
@@ -202,7 +202,7 @@ export function AdminUsers() {
                   <Button
                     size="sm"
                     variant={user.suspended ? 'secondary' : 'ghost'}
-                    className={user.suspended ? undefined : 'text-[var(--vermillon)]'}
+                    className={user.suspended ? undefined : 'text-danger-ink'}
                     onClick={() => setSuspension(user)}
                   >
                     {user.suspended ? (

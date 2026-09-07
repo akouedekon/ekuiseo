@@ -11,6 +11,27 @@ export function useOnlineStatus(): boolean {
   return online
 }
 
+/** Au-dela de ce delai, un chargement encore en cours merite une explication. */
+export const SLOW_NETWORK_MS = 8_000
+
+/**
+ * Vrai quand un chargement dure depuis plus de 8 s (audit F252) : le squelette
+ * seul, pendant les 20 s de delai puis les reessais, ressemble a un ecran mort.
+ * L'ecran affiche alors « Le reseau est lent, nous continuons d'essayer ».
+ */
+export function useSlow(fetching: boolean, thresholdMs = SLOW_NETWORK_MS): boolean {
+  const [slow, setSlow] = useState(false)
+  useEffect(() => {
+    if (!fetching) {
+      setSlow(false)
+      return
+    }
+    const id = window.setTimeout(() => setSlow(true), thresholdMs)
+    return () => window.clearTimeout(id)
+  }, [fetching, thresholdMs])
+  return fetching && slow
+}
+
 /** Compte a rebours en secondes, arrete a zero. Utile OTP, acompte, webhook. */
 export function useCountdown(deadline: number | null): number {
   const [remaining, setRemaining] = useState(() =>

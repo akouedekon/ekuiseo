@@ -63,7 +63,7 @@ export function EarningsSection() {
             )}
             aria-label="Progression vers le seuil de reversement"
           />
-          <p className="mt-2 text-[13px] leading-relaxed text-ink-2">
+          <p className="mt-2 text-label leading-relaxed text-ink-2">
             {balance.data.pendingBalanceFcfa >= balance.data.minimumPayoutThresholdFcfa
               ? "Seuil atteint : ce solde sera inclus dans le prochain lot constitué par l'équipe Ekuiseo, puis viré à la main sur votre compte mobile money vérifié."
               : `Les reversements sont déclenchés par l'équipe Ekuiseo, en général chaque semaine, dès ${formatFcfa(balance.data.minimumPayoutThresholdFcfa)} de solde et sur un compte mobile money vérifié. Le solde en espèces réglé à bord ne transite pas par Ekuiseo.`}
@@ -95,12 +95,15 @@ export function EarningsSection() {
               <m.li key={payout.id} variants={listItem}>
                 <Card className="flex items-center gap-3 p-4">
                   <div className="min-w-0 flex-1">
-                    <p className="tnum font-display text-[16px] font-bold">{formatFcfa(payout.amount)}</p>
-                    <p className="tnum text-[13px] text-muted">
+                    <p className="tnum font-display text-lead font-bold">{formatFcfa(payout.amount)}</p>
+                    <p className="tnum text-label text-muted">
                       {formatDayShort(payout.periodStart)} → {formatDayShort(payout.periodEnd)}
                       {payout.destinationMsisdn ? ` · ${formatPhone(payout.destinationMsisdn)}` : ''}
-                      {payout.settledAt ? ` · versé le ${formatDayShort(payout.settledAt)}` : ''}
                     </p>
+                    {/* Date reelle du virement (audit F504) : c'est elle que le conducteur rapproche de son releve. */}
+                    {payout.settledAt ? (
+                      <p className="tnum text-label font-medium text-success-ink">Versé le {formatDayShort(payout.settledAt)}</p>
+                    ) : null}
                   </div>
                   <Badge tone={STATUS[payout.status]?.tone ?? 'neutral'}>{STATUS[payout.status]?.label ?? payout.status}</Badge>
                 </Card>
@@ -108,7 +111,7 @@ export function EarningsSection() {
             ))}
           </m.ul>
           {hasFailed ? (
-            <p className="mt-3 rounded-[var(--radius-control)] bg-[var(--vermillon-soft)] px-3 py-2 text-[13px] leading-relaxed text-[var(--vermillon)]">
+            <p className="mt-3 rounded-[var(--radius-control)] bg-danger-soft px-3 py-2 text-label leading-relaxed text-danger-ink">
               Un virement n'a pas abouti (numéro invalide, plafond de compte, opérateur en panne). Vérifiez votre compte
               mobile money dans « Paiement », puis écrivez à{' '}
               <a href={`mailto:${CONTACT_EMAIL}`} className="font-semibold underline underline-offset-2">

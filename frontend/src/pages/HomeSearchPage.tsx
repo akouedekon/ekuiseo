@@ -14,30 +14,29 @@ import {
   WifiOff,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { SegmentedToggle } from '@/components/ui/tabs'
 import { Skeleton, Stepper } from '@/components/ui/misc'
-import { ErrorState } from '@/components/ui/states'
+import { EmptyState, ErrorState } from '@/components/ui/states'
 import { CityAutocomplete } from '@/components/trip/CityAutocomplete'
 import { PageContainer, SectionTitle } from '@/components/layout/PageContainer'
+import { PageMeta } from '@/components/layout/PageMeta'
 import { useIsAuthenticated } from '@/hooks/useAuth'
 import { usePopularRoutes, useRecurringTrips } from '@/hooks/useTrips'
 import type { CityOption } from '@/lib/cities'
-import { formatFcfa } from '@/lib/format'
+import { BENIN_TIME_HINT, deviceClockDiffersFromBenin, formatFcfa, toInputDate } from '@/lib/format'
+import { WEEKDAYS } from '@/lib/labels'
 import { DEPOSIT_FLOOR } from '@/lib/payments'
 import { listContainer, listItem } from '@/lib/motion'
+import { rememberPlace } from '@/lib/recentPlaces'
 import type { PopularRouteResponse, RecurringTripResponse } from '@/api/extended'
 import type { TripType } from '@/api/types'
 
-const WEEKDAY_LETTERS = ['L', 'M', 'M', 'J', 'V', 'S', 'D']
-const WEEKDAY_NAMES = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche']
-
-
-/** Promesses produit : trois, pas plus, chacune avec sa teinte de signal. */
+/** Promesses produit : trois, pas plus, chacune avec sa teinte de signal. Rien que le produit ne tienne (audit F323). */
 const PROMISES = [
   {
     icon: Wallet,
@@ -49,7 +48,7 @@ const PROMISES = [
     icon: ShieldCheck,
     tone: 'bg-primary-soft text-primary-ink',
     title: 'Conducteurs identifiés',
-    text: "Compte confirmé par e-mail, pièce d'identité contrôlée sur demande et signalée par un badge, avis publics après chaque trajet.",
+    text: "Identité déclarée et contrôlée par l'équipe Ekuiseo, e-mail confirmé, avis publics après chaque trajet.",
   },
   {
     icon: WifiOff,
@@ -59,26 +58,34 @@ const PROMISES = [
   },
 ]
 
+/** Jour civil au Benin (pas celui de l'appareil) : c'est lui que le serveur compare. */
 function todayIso(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return toInputDate(new Date())
+}
+
+function readTripType(value: string | null): TripType {
+  return value === 'QUOTIDIEN' ? 'QUOTIDIEN' : 'INTERURBAIN'
 }
 
 export function HomeSearchPage() {
   const navigate = useNavigate()
   const authed = useIsAuthenticated()
+  const [searchParams] = useSearchParams()
 
-  const [tripType, setTripType] = useState<TripType>('INTERURBAIN')
+  // Le mode vient de l'URL quand il est fourni (retour de connexion « ?next=/?type=QUOTIDIEN », audit F253).
+  const [tripType, setTripType] = useState<TripType>(() => readTripType(searchParams.get('type')))
   const [origin, setOrigin] = useState<CityOption | null>(null)
   const [destination, setDestination] = useState<CityOption | null>(null)
   const [date, setDate] = useState(todayIso())
   const [seats, setSeats] = useState(1)
   const [touched, setTouched] = useState(false)
+  const [dateError, setDateError] = useState<string>()
 
   const recurring = useRecurringTrips(authed && tripType === 'QUOTIDIEN')
   // Axes reellement proposes en ce moment : la liste vient du serveur, jamais d'une constante.
   const popular = usePopularRoutes(4)
   const popularRoutes = popular.data ?? []
+  const clockDiffers = deviceClockDiffersFromBenin()
 
   const errors = useMemo(
     () => ({
@@ -94,6 +101,8 @@ export function HomeSearchPage() {
   }
 
   const goTo = (from: CityOption, to: CityOption) => {
+    rememberPlace(from)
+    rememberPlace(to)
     const params = new URLSearchParams({
       from: from.label,
       fromLat: String(from.lat),
@@ -105,12 +114,21 @@ export function HomeSearchPage() {
       seats: String(seats),
       type: tripType,
     })
+    // La nature des lieux (quartier, gare) serre le rayon de recherche (audit F422).
+    if (from.kind) params.set('fromKind', from.kind)
+    if (to.kind) params.set('toKind', to.kind)
     navigate(`/search?${params.toString()}`)
   }
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
     setTouched(true)
+    // Une date passee n'est pas une recherche (audit F248) : on le dit ici, pas dans une liste vide.
+    if (date && date < todayIso()) {
+      setDateError('Cette date est passée : choisissez aujourd’hui ou un jour à venir.')
+      return
+    }
+    setDateError(undefined)
     if (!origin || !destination) return
     goTo(origin, destination)
   }
@@ -135,6 +153,7 @@ export function HomeSearchPage() {
 
   return (
     <div className="relative">
+      <PageMeta />
       {/* Nappe lumineuse et grille pointillee : la seule matiere decorative de l'application. */}
       <div aria-hidden className="ek-glow pointer-events-none absolute inset-x-0 top-0 h-[520px]" />
       <div aria-hidden className="ek-dots pointer-events-none absolute inset-x-0 top-0 h-[420px]" />
@@ -151,7 +170,7 @@ export function HomeSearchPage() {
             <Sparkles aria-hidden />
             Covoiturage au Bénin · interurbain et quotidien
           </Badge>
-          <h1 className="headline text-[36px] sm:text-hero">
+          <h1 tabIndex={-1} className="headline text-display-lg outline-none sm:text-hero">
             Partagez la route,
             <br />
             partagez le prix.
@@ -201,12 +220,15 @@ export function HomeSearchPage() {
                   icon={<Flag />}
                   placeholder="Où allez-vous ?"
                 />
-                {/* Inversion : centree sur la couture des deux champs. */}
+                {/*
+                 * Inversion (audit F328) : cible de 44 px, visible sur mobile a droite entre
+                 * les deux champs, centree sur la couture des deux colonnes au-dela de 640 px.
+                 */}
                 <button
                   type="button"
                   onClick={swap}
                   aria-label="Inverser le départ et l'arrivée"
-                  className="absolute left-1/2 top-[40px] z-10 hidden size-9 -translate-x-1/2 items-center justify-center rounded-full border border-rule-strong bg-surface text-ink-2 shadow-e1 transition-[transform,color] hover:rotate-180 hover:text-primary-ink sm:flex"
+                  className="absolute right-0 top-[64px] z-10 flex size-11 -translate-y-1/2 items-center justify-center rounded-full border border-field-border bg-surface text-ink-2 shadow-e1 transition-[transform,color] hover:rotate-180 hover:text-primary-ink sm:left-1/2 sm:right-auto sm:top-[40px] sm:size-10 sm:-translate-x-1/2 sm:translate-y-0"
                 >
                   <ArrowUpDown className="size-4" aria-hidden />
                 </button>
@@ -218,14 +240,27 @@ export function HomeSearchPage() {
                   label={tripType === 'QUOTIDIEN' ? 'À partir du' : 'Date de départ'}
                   value={date}
                   min={todayIso()}
-                  onChange={(event) => setDate(event.target.value)}
+                  onChange={(event) => {
+                    setDate(event.target.value)
+                    setDateError(undefined)
+                  }}
+                  error={dateError}
+                  hint={clockDiffers ? `Jour compté en ${BENIN_TIME_HINT}.` : undefined}
                   leading={<CalendarDays />}
                   className="h-12"
                 />
                 <div className="flex flex-col gap-1.5">
                   <span className="text-label font-medium text-ink-2">Places</span>
                   <div className="flex h-12 items-center">
-                    <Stepper value={seats} onChange={setSeats} min={1} max={8} label="places" />
+                    <Stepper
+                      value={seats}
+                      onChange={setSeats}
+                      min={1}
+                      max={8}
+                      label="places"
+                      decrementLabel="Une place de moins"
+                      incrementLabel="Une place de plus"
+                    />
                   </div>
                 </div>
               </div>
@@ -250,10 +285,11 @@ export function HomeSearchPage() {
                   <Sparkles className="size-5" aria-hidden />
                 </span>
                 <p className="flex-1 text-body text-ink-2">
-                  Connectez-vous pour enregistrer votre navette et retrouver les départs correspondants en un geste.
+                  Connectez-vous pour retrouver vos navettes habituelles et les départs correspondants en un geste.
                 </p>
                 <Button asChild variant="secondary" size="sm">
-                  <Link to="/login">Se connecter</Link>
+                  {/* Retour sur l'accueil EN MODE QUOTIDIEN apres connexion (audit F253). */}
+                  <Link to="/login?next=%2F%3Ftype%3DQUOTIDIEN">Se connecter</Link>
                 </Button>
               </Card>
             ) : recurring.isPending ? (
@@ -264,7 +300,7 @@ export function HomeSearchPage() {
             ) : recurring.isError ? (
               <ErrorState
                 title="Navettes indisponibles"
-                description="Impossible de charger vos navettes enregistrées pour l'instant."
+                description="Impossible de charger vos navettes habituelles pour l'instant."
                 onRetry={() => recurring.refetch()}
               />
             ) : recurring.data && recurring.data.length > 0 ? (
@@ -287,25 +323,26 @@ export function HomeSearchPage() {
                         </Badge>
                       </div>
 
-                      <div className="mt-3 flex gap-1" role="list" aria-label="Jours de circulation">
-                        {WEEKDAY_LETTERS.map((letter, index) => {
-                          const active = item.weekdays.includes(index + 1)
+                      <ul className="mt-3 flex gap-1" aria-label="Jours de circulation">
+                        {WEEKDAYS.map((day) => {
+                          const active = item.weekdays.includes(day.value)
                           return (
-                            <span
-                              key={index}
-                              role="listitem"
-                              aria-label={`${WEEKDAY_NAMES[index]} : ${active ? 'oui' : 'non'}`}
+                            <li
+                              key={day.value}
                               className={
                                 active
                                   ? 'flex size-7 items-center justify-center rounded-[var(--radius-chip)] bg-primary text-caption font-bold text-on-primary'
                                   : 'flex size-7 items-center justify-center rounded-[var(--radius-chip)] bg-surface-2 text-caption font-semibold text-muted'
                               }
                             >
-                              {letter}
-                            </span>
+                              <span aria-hidden>{day.letter}</span>
+                              <span className="sr-only">
+                                {day.name} : {active ? 'oui' : 'non'}
+                              </span>
+                            </li>
                           )
                         })}
-                      </div>
+                      </ul>
 
                       <Button
                         variant="outlineBrand"
@@ -321,14 +358,29 @@ export function HomeSearchPage() {
                 ))}
               </m.div>
             ) : (
-              <Card className="p-5 text-body text-muted">
-                Aucune navette enregistrée. Lancez une recherche quotidienne : nous vous proposerons de la mémoriser.
+              <Card>
+                {/* Formulation honnete (audit F250) : rien n'est « memorise » a la demande, la navette apparait avec l'usage. */}
+                <EmptyState
+                  icon={Clock}
+                  title="Aucune navette pour l'instant"
+                  description="Vos navettes apparaissent ici après deux réservations sur le même trajet quotidien."
+                  action={
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => document.getElementById('contenu')?.querySelector<HTMLInputElement>('input[role=combobox]')?.focus()}
+                    >
+                      Lancer une recherche quotidienne
+                    </Button>
+                  }
+                  className="py-8"
+                />
               </Card>
             )}
           </section>
         ) : null}
 
-        {/* --- Axes proposes en ce moment (donnees serveur) --- */}
+        {/* --- Axes proposes en ce moment (donnees serveur) ; rien n'est affiche s'il n'y en a aucun (audit L9) --- */}
         {popular.isPending || popular.isError || popularRoutes.length > 0 ? (
           <section aria-labelledby="popular-title" className="mt-12">
             <SectionTitle>
@@ -358,7 +410,7 @@ export function HomeSearchPage() {
                     <button
                       type="button"
                       onClick={() => goToPopular(route)}
-                      className="ek-lift group flex min-h-[72px] w-full items-center gap-3 rounded-[var(--radius-card)] border border-rule bg-surface p-4 text-left shadow-e1"
+                      className="ek-lift group flex w-full items-center gap-3 rounded-[var(--radius-card)] border border-rule bg-surface p-4 text-left shadow-e1"
                     >
                       <span className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-surface-2 text-ink-2 transition-colors group-hover:bg-primary-soft group-hover:text-primary-ink">
                         <TrendingUp className="size-[18px]" aria-hidden />

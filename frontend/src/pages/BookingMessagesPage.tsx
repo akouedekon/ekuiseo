@@ -1,20 +1,20 @@
 import { m } from 'motion/react'
-import { Clock, Lock, Send } from 'lucide-react'
+import { Clock, Lock, MessagesSquare, Send } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { Avatar, Skeleton } from '@/components/ui/misc'
-import { ErrorState } from '@/components/ui/states'
+import { EmptyState, ErrorState } from '@/components/ui/states'
 import { PageContainer, PageHeader } from '@/components/layout/PageContainer'
+import { PageMeta } from '@/components/layout/PageMeta'
 import { useBooking } from '@/hooks/useBookings'
 import { useMe } from '@/hooks/useAuth'
 import { useConversations, useMessages, useSendMessage } from '@/hooks/useMessages'
 import { useOnlineStatus } from '@/hooks/useNetwork'
 import { cn } from '@/lib/cn'
-import { describeError } from '@/lib/errors'
+import { describeError, isDefinitiveError } from '@/lib/errors'
 import { formatRelativeDay, formatTime } from '@/lib/format'
 
 /** Messagerie liee a une reservation. */
@@ -31,6 +31,7 @@ export function BookingMessagesPage() {
   const online = useOnlineStatus()
   const [draft, setDraft] = useState('')
   const endRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
 
   const list = messages.data ?? []
   const myId = me.data?.id
@@ -69,6 +70,7 @@ export function BookingMessagesPage() {
 
   return (
     <PageContainer width="sm" className="flex min-h-[calc(100dvh-6rem)] flex-col pb-4">
+      <PageMeta title={counterpart ? `Conversation avec ${counterpart.firstName}` : 'Conversation'} noindex />
       <PageHeader
         title={counterpart ? `${counterpart.firstName} ${counterpart.lastName}` : 'Conversation'}
         subtitle={
@@ -88,11 +90,25 @@ export function BookingMessagesPage() {
             <Skeleton className="h-16 w-4/5 rounded-[var(--radius-card)]" />
           </div>
         ) : messages.isError ? (
-          <ErrorState onRetry={() => messages.refetch()} />
+          <ErrorState
+            title={isDefinitiveError(messages.error) ? 'Conversation inaccessible' : 'Chargement impossible'}
+            description={describeError(messages.error)}
+            onRetry={isDefinitiveError(messages.error) ? undefined : () => messages.refetch()}
+          />
         ) : list.length === 0 ? (
-          <Card className="p-5 text-center text-[14px] text-muted">
-            Aucun message. Présentez-vous et convenez du point de rendez-vous.
-          </Card>
+          <EmptyState
+            icon={MessagesSquare}
+            title="Aucun message"
+            description="Présentez-vous et convenez du point de rendez-vous."
+            action={
+              closed ? undefined : (
+                <Button variant="secondary" size="sm" onClick={() => inputRef.current?.focus()}>
+                  Écrire un premier message
+                </Button>
+              )
+            }
+            className="py-8"
+          />
         ) : (
           <ul className="flex-1 space-y-2.5">
             {list.map((message, index) => {
@@ -123,16 +139,16 @@ export function BookingMessagesPage() {
                     className={cn(
                       'max-w-[78%] rounded-[var(--radius-card)] px-3 py-2',
                       mine
-                        ? 'rounded-br-[4px] bg-[var(--indigo)] text-[var(--indigo-contrast)]'
+                        ? 'rounded-br-[4px] bg-primary text-on-primary'
                         : 'rounded-bl-[4px] border border-rule bg-surface text-ink',
                       pending && 'opacity-70',
                     )}
                   >
-                    <p className="whitespace-pre-wrap break-words text-[14px] leading-relaxed">{message.body}</p>
+                    <p className="whitespace-pre-wrap break-words text-body leading-relaxed">{message.body}</p>
                     <p
                       className={cn(
-                        'tnum mt-0.5 flex items-center justify-end gap-1 text-[11px]',
-                        mine ? 'text-[color-mix(in_srgb,var(--indigo-contrast)_75%,transparent)]' : 'text-muted',
+                        'tnum mt-0.5 flex items-center justify-end gap-1 text-micro',
+                        mine ? 'text-[color-mix(in_srgb,var(--primary-contrast)_75%,transparent)]' : 'text-muted',
                       )}
                     >
                       {pending ? (
@@ -162,7 +178,7 @@ export function BookingMessagesPage() {
       {closed ? (
         <p
           role="status"
-          className="mt-3 flex items-start gap-2 rounded-[var(--radius-card)] border border-rule bg-[var(--surface-calm)] px-4 py-3 text-[13px] leading-relaxed text-ink-2"
+          className="mt-3 flex items-start gap-2 rounded-[var(--radius-card)] border border-rule bg-surface-2 px-4 py-3 text-label leading-relaxed text-ink-2"
         >
           <Lock className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
           Conversation close :{' '}
@@ -178,6 +194,7 @@ export function BookingMessagesPage() {
         </label>
         <textarea
           id="message-input"
+          ref={inputRef}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {

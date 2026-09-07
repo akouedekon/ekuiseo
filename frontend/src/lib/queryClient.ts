@@ -10,7 +10,7 @@ import { reportError } from '@/lib/monitoring'
  * collecteur : un 502/503 est une panne d'infrastructure deja visible ailleurs,
  * un 4xx est une reponse metier attendue, une erreur reseau vient du mobile.
  */
-export function shouldReportQueryError(error: unknown): boolean {
+function shouldReportQueryError(error: unknown): boolean {
   return error instanceof ApiError && error.status >= 500 && !isTransientError(error)
 }
 

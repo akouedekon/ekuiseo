@@ -28,6 +28,7 @@ import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/misc'
 import { EmptyState, ErrorState, OfflineState, isOfflineWithoutData } from '@/components/ui/states'
 import { PageContainer, PageHeader } from '@/components/layout/PageContainer'
+import { PageMeta } from '@/components/layout/PageMeta'
 import {
   useMarkAllNotificationsRead,
   useMarkNotificationRead,
@@ -40,11 +41,11 @@ import { listContainer, listItem } from '@/lib/motion'
 import type { NotificationResponse, NotificationType } from '@/api/types'
 
 const TONE = {
-  success: 'bg-[var(--vert-soft)] text-[var(--vert)]',
-  danger: 'bg-[var(--vermillon-soft)] text-[var(--vermillon)]',
-  info: 'bg-[var(--indigo-soft)] text-[var(--indigo)]',
-  warning: 'bg-[var(--ocre-soft)] text-[var(--ocre-ink)]',
-  neutral: 'bg-[var(--surface-calm)] text-ink-2',
+  success: 'bg-success-soft text-success-ink',
+  danger: 'bg-danger-soft text-danger-ink',
+  info: 'bg-primary-soft text-primary-ink',
+  warning: 'bg-accent-soft text-accent-ink',
+  neutral: 'bg-surface-2 text-ink-2',
 } as const
 
 /**
@@ -300,6 +301,7 @@ export function NotificationsPage() {
 
   return (
     <PageContainer width="md">
+      <PageMeta title="Notifications" noindex />
       <PageHeader
         title="Notifications"
         back={false}
@@ -364,15 +366,19 @@ export function NotificationsPage() {
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline justify-between gap-2">
-                      <p className={unreadItem ? 'font-display text-[15px] font-bold' : 'font-display text-[15px] font-bold text-ink-2'}>
+                      <p className={unreadItem ? 'font-display text-base font-bold' : 'font-display text-base font-bold text-ink-2'}>
                         {presentation.title}
                       </p>
-                      <span className="shrink-0 text-[12px] text-muted">{formatFromNow(notification.createdAt)}</span>
+                      <span className="shrink-0 text-caption text-muted">{formatFromNow(notification.createdAt)}</span>
                     </div>
-                    <p className="mt-0.5 text-[14px] leading-relaxed text-ink-2">{describe(notification)}</p>
+                    <p className="mt-0.5 text-body leading-relaxed text-ink-2">{describe(notification)}</p>
                   </div>
+                  {/* Point visuel decoratif + texte lisible par les lecteurs d'ecran (audit F333). */}
                   {unreadItem ? (
-                    <span className="mt-1.5 size-2 shrink-0 rounded-full bg-[var(--indigo)]" aria-label="Non lue" />
+                    <>
+                      <span className="mt-1.5 size-2 shrink-0 rounded-full bg-primary" aria-hidden />
+                      <span className="sr-only">Non lue</span>
+                    </>
                   ) : null}
                 </div>
               )
@@ -382,7 +388,7 @@ export function NotificationsPage() {
                   <Card
                     className={
                       unreadItem
-                        ? 'border-l-[3px] border-l-[var(--indigo)] bg-surface'
+                        ? 'border-l-[3px] border-l-primary bg-surface'
                         : 'border-l-[3px] border-l-transparent'
                     }
                   >
@@ -390,7 +396,7 @@ export function NotificationsPage() {
                       <Link
                         to={target}
                         onClick={() => unreadItem && markRead.mutate(notification.id)}
-                        className="block transition-colors hover:bg-[var(--surface-calm)]"
+                        className="block transition-colors hover:bg-surface-2"
                       >
                         {body}
                       </Link>
@@ -400,7 +406,7 @@ export function NotificationsPage() {
                         onClick={() => unreadItem && markRead.mutate(notification.id)}
                         disabled={!unreadItem}
                         aria-label={unreadItem ? 'Marquer comme lue' : undefined}
-                        className="block w-full text-left transition-colors enabled:hover:bg-[var(--surface-calm)] disabled:cursor-default"
+                        className="block w-full text-left transition-colors enabled:hover:bg-surface-2 disabled:cursor-default"
                       >
                         {body}
                       </button>

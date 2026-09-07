@@ -11,13 +11,3 @@ export const IDENTITY_PRESENTATION: Record<
   APPROVED: { label: 'Identité vérifiée', tone: 'success', icon: ShieldCheck },
   REJECTED: { label: 'Vérification refusée', tone: 'danger', icon: ShieldAlert },
 }
-
-export const DOCUMENT_OPTIONS = [
-  { value: 'CNI', label: "Carte nationale d'identité" },
-  { value: 'PASSPORT', label: 'Passeport' },
-  { value: 'DRIVER_LICENSE', label: 'Permis de conduire' },
-] as const
-
-export function documentLabel(type: string | null | undefined): string | undefined {
-  return DOCUMENT_OPTIONS.find((option) => option.value === type)?.label
-}

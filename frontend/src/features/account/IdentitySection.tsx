@@ -8,8 +8,9 @@ import { ErrorState } from '@/components/ui/states'
 import { useIdentityVerification, useSubmitIdentity } from '@/hooks/useAccount'
 import { describeError } from '@/lib/errors'
 import { formatFromNow } from '@/lib/format'
+import { documentLabel } from '@/lib/labels'
 import { IDENTITY_FORM_ID, IdentityForm } from './forms/IdentityForm'
-import { IDENTITY_PRESENTATION, documentLabel } from './identity'
+import { IDENTITY_PRESENTATION } from './identity'
 
 export function IdentitySection() {
   const identity = useIdentityVerification()
@@ -42,10 +43,10 @@ export function IdentitySection() {
           <span
             className={
               status === 'APPROVED'
-                ? 'flex size-11 shrink-0 items-center justify-center rounded-full bg-[var(--vert-soft)] text-[var(--vert)]'
+                ? 'flex size-11 shrink-0 items-center justify-center rounded-full bg-success-soft text-success-ink'
                 : status === 'REJECTED'
-                  ? 'flex size-11 shrink-0 items-center justify-center rounded-full bg-[var(--vermillon-soft)] text-[var(--vermillon)]'
-                  : 'flex size-11 shrink-0 items-center justify-center rounded-full bg-[var(--ocre-soft)] text-[var(--ocre-ink)]'
+                  ? 'flex size-11 shrink-0 items-center justify-center rounded-full bg-danger-soft text-danger-ink'
+                  : 'flex size-11 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent-ink'
             }
           >
             <Icon className="size-5" aria-hidden />
@@ -56,7 +57,7 @@ export function IdentitySection() {
             </p>
             {data?.documentType ? (
               <p className="text-label text-muted">
-                {documentLabel(data.documentType) ?? data.documentType}
+                {documentLabel(data.documentType)}
                 {data.submittedAt ? ` · envoyé ${formatFromNow(data.submittedAt)}` : ''}
               </p>
             ) : (
@@ -65,7 +66,7 @@ export function IdentitySection() {
               </p>
             )}
             {data?.rejectionReason ? (
-              <p className="mt-2 rounded-[var(--radius-control)] bg-[var(--vermillon-soft)] px-3 py-2 text-label text-[var(--vermillon)]">
+              <p className="mt-2 rounded-[var(--radius-control)] bg-danger-soft px-3 py-2 text-label text-danger-ink">
                 {data.rejectionReason}
               </p>
             ) : null}

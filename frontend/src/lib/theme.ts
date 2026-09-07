@@ -12,11 +12,15 @@ export function readStoredTheme(): ThemeMode {
   return 'system'
 }
 
-export function prefersDark(): boolean {
+function prefersDark(): boolean {
   return typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches
 }
 
-/** Applique le theme au document et met a jour la couleur de la barre systeme. */
+/**
+ * Applique le theme au document et met a jour la couleur de la barre systeme.
+ * Le script inline de index.html applique la meme regle avant le premier rendu
+ * (audit F332) : les deux doivent rester alignes sur la cle `ekuiseo.theme`.
+ */
 export function applyTheme(mode: ThemeMode): void {
   const dark = mode === 'dark' || (mode === 'system' && prefersDark())
   document.documentElement.classList.toggle('dark', dark)

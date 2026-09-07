@@ -3,11 +3,12 @@ import { Controller, useForm } from 'react-hook-form'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { Button } from '@/components/ui/button'
-import { Input, Textarea } from '@/components/ui/input'
+import { FieldError, Input, Textarea } from '@/components/ui/input'
 import { Stepper } from '@/components/ui/misc'
 import { Sheet } from '@/components/ui/sheet'
 import { useUpdateTrip } from '@/hooks/useTrips'
 import { describeError } from '@/lib/errors'
+import { BENIN_TIME_HINT, deviceClockDiffersFromBenin, toInputDate, toInputTime } from '@/lib/format'
 import { MIN_DEPARTURE_LEAD_MS, departureFromFields } from '@/lib/validation'
 import type { TripResponse } from '@/api/types'
 
@@ -31,16 +32,6 @@ const schema = z
 
 type Values = z.infer<typeof schema>
 
-function toLocalDate(iso: string): string {
-  const d = new Date(iso)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-function toLocalTime(iso: string): string {
-  const d = new Date(iso)
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
-
 /**
  * Modification d'un trajet publie (PATCH /api/v1/trips/{id}) : horaire, places,
  * prix, conditions. L'itineraire ne se modifie pas ici - un changement de
@@ -61,12 +52,14 @@ export function EditTripSheet({
   const update = useUpdateTrip()
   const booked = trip.seatsTotal - trip.seatsAvailable
   const template = trip.status === 'TEMPLATE'
+  const clockDiffers = deviceClockDiffersFromBenin()
   const form = useForm<Values>({
     resolver: zodResolver(schema),
     mode: 'onTouched',
     defaultValues: {
-      date: toLocalDate(trip.departureAt),
-      time: toLocalTime(trip.departureAt),
+      // Champs saisis et affiches en heure du Benin (audit F424).
+      date: toInputDate(trip.departureAt),
+      time: toInputTime(trip.departureAt),
       seatsTotal: trip.seatsTotal,
       pricePerSeat: trip.pricePerSeat,
       luggagePolicy: trip.luggagePolicy ?? '',
@@ -128,7 +121,7 @@ export function EditTripSheet({
             {...form.register('date')}
           />
           <Input
-            label="Heure"
+            label={clockDiffers ? `Heure (${BENIN_TIME_HINT})` : 'Heure'}
             type="time"
             hint={booked > 0 ? 'Changer l’horaire rouvre 24 h d’annulation gratuite aux passagers.' : undefined}
             error={form.formState.errors.time?.message}
@@ -142,15 +135,21 @@ export function EditTripSheet({
           render={({ field, fieldState }) => (
             <div>
               <div className="flex min-h-11 items-center justify-between gap-4">
-                <span className="text-[14px] font-medium">Places proposées</span>
-                <Stepper value={field.value} onChange={field.onChange} min={Math.max(1, booked)} max={8} label="places" />
+                <span className="text-body font-medium">Places proposées</span>
+                <Stepper
+                  value={field.value}
+                  onChange={field.onChange}
+                  min={Math.max(1, booked)}
+                  max={8}
+                  label="places"
+                  decrementLabel="Une place de moins"
+                  incrementLabel="Une place de plus"
+                />
               </div>
-              <p className="mt-1 text-[12px] text-muted">
+              <p className="mt-1 text-caption text-muted">
                 {booked > 0 ? `${booked} place(s) déjà réservée(s) : impossible de descendre en dessous.` : 'Jusqu’à 8 places.'}
               </p>
-              {fieldState.error ? (
-                <p className="mt-1 text-[12px] font-medium text-[var(--vermillon)]">{fieldState.error.message}</p>
-              ) : null}
+              {fieldState.error ? <FieldError>{fieldState.error.message}</FieldError> : null}
             </div>
           )}
         />

@@ -4,11 +4,9 @@ import { forwardRef, type ComponentPropsWithoutRef, type ElementRef } from 'reac
 import { cn } from '@/lib/cn'
 
 export const Dialog = DialogPrimitive.Root
-export const DialogTrigger = DialogPrimitive.Trigger
-export const DialogClose = DialogPrimitive.Close
-export const DialogPortal = DialogPrimitive.Portal
+const DialogPortal = DialogPrimitive.Portal
 
-export const DialogOverlay = forwardRef<
+const DialogOverlay = forwardRef<
   ElementRef<typeof DialogPrimitive.Overlay>,
   ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay>
 >(function DialogOverlay({ className, ...props }, ref) {
@@ -42,7 +40,7 @@ export const DialogContent = forwardRef<
         {children}
         {hideClose ? null : (
           <DialogPrimitive.Close
-            className="absolute right-3 top-3 flex size-9 items-center justify-center rounded-[var(--radius-control)] text-muted transition-colors hover:bg-[var(--surface-calm)] hover:text-ink"
+            className="absolute right-2 top-2 flex size-11 items-center justify-center rounded-[var(--radius-control)] text-muted transition-colors hover:bg-surface-2 hover:text-ink"
             aria-label="Fermer"
           >
             <X className="size-[18px]" aria-hidden />
@@ -74,7 +72,7 @@ export const DialogDescription = forwardRef<
   ElementRef<typeof DialogPrimitive.Description>,
   ComponentPropsWithoutRef<typeof DialogPrimitive.Description>
 >(function DialogDescription({ className, ...props }, ref) {
-  return <DialogPrimitive.Description ref={ref} className={cn('text-[13px] text-muted', className)} {...props} />
+  return <DialogPrimitive.Description ref={ref} className={cn('text-label text-muted', className)} {...props} />
 })
 
 export function DialogFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {

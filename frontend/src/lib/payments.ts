@@ -24,10 +24,11 @@ export const DEPOSIT_FLOOR = 1000
 const ROUNDING_STEP = 5
 
 /**
- * Part du total prelevee en frais de service. Doit rester alignee sur la
- * regle metier appliquee par le serveur (8 %, arrondis aux 5 FCFA superieurs).
+ * Part du total prelevee en frais de service, en pourcentage entier. Doit
+ * rester alignee sur la regle metier appliquee par le serveur (8 %, arrondis
+ * aux 5 FCFA superieurs - FeePolicy / MoneyUtils).
  */
-const SERVICE_FEE_RATE = 0.08
+const SERVICE_FEE_PERCENT = 8
 
 export function roundUpToStep(amount: number, step = ROUNDING_STEP): number {
   return Math.ceil(amount / step) * step
@@ -37,11 +38,15 @@ export function roundUpToStep(amount: number, step = ROUNDING_STEP): number {
  * Frais de service estimes. Le montant qui fait foi est celui renvoye par
  * l'API dans `paymentPlan.serviceFee` : cette fonction ne sert qu'a afficher
  * un ordre de grandeur AVANT que la reservation n'existe.
+ *
+ * Calcul en entiers, comme MoneyUtils cote serveur : ceil(total x 8 / 500) x 5.
+ * `total x 8` est un entier, la division par 500 est exacte en flottant pour
+ * tout total realiste, et l'arrondi aux 5 F superieurs se fait en une fois
+ * (1 255 -> 105, 12 505 -> 1 005). Un `Math.round` intermediaire donnait 5 F
+ * de moins que le serveur sur les totaux non multiples de 25 (audit F045).
  */
 export function estimateServiceFee(total: number): number {
-  // Arrondi a l'entier AVANT le pas de 5 : sinon un produit comme
-  // 12 500 x 0,08 = 1000,0000000000001 ferait basculer l'arrondi superieur.
-  return roundUpToStep(Math.round(total * SERVICE_FEE_RATE))
+  return Math.ceil((total * SERVICE_FEE_PERCENT) / 500) * ROUNDING_STEP
 }
 
 /**
@@ -53,7 +58,7 @@ export function estimateServiceFee(total: number): number {
  * Des que la reservation existe, c'est `paymentPlan.depositAmount` renvoye par
  * le serveur qui est affiche, sans recalcul.
  */
-export function computeDeposit(total: number, serviceFee: number): number {
+function computeDeposit(total: number, serviceFee: number): number {
   const raw = Math.max(DEPOSIT_FLOOR, serviceFee)
   return Math.min(roundUpToStep(raw), Math.max(0, total))
 }

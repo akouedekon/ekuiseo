@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/api/client'
 import type { PopularRouteResponse, RecurringTripResponse, TripStopResponse, UpdateTripRequest } from '@/api/extended'
 import type { BookingResponse, CreateTripRequest, Page, TripBookingResponse, TripResponse, TripType } from '@/api/types'
@@ -26,6 +26,15 @@ export interface TripSearchParams {
 
 export type TripSearchSort = 'departure' | 'price' | 'rating'
 
+/** Cle racine des resultats de recherche : invalidee des qu'un trajet change (audit F153). */
+export const TRIP_SEARCH_KEY = ['trips', 'search'] as const
+
+/** Les listes de recherche et les axes populaires sont perimes des qu'un trajet est cree, modifie, annule ou reserve. */
+export function invalidateTripListings(queryClient: QueryClient): void {
+  queryClient.invalidateQueries({ queryKey: TRIP_SEARCH_KEY })
+  queryClient.invalidateQueries({ queryKey: ['trips', 'popular'] })
+}
+
 function toQueryString(params: object): string {
   const usp = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
@@ -39,28 +48,19 @@ function toQueryString(params: object): string {
  * c'est lui qui rattache la recherche a l'utilisateur dans `search_events`, sans quoi
  * le taux recherche -> reservation du back-office vaut structurellement 0.
  */
-export function searchTripsRequest(params: TripSearchParams, page?: number): Promise<Page<TripResponse>> {
+export function searchTripsRequest(params: TripSearchParams, page?: number, signal?: AbortSignal): Promise<Page<TripResponse>> {
   const query = page === undefined ? params : { ...params, page }
-  return apiClient.get<Page<TripResponse>>(`/api/v1/trips/search?${toQueryString(query)}`)
-}
-
-/** GET /api/v1/trips/search (public, pagine cote serveur). */
-export function useTripSearch(params: TripSearchParams | null) {
-  return useQuery<Page<TripResponse>>({
-    queryKey: ['trips', 'search', params],
-    queryFn: () => searchTripsRequest(params as TripSearchParams),
-    enabled: !!params,
-  })
+  return apiClient.get<Page<TripResponse>>(`/api/v1/trips/search?${toQueryString(query)}`, { signal })
 }
 
 /**
- * Meme recherche, paginee cote serveur et cumulee page apres page (« Voir plus »).
+ * Recherche paginee cote serveur et cumulee page apres page (« Voir plus »).
  * La cle ignore `page` : c'est le parametre de page qui varie.
  */
 export function useTripSearchPages(params: TripSearchParams | null) {
   return useInfiniteQuery<Page<TripResponse>>({
-    queryKey: ['trips', 'search', 'pages', params],
-    queryFn: ({ pageParam }) => searchTripsRequest(params as TripSearchParams, pageParam as number),
+    queryKey: [...TRIP_SEARCH_KEY, 'pages', params],
+    queryFn: ({ pageParam, signal }) => searchTripsRequest(params as TripSearchParams, pageParam as number, signal),
     initialPageParam: 0,
     getNextPageParam: (last) => (last.number + 1 < last.totalPages ? last.number + 1 : undefined),
     enabled: !!params,
@@ -71,7 +71,8 @@ export function useTripSearchPages(params: TripSearchParams | null) {
 export function usePopularRoutes(limit = 4) {
   return useQuery<PopularRouteResponse[]>({
     queryKey: ['trips', 'popular', limit],
-    queryFn: () => apiClient.get<PopularRouteResponse[]>(`/api/v1/trips/popular?limit=${limit}`, { auth: false }),
+    queryFn: ({ signal }) =>
+      apiClient.get<PopularRouteResponse[]>(`/api/v1/trips/popular?limit=${limit}`, { auth: false, signal }),
     staleTime: 10 * 60_000,
   })
 }
@@ -80,7 +81,7 @@ export function usePopularRoutes(limit = 4) {
 export function useTrip(id: string | undefined) {
   return useQuery<TripResponse>({
     queryKey: ['trips', id],
-    queryFn: () => apiClient.get<TripResponse>(`/api/v1/trips/${id}`, { auth: false }),
+    queryFn: ({ signal }) => apiClient.get<TripResponse>(`/api/v1/trips/${id}`, { auth: false, signal }),
     enabled: !!id,
   })
 }
@@ -89,7 +90,7 @@ export function useTrip(id: string | undefined) {
 export function useTripStops(id: string | undefined) {
   return useQuery<TripStopResponse[]>({
     queryKey: ['trips', id, 'stops'],
-    queryFn: () => apiClient.get<TripStopResponse[]>(`/api/v1/trips/${id}/stops`, { auth: false }),
+    queryFn: ({ signal }) => apiClient.get<TripStopResponse[]>(`/api/v1/trips/${id}/stops`, { auth: false, signal }),
     enabled: !!id,
   })
 }
@@ -98,7 +99,7 @@ export function useTripStops(id: string | undefined) {
 export function useMyTrips(enabled = true) {
   return useQuery<TripResponse[]>({
     queryKey: ['me', 'trips'],
-    queryFn: () => apiClient.get<TripResponse[]>('/api/v1/me/trips'),
+    queryFn: ({ signal }) => apiClient.get<TripResponse[]>('/api/v1/me/trips', { signal }),
     enabled,
   })
 }
@@ -110,7 +111,7 @@ export function useCreateTrip() {
     mutationFn: (input: CreateTripRequest) => apiClient.post<TripResponse>('/api/v1/trips', input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['me', 'trips'] })
-      queryClient.invalidateQueries({ queryKey: ['trips', 'popular'] })
+      invalidateTripListings(queryClient)
     },
   })
 }
@@ -124,6 +125,8 @@ export function useUpdateTrip() {
     onSuccess: (trip) => {
       queryClient.setQueryData<TripResponse>(['trips', trip.id], trip)
       queryClient.invalidateQueries({ queryKey: ['me', 'trips'] })
+      // Un horaire ou un prix modifie change les resultats de recherche deja affiches.
+      invalidateTripListings(queryClient)
     },
   })
 }
@@ -150,6 +153,7 @@ export function useCancelTrip() {
     onSettled: (_data, _error, tripId) => {
       queryClient.invalidateQueries({ queryKey: ['me', 'trips'] })
       queryClient.invalidateQueries({ queryKey: ['trips', tripId] })
+      invalidateTripListings(queryClient)
     },
   })
 }
@@ -158,7 +162,7 @@ export function useCancelTrip() {
 export function useRecurringTrips(enabled: boolean) {
   return useQuery<RecurringTripResponse[]>({
     queryKey: ['me', 'recurring-trips'],
-    queryFn: () => apiClient.get<RecurringTripResponse[]>('/api/v1/me/recurring-trips'),
+    queryFn: ({ signal }) => apiClient.get<RecurringTripResponse[]>('/api/v1/me/recurring-trips', { signal }),
     enabled,
   })
 }
@@ -167,7 +171,7 @@ export function useRecurringTrips(enabled: boolean) {
 export function useTripPassengers(tripId: string | null) {
   return useQuery({
     queryKey: ['trips', tripId, 'passengers'],
-    queryFn: () => apiClient.get<TripBookingResponse[]>(`/api/v1/trips/${tripId}/bookings`),
+    queryFn: ({ signal }) => apiClient.get<TripBookingResponse[]>(`/api/v1/trips/${tripId}/bookings`, { signal }),
     enabled: tripId !== null,
     staleTime: 30_000,
   })

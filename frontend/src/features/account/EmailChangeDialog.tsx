@@ -115,7 +115,7 @@ export function EmailChangeDialog({ open, onOpenChange, currentEmail }: EmailCha
         {step === 'email' ? (
           <form onSubmit={sendCode} noValidate className="space-y-3">
             {currentEmail ? (
-              <p className="text-[13px] text-muted">
+              <p className="text-label text-muted">
                 Adresse actuelle : <span className="font-medium text-ink">{currentEmail}</span>
               </p>
             ) : null}
@@ -152,7 +152,7 @@ export function EmailChangeDialog({ open, onOpenChange, currentEmail }: EmailCha
               disabled={confirm.isPending}
             />
             {codeError ? (
-              <p role="alert" className="text-center text-[13px] font-medium text-[var(--vermillon)]">
+              <p role="alert" className="text-center text-label font-medium text-danger-ink">
                 {codeError}
               </p>
             ) : null}

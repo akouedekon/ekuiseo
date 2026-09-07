@@ -4,7 +4,6 @@ import { forwardRef, type ComponentPropsWithoutRef, type ElementRef } from 'reac
 import { cn } from '@/lib/cn'
 
 export const Select = SelectPrimitive.Root
-export const SelectGroup = SelectPrimitive.Group
 export const SelectValue = SelectPrimitive.Value
 
 export const SelectTrigger = forwardRef<
@@ -60,28 +59,17 @@ export const SelectItem = forwardRef<
     <SelectPrimitive.Item
       ref={ref}
       className={cn(
-        'relative flex min-h-[40px] cursor-default select-none items-center rounded-[6px] py-1.5 pl-3 pr-9 text-[14px] text-ink outline-none data-[highlighted]:bg-[var(--surface-calm)] data-[disabled]:opacity-50',
+        // Surbrillance clavier lisible (audit F322) : fond pale de la teinte + anneau interieur, pas un simple gris.
+        'relative flex min-h-11 cursor-default select-none items-center rounded-[6px] py-1.5 pl-3 pr-9 text-body text-ink outline-none data-[highlighted]:bg-primary-soft data-[highlighted]:text-primary-ink data-[highlighted]:shadow-[inset_0_0_0_2px_var(--focus-ring)] data-[disabled]:opacity-50',
         className,
       )}
       {...props}
     >
       <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
       <SelectPrimitive.ItemIndicator className="absolute right-3">
-        <Check className="size-4 text-[var(--indigo)]" aria-hidden />
+        <Check className="size-4 text-primary-ink" aria-hidden />
       </SelectPrimitive.ItemIndicator>
     </SelectPrimitive.Item>
   )
 })
 
-export const SelectLabel = forwardRef<
-  ElementRef<typeof SelectPrimitive.Label>,
-  ComponentPropsWithoutRef<typeof SelectPrimitive.Label>
->(function SelectLabel({ className, ...props }, ref) {
-  return (
-    <SelectPrimitive.Label
-      ref={ref}
-      className={cn('px-3 py-1.5 text-[12px] font-semibold uppercase tracking-wide text-muted', className)}
-      {...props}
-    />
-  )
-})

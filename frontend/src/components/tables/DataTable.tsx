@@ -115,7 +115,7 @@ export function DataTable<T>({
           <table className="w-full text-body">
             <caption className="sr-only">{caption}</caption>
             <thead>
-              <tr className="border-b border-rule bg-[var(--surface-calm)] text-left text-caption uppercase tracking-wide text-muted">
+              <tr className="border-b border-rule bg-surface-2 text-left text-caption uppercase tracking-wide text-muted">
                 {columns.map((column) => {
                   const active = sort?.id === column.id
                   const sortable = Boolean(column.sortValue)
@@ -174,7 +174,7 @@ export function DataTable<T>({
                     return (
                       <tr
                         key={rowKey(row)}
-                        className="transition-colors hover:bg-[var(--surface-calm)]"
+                        className="transition-colors hover:bg-surface-2"
                         style={accent ? { boxShadow: `inset 3px 0 0 ${accent}` } : undefined}
                       >
                         {columns.map((column) => (

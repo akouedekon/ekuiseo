@@ -24,16 +24,20 @@ export function RouteTimeline({ points, className }: { points: RoutePoint[]; cla
             {/* Colonne heure */}
             <span
               className={cn(
-                'tnum w-[42px] shrink-0 pt-px text-right font-display text-[14px] font-bold leading-5',
+                'tnum w-[42px] shrink-0 pt-px text-right font-display text-body font-bold leading-5',
                 point.kind === 'stop' ? 'text-muted' : 'text-ink',
               )}
+              title={point.estimated ? 'Heure d’arrivée estimée, non garantie par le conducteur' : undefined}
             >
               {point.time ? (
                 <>
                   {point.estimated ? (
-                    <span className="font-sans font-normal text-muted" title="Heure estimée">
-                      ≈{' '}
-                    </span>
+                    <>
+                      <span className="font-sans font-normal text-muted" aria-hidden>
+                        ≈{' '}
+                      </span>
+                      <span className="sr-only">estimée </span>
+                    </>
                   ) : null}
                   {formatTime(point.time)}
                 </>
@@ -48,16 +52,16 @@ export function RouteTimeline({ points, className }: { points: RoutePoint[]; cla
                 <span
                   className={cn(
                     'absolute top-2.5 h-full w-0.5 rounded-full',
-                    point.kind === 'origin' ? 'bg-[var(--indigo)]' : 'bg-rule-strong',
+                    point.kind === 'origin' ? 'bg-primary' : 'bg-rule-strong',
                   )}
                 />
               ) : null}
               <span
                 className={cn(
                   'relative z-10 mt-1.5',
-                  point.kind === 'origin' && 'size-3 rounded-full border-[3px] border-[var(--indigo)] bg-surface',
-                  point.kind === 'stop' && 'size-2 rounded-full bg-rule-strong ring-4 ring-[var(--surface)]',
-                  point.kind === 'destination' && 'size-3 rounded-[3px] bg-[var(--vermillon)]',
+                  point.kind === 'origin' && 'size-3 rounded-full border-[3px] border-primary bg-surface',
+                  point.kind === 'stop' && 'size-2 rounded-full bg-rule-strong ring-4 ring-surface',
+                  point.kind === 'destination' && 'size-3 rounded-[3px] bg-danger',
                 )}
               />
             </span>
@@ -66,19 +70,17 @@ export function RouteTimeline({ points, className }: { points: RoutePoint[]; cla
               <span
                 className={cn(
                   'min-w-0 truncate font-display leading-5',
-                  point.kind === 'stop'
-                    ? 'text-[14px] font-semibold text-ink-2'
-                    : 'text-[15px] font-bold text-ink',
+                  point.kind === 'stop' ? 'text-body font-semibold text-ink-2' : 'text-base font-bold text-ink',
                 )}
               >
                 {point.label}
               </span>
               {point.priceFromOrigin !== null && point.priceFromOrigin > 0 ? (
-                <span className="tnum shrink-0 text-[13px] font-semibold text-ink-2">
+                <span className="tnum shrink-0 text-label font-semibold text-ink-2">
                   {formatFcfa(point.priceFromOrigin)}
                 </span>
               ) : point.kind === 'origin' ? (
-                <span className="shrink-0 text-[12px] text-muted">départ</span>
+                <span className="shrink-0 text-caption text-muted">départ</span>
               ) : null}
             </span>
           </m.li>

@@ -39,6 +39,7 @@ const LegalPage = lazyPage(() => import('@/pages/LegalPage'), 'LegalPage')
 const AdminLayout = lazyPage(() => import('@/pages/admin/AdminLayout'), 'AdminLayout')
 const AdminDashboard = lazyPage(() => import('@/pages/admin/AdminDashboard'), 'AdminDashboard')
 const AdminLiquidity = lazyPage(() => import('@/pages/admin/AdminLiquidity'), 'AdminLiquidity')
+const AdminRetention = lazyPage(() => import('@/pages/admin/AdminRetention'), 'AdminRetention')
 const AdminReports = lazyPage(() => import('@/pages/admin/AdminReports'), 'AdminReports')
 const AdminVerifications = lazyPage(() => import('@/pages/admin/AdminVerifications'), 'AdminVerifications')
 const AdminPayouts = lazyPage(() => import('@/pages/admin/AdminPayouts'), 'AdminPayouts')
@@ -103,6 +104,7 @@ export default function App() {
         >
           <Route index element={<Suspense fallback={null}><AdminDashboard /></Suspense>} />
           <Route path="liquidity" element={<Suspense fallback={null}><AdminLiquidity /></Suspense>} />
+          <Route path="retention" element={<Suspense fallback={null}><AdminRetention /></Suspense>} />
           <Route path="reports" element={<Suspense fallback={null}><AdminReports /></Suspense>} />
           <Route path="verifications" element={<Suspense fallback={null}><AdminVerifications /></Suspense>} />
           <Route path="payouts" element={<Suspense fallback={null}><AdminPayouts /></Suspense>} />

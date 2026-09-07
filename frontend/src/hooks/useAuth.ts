@@ -61,16 +61,11 @@ export function useIsAuthenticated(): boolean {
   )
 }
 
-/** Lecture ponctuelle hors rendu (gardes, effets). Dans un composant, preferer useIsAuthenticated. */
-export function isAuthenticated(): boolean {
-  return authStore.isAuthenticated()
-}
-
 export function useMe() {
   const authenticated = useIsAuthenticated()
   return useQuery<UserResponse>({
     queryKey: ['me'],
-    queryFn: () => apiClient.get<UserResponse>('/api/v1/me'),
+    queryFn: ({ signal }) => apiClient.get<UserResponse>('/api/v1/me', { signal }),
     enabled: authenticated,
     staleTime: 5 * 60_000,
   })

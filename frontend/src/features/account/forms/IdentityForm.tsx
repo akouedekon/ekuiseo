@@ -2,8 +2,8 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { Controller, useForm } from 'react-hook-form'
 import { SelectField } from '@/components/forms/SelectField'
 import { Input } from '@/components/ui/input'
+import { DOCUMENT_OPTIONS } from '@/lib/labels'
 import { identitySchema, type IdentityValues } from '@/lib/validation'
-import { DOCUMENT_OPTIONS } from '../identity'
 
 export const IDENTITY_FORM_ID = 'identity-form'
 
@@ -45,8 +45,9 @@ export function IdentityForm({ onSubmit }: { onSubmit: (values: IdentityValues) 
       />
       {/* TODO(backend) : ajouter le televersement de la photo du document
           (POST /api/v1/me/identity, multipart) quand le stockage sera en place. */}
-      <p className="rounded-[var(--radius-control)] bg-[var(--surface-calm)] px-3 py-2.5 text-label leading-relaxed text-ink-2">
-        Un agent Ekuiseo vérifie votre document sous 24 à 48 h. Vous recevrez une notification à la fin du contrôle.
+      {/* Aucun delai chiffre : la promesse serait intenable (audits F254, F323). */}
+      <p className="rounded-[var(--radius-control)] bg-surface-2 px-3 py-2.5 text-label leading-relaxed text-ink-2">
+        Un agent Ekuiseo contrôle votre dossier. Vous serez prévenu par notification à la fin du contrôle.
       </p>
     </form>
   )

@@ -4,6 +4,7 @@ import { ScrollText } from 'lucide-react'
 import { useEffect, type JSX } from 'react'
 import { Link } from 'react-router'
 import { PageContainer, PageHeader } from '@/components/layout/PageContainer'
+import { PageMeta } from '@/components/layout/PageMeta'
 import { CguContent } from '@/content/legal/cgu'
 import { ConfidentialiteContent } from '@/content/legal/confidentialite'
 import { MentionsLegalesContent } from '@/content/legal/mentions-legales'
@@ -43,11 +44,12 @@ export function LegalPage({ slug }: { slug: LegalSlug }) {
 
   return (
     <PageContainer width="md">
+      <PageMeta title={page.title} />
       <PageHeader title={page.title} backTo="/" />
 
       <div
         role="note"
-        className="flex gap-3 rounded-[var(--radius-card)] border border-[var(--ocre)] bg-[var(--ocre-soft)] px-4 py-3 text-[var(--ocre-ink)]"
+        className="flex gap-3 rounded-[var(--radius-card)] border border-accent bg-accent-soft px-4 py-3 text-accent-ink"
       >
         <ScrollText className="mt-0.5 size-5 shrink-0" aria-hidden />
         <div className="text-body leading-relaxed">

@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   PanelLeftClose,
   PanelLeftOpen,
+  Repeat,
   ScrollText,
   Users,
   Wallet,
@@ -42,6 +43,7 @@ const ADMIN_NAV: AdminNavGroup[] = [
     items: [
       { to: '/admin', label: 'Tableau de bord', icon: LayoutDashboard, end: true },
       { to: '/admin/liquidity', label: 'Liquidité', icon: Gauge, end: false },
+      { to: '/admin/retention', label: 'Rétention', icon: Repeat, end: false },
     ],
   },
   {
@@ -129,6 +131,10 @@ export function AdminLayout() {
 
   return (
     <PageContainer width="lg">
+      {/* Titre de niveau 1 de toute la coque (audit F330) : chaque ecran commence ensuite par un h2 (AdminPageHeader). */}
+      <h1 tabIndex={-1} className="sr-only">
+        Back-office
+      </h1>
       <div
         className="grid gap-6 transition-[grid-template-columns] duration-200 ease-out lg:grid-cols-[var(--admin-sidebar)_minmax(0,1fr)] lg:gap-8"
         style={{ '--admin-sidebar': collapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH } as CSSProperties}
@@ -238,7 +244,7 @@ function AdminNavLink({ item, collapsed, queue }: { item: AdminNavItem; collapse
         {queue > 0 && collapsed ? (
           <span
             aria-hidden
-            className="absolute -right-1 -top-1 hidden size-2.5 rounded-full bg-[var(--vermillon)] ring-2 ring-surface lg:block"
+            className="absolute -right-1 -top-1 hidden size-2.5 rounded-full bg-danger ring-2 ring-surface lg:block"
           />
         ) : null}
       </span>
@@ -247,7 +253,7 @@ function AdminNavLink({ item, collapsed, queue }: { item: AdminNavItem; collapse
         <span
           aria-hidden
           className={cn(
-            'tnum ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-[var(--vermillon)] px-1.5 py-px text-[11px] font-bold leading-4 text-white',
+            'tnum ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-danger px-1.5 py-px text-micro font-bold leading-4 text-on-danger',
             collapsed && 'lg:hidden',
           )}
         >

@@ -29,7 +29,7 @@ export function TermsGate() {
         <span className="flex size-12 items-center justify-center rounded-[var(--radius-card)] bg-primary-soft text-primary-ink">
           <ScrollText className="size-6" aria-hidden />
         </span>
-        <h1 className="headline mt-4 text-[24px]">Nos conditions ont changé</h1>
+        <h1 className="headline mt-4 text-display">Nos conditions ont changé</h1>
         <p className="mt-2 text-body leading-relaxed text-ink-2">
           Pour continuer à utiliser Ekuiseo, prenez connaissance de la version {TERMS_VERSION} des conditions
           générales d'utilisation et de la politique de confidentialité, puis acceptez-les.

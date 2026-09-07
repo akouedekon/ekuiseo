@@ -5,7 +5,7 @@ import { useSyncExternalStore } from 'react'
  * MapLibre, 1 Mo) que lorsqu'il est reellement visible, au lieu de le cacher en
  * CSS une fois charge (audit F345). Rendu serveur / test : `false`.
  */
-export function useMediaQuery(query: string): boolean {
+function useMediaQuery(query: string): boolean {
   return useSyncExternalStore(
     (onChange) => {
       if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return () => undefined

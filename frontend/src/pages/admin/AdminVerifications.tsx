@@ -22,14 +22,9 @@ import { AdminPageHeader } from '@/components/layout/AdminPageHeader'
 import { useAdminVerifications, useReviewVerification } from '@/hooks/useAdmin'
 import { describeError } from '@/lib/errors'
 import { formatFromNow, formatPhone } from '@/lib/format'
+import { documentLabel } from '@/lib/labels'
 import { listContainer, listItem } from '@/lib/motion'
 import type { IdentityVerificationStatus } from '@/api/extended'
-
-const DOCUMENT_LABEL: Record<string, string> = {
-  CNI: "Carte nationale d'identité",
-  PASSPORT: 'Passeport',
-  DRIVER_LICENSE: 'Permis de conduire',
-}
 
 type Filter = Extract<IdentityVerificationStatus, 'PENDING' | 'APPROVED' | 'REJECTED'>
 
@@ -91,7 +86,7 @@ export function AdminVerifications() {
       {/* Le televersement du document n'existe pas encore cote serveur : le
           moderateur controle le type et le numero declares, et peut croiser
           avec le profil public. Dit tel quel, sans faux apercu. */}
-      <Card className="mb-4 border-[var(--ocre)] bg-[var(--ocre-soft)] px-4 py-3 text-[13px] leading-relaxed text-[var(--ocre-ink)]">
+      <Card className="mb-4 border-accent bg-accent-soft px-4 py-3 text-label leading-relaxed text-accent-ink">
         Le dépôt de la photo du document n'est pas encore disponible : seuls le type et le numéro déclarés sont
         vérifiables ici. Validez uniquement après contrôle par un autre canal (appel, rendez-vous).
       </Card>
@@ -122,16 +117,16 @@ export function AdminVerifications() {
                 <div className="flex items-start gap-3 p-4">
                   <Avatar firstName={item.firstName} lastName={item.lastName} size={44} />
                   <div className="min-w-0 flex-1">
-                    <Link to={`/drivers/${item.userId}`} className="font-display text-[16px] font-bold underline-offset-4 hover:underline">
+                    <Link to={`/drivers/${item.userId}`} className="font-display text-lead font-bold underline-offset-4 hover:underline">
                       {item.firstName} {item.lastName}
                     </Link>
-                    <p className="tnum text-[13px] text-muted">{formatPhone(item.phone)}</p>
+                    <p className="tnum text-label text-muted">{formatPhone(item.phone)}</p>
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <Badge tone="neutral">
                         <FileText aria-hidden />
-                        {DOCUMENT_LABEL[item.documentType] ?? item.documentType}
+                        {documentLabel(item.documentType)}
                       </Badge>
-                      <span className="tnum text-[13px] font-medium text-ink-2">{item.documentNumber}</span>
+                      <span className="tnum text-label font-medium text-ink-2">{item.documentNumber}</span>
                       {item.status !== 'PENDING' ? (
                         <Badge tone={item.status === 'APPROVED' ? 'success' : 'danger'}>
                           {item.status === 'APPROVED' ? 'Validée' : 'Refusée'}
@@ -140,12 +135,12 @@ export function AdminVerifications() {
                     </div>
                     {/* Onglets historiques : la decision et son motif, tels que l'utilisateur les a recus. */}
                     {item.status === 'REJECTED' && item.rejectionReason ? (
-                      <p className="mt-2 rounded-[var(--radius-control)] bg-[var(--vermillon-soft)] px-3 py-2 text-[13px] text-[var(--vermillon)]">
+                      <p className="mt-2 rounded-[var(--radius-control)] bg-danger-soft px-3 py-2 text-label text-danger-ink">
                         Motif transmis : {item.rejectionReason}
                       </p>
                     ) : null}
                   </div>
-                  <span className="shrink-0 text-right text-[12px] text-muted">
+                  <span className="shrink-0 text-right text-caption text-muted">
                     {item.status === 'PENDING' || item.reviewedAt == null ? (
                       <>Déposé {formatFromNow(item.submittedAt)}</>
                     ) : (
@@ -174,7 +169,7 @@ export function AdminVerifications() {
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="text-[var(--vermillon)]"
+                      className="text-danger-ink"
                       disabled={busyId !== null}
                       onClick={() => setRejecting({ id: item.id, name: `${item.firstName} ${item.lastName}` })}
                     >

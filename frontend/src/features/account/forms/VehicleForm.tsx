@@ -2,15 +2,10 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { Controller, useForm } from 'react-hook-form'
 import { SelectField } from '@/components/forms/SelectField'
 import { Input } from '@/components/ui/input'
+import { COMFORT_OPTIONS } from '@/lib/labels'
 import { vehicleSchema, type VehicleValues } from '@/lib/validation'
 
 export const VEHICLE_FORM_ID = 'vehicle-form'
-
-const COMFORT_OPTIONS = [
-  { value: 'BASIC', label: 'Confort simple' },
-  { value: 'COMFORT', label: 'Confortable (climatisé)' },
-  { value: 'PREMIUM', label: 'Haut de gamme' },
-] as const
 
 const DEFAULTS: VehicleValues = {
   brand: '',

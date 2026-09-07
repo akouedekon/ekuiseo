@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/card'
 import { Avatar, Skeleton } from '@/components/ui/misc'
 import { EmptyState, ErrorState } from '@/components/ui/states'
 import { PageContainer, PageHeader } from '@/components/layout/PageContainer'
+import { PageMeta } from '@/components/layout/PageMeta'
 import { useConversations } from '@/hooks/useMessages'
 import { formatFromNow, formatRelativeDay } from '@/lib/format'
 import { listContainer, listItem } from '@/lib/motion'
@@ -16,6 +17,7 @@ export function MessagesPage() {
 
   return (
     <PageContainer width="md">
+      <PageMeta title="Messages" noindex />
       <PageHeader title="Messages" back={false} subtitle="Une conversation par réservation" />
 
       {conversations.isPending ? (
@@ -42,10 +44,10 @@ export function MessagesPage() {
         <m.ul variants={listContainer} initial="hidden" animate="show" className="space-y-2">
           {list.map((conversation) => (
             <m.li key={conversation.bookingId} variants={listItem}>
-              <Card className={conversation.unreadCount > 0 ? 'border-l-[3px] border-l-[var(--indigo)]' : ''}>
+              <Card className={conversation.unreadCount > 0 ? 'border-l-[3px] border-l-primary' : ''}>
                 <Link
                   to={`/bookings/${conversation.bookingId}/messages`}
-                  className="flex items-center gap-3 p-4 transition-colors hover:bg-[var(--surface-calm)]"
+                  className="flex items-center gap-3 p-4 transition-colors hover:bg-surface-2"
                 >
                   <Avatar
                     firstName={conversation.counterpart.firstName}
@@ -55,16 +57,16 @@ export function MessagesPage() {
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline justify-between gap-2">
-                      <p className="truncate font-display text-[15px] font-bold">
+                      <p className="truncate font-display text-base font-bold">
                         {conversation.counterpart.firstName} {conversation.counterpart.lastName}
                       </p>
                       {conversation.lastMessageAt ? (
-                        <span className="shrink-0 text-[12px] text-muted">
+                        <span className="shrink-0 text-caption text-muted">
                           {formatFromNow(conversation.lastMessageAt)}
                         </span>
                       ) : null}
                     </div>
-                    <p className="truncate text-[13px] text-muted">
+                    <p className="truncate text-label text-muted">
                       {conversation.originLabel} → {conversation.destLabel} ·{' '}
                       {formatRelativeDay(conversation.departureAt)}
                     </p>
@@ -72,8 +74,8 @@ export function MessagesPage() {
                       <p
                         className={
                           conversation.unreadCount > 0
-                            ? 'mt-0.5 truncate text-[14px] font-semibold text-ink'
-                            : 'mt-0.5 truncate text-[14px] text-ink-2'
+                            ? 'mt-0.5 truncate text-body font-semibold text-ink'
+                            : 'mt-0.5 truncate text-body text-ink-2'
                         }
                       >
                         {conversation.lastMessage}
@@ -81,7 +83,7 @@ export function MessagesPage() {
                     ) : null}
                   </div>
                   {conversation.unreadCount > 0 ? (
-                    <span className="tnum flex size-6 shrink-0 items-center justify-center rounded-full bg-[var(--vermillon)] text-[12px] font-bold text-[var(--vermillon-contrast)]">
+                    <span className="tnum flex size-6 shrink-0 items-center justify-center rounded-full bg-danger text-caption font-bold text-on-danger">
                       {conversation.unreadCount}
                     </span>
                   ) : (

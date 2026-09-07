@@ -43,9 +43,19 @@
     <meta name="twitter:image" content="https://ekuiseo.com/og-image.png" />
 
     <!--
+      Theme memorise (localStorage « ekuiseo.theme », voir src/lib/theme.ts) pose
+      sur <html> AVANT le premier rendu : sans cela, un utilisateur en mode sombre
+      voyait l'ecran de demarrage clair puis un basculement (audit F332). Script
+      externe synchrone (public/theme-boot.js) : la CSP de production refuse
+      l'inline. La meme logique est rejouee par React ensuite (applyTheme).
+    -->
+    <script src="%BASE_URL%theme-boot.js"></script>
+    <!--
       Ecran de chargement inline : affiche avant meme que le paquet JS
       n'arrive, ce qui compte sur une connexion 3G irreguliere.
       Il est retire par main.tsx des le premier rendu de React.
+      Ses couleurs suivent la classe « dark » posee ci-dessus, pas la seule
+      preference systeme : un theme force clair ou sombre est respecte.
     -->
     <style>
       #boot {
@@ -61,11 +71,9 @@
         color: #6b6b70;
         font-size: 13px;
       }
-      @media (prefers-color-scheme: dark) {
-        #boot {
-          background: #0d0d0f;
-          color: #979690;
-        }
+      :root.dark #boot {
+        background: #0d0d0f;
+        color: #979690;
       }
       #boot .bar {
         width: 128px;
