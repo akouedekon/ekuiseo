@@ -61,7 +61,9 @@ class UserDataExportServiceTest {
             identityVerificationRepository, mock(DriverSubscriptionRepository.class), tripRepository, tripStopRepository,
             mock(BookingRepository.class), mock(PaymentRepository.class), mock(DriverPayoutRepository.class),
             mock(ReviewRepository.class), mock(MessageRepository.class), mock(NotificationRepository.class),
-            mock(SearchAlertRepository.class), mock(ReportRepository.class), auditService, 24);
+            mock(SearchAlertRepository.class), mock(ReportRepository.class), auditService,
+            mock(bj.ekuiseo.api.repository.PushSubscriptionRepository.class),
+            mock(bj.ekuiseo.api.repository.IdentityDocumentRepository.class), 24);
 
     private final User user = User.builder().id(UUID.randomUUID()).phone("+2290197000322").email("awa@example.bj")
             .firstName("Awa").lastName("K").passwordHash("secret-hash").termsVersion("2026-09").build();

@@ -2,6 +2,7 @@ package bj.ekuiseo.api.dto.admin;
 
 import bj.ekuiseo.api.domain.enums.IdentityDocumentType;
 import bj.ekuiseo.api.domain.enums.IdentityVerificationStatus;
+import bj.ekuiseo.api.dto.user.IdentityDocumentSummary;
 
 import java.time.Instant;
 import java.util.List;
@@ -15,6 +16,8 @@ import java.util.UUID;
  * @param reviewedBy      identifiant de l administrateur ayant tranche (null si PENDING)
  * @param duplicateOfUserIds autres comptes ayant declare la meme piece (meme type, meme numero
  *                           normalise, tous statuts) - a examiner avant d approuver (constat F604)
+ * @param documents       pieces televersees (V20) ; le contenu se lit sur
+ *                        GET /admin/verifications/{id}/documents/{side}, consultation journalisee
  */
 public record AdminVerificationResponse(
         UUID id,
@@ -29,6 +32,7 @@ public record AdminVerificationResponse(
         Instant reviewedAt,
         String rejectionReason,
         UUID reviewedBy,
-        List<UUID> duplicateOfUserIds
+        List<UUID> duplicateOfUserIds,
+        List<IdentityDocumentSummary> documents
 ) {
 }

@@ -21,6 +21,27 @@ class NotificationTemplatesTest {
         }
     }
 
+    /** V20 : chaque type a un contenu push court, sans prefixe « Ekuiseo : », avec un chemin de l application. */
+    @Test
+    void everyTypeHasAPushContent_shortAndRouted() {
+        for (NotificationType type : NotificationType.values()) {
+            NotificationTemplates.Push push = NotificationTemplates.push(type, Map.of());
+            assertThat(push.title()).as(type.name()).isNotBlank();
+            assertThat(push.body()).as(type.name()).isNotBlank().doesNotStartWith("Ekuiseo :");
+            assertThat(push.body().length()).as(type.name()).isLessThanOrEqualTo(NotificationTemplates.PUSH_BODY_MAX);
+            assertThat(push.url()).as(type.name()).startsWith("/");
+            assertThat(push.tag()).as(type.name()).isEqualTo(type.name().toLowerCase());
+        }
+        UUID tripId = UUID.randomUUID();
+        assertThat(NotificationTemplates.push(NotificationType.SEARCH_ALERT_MATCH,
+                NotificationTemplates.payload("tripId", tripId.toString())).url()).isEqualTo("/trips/" + tripId);
+        assertThat(NotificationTemplates.push(NotificationType.NEW_MESSAGE,
+                NotificationTemplates.payload("bookingId", "b-1")).url()).isEqualTo("/bookings/b-1/messages");
+        assertThat(NotificationTemplates.push(NotificationType.BOOKING_CONFIRMED,
+                NotificationTemplates.payload("forPassenger", true)).url()).isEqualTo("/bookings");
+        assertThat(NotificationTemplates.push(NotificationType.BOOKING_CONFIRMED, Map.of()).url()).isEqualTo("/trips/mine");
+    }
+
     @Test
     void searchAlertMatch_hasAnExplicitSubject_andADirectLink() {
         UUID tripId = UUID.randomUUID();

@@ -204,7 +204,7 @@ export function useIdentityVerification(enabled = true) {
   })
 }
 
-/** POST /api/v1/me/identity (type et numero de piece ; le televersement du document n'existe pas encore cote serveur). */
+/** POST /api/v1/me/identity (type et numero de piece) ; les pieces se televersent ensuite (hooks/useIdentityDocuments.ts, V20). */
 export function useSubmitIdentity() {
   const queryClient = useQueryClient()
   return useMutation({

@@ -4,10 +4,14 @@ import bj.ekuiseo.api.domain.User;
 import bj.ekuiseo.api.domain.UserPreferences;
 import bj.ekuiseo.api.domain.enums.NotificationType;
 import bj.ekuiseo.api.domain.enums.UserStatus;
+import bj.ekuiseo.api.domain.PushSubscription;
+import bj.ekuiseo.api.repository.PushSubscriptionRepository;
 import bj.ekuiseo.api.repository.UserPreferencesRepository;
 import bj.ekuiseo.api.repository.UserRepository;
 import bj.ekuiseo.api.service.mail.MailDeliveryException;
 import bj.ekuiseo.api.service.mail.MailGateway;
+import bj.ekuiseo.api.service.push.WebPushSender;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -34,8 +38,11 @@ class NotificationDispatcherTest {
     private final UserPreferencesRepository preferencesRepository = mock(UserPreferencesRepository.class);
     private final MailGateway mailGateway = mock(MailGateway.class);
     private final SmsService smsService = mock(SmsService.class);
+    private final PushSubscriptionRepository pushSubscriptionRepository = mock(PushSubscriptionRepository.class);
+    private final WebPushSender webPushSender = mock(WebPushSender.class);
     private final NotificationDispatcher dispatcher =
-            new NotificationDispatcher(userRepository, preferencesRepository, mailGateway, smsService);
+            new NotificationDispatcher(userRepository, preferencesRepository, mailGateway, smsService,
+                    pushSubscriptionRepository, webPushSender);
 
     private final User user = User.builder().id(UUID.randomUUID()).firstName("Awa").phone("+2290100000000")
             .email("awa@example.bj").emailVerified(true).status(UserStatus.ACTIVE).build();
@@ -121,5 +128,66 @@ class NotificationDispatcherTest {
 
         verify(mailGateway, never()).send(any(), any(), any());
         verify(smsService, never()).sendCritical(any(), any());
+    }
+
+    /* ------------------------------------------------------------------ Web Push (V20) */
+
+    private PushSubscription subscription(String endpoint) {
+        return PushSubscription.builder().id(UUID.randomUUID()).user(user).endpoint(endpoint)
+                .p256dh("p256dh").auth("auth").failures(0).build();
+    }
+
+    @Test
+    void push_sentToEveryDevice_whenEnabledAndPreferenceOn_withShortTextAndUrl() {
+        when(preferencesRepository.findByUserId(user.getId())).thenReturn(Optional.empty());
+        when(webPushSender.isEnabled()).thenReturn(true);
+        PushSubscription phone = subscription("https://push.example/phone");
+        PushSubscription laptop = subscription("https://push.example/laptop");
+        when(pushSubscriptionRepository.findByUserIdOrderByCreatedAtAsc(user.getId())).thenReturn(List.of(phone, laptop));
+        when(webPushSender.send(any(), any(), any(), any())).thenReturn(WebPushSender.Outcome.SENT);
+
+        dispatcher.deliver(user.getId(), NotificationType.NEW_MESSAGE, Map.of("bookingId", "b-1"), false, null);
+
+        ArgumentCaptor<NotificationTemplates.Push> content = ArgumentCaptor.forClass(NotificationTemplates.Push.class);
+        verify(webPushSender).send(eq("https://push.example/phone"), eq("p256dh"), eq("auth"), content.capture());
+        verify(webPushSender).send(eq("https://push.example/laptop"), eq("p256dh"), eq("auth"), any());
+        assertThat(content.getValue().title()).isEqualTo("Nouveau message");
+        assertThat(content.getValue().body()).doesNotStartWith("Ekuiseo :");
+        assertThat(content.getValue().url()).isEqualTo("/bookings/b-1/messages");
+        assertThat(phone.getLastUsedAt()).isNotNull();
+        verify(pushSubscriptionRepository, org.mockito.Mockito.times(2)).save(any());
+    }
+
+    @Test
+    void push_goneSubscription_isDeleted_andFailureIsCounted() {
+        when(preferencesRepository.findByUserId(user.getId())).thenReturn(Optional.empty());
+        when(webPushSender.isEnabled()).thenReturn(true);
+        PushSubscription expired = subscription("https://push.example/expired");
+        PushSubscription flaky = subscription("https://push.example/flaky");
+        when(pushSubscriptionRepository.findByUserIdOrderByCreatedAtAsc(user.getId())).thenReturn(List.of(expired, flaky));
+        when(webPushSender.send(eq("https://push.example/expired"), any(), any(), any())).thenReturn(WebPushSender.Outcome.GONE);
+        when(webPushSender.send(eq("https://push.example/flaky"), any(), any(), any())).thenReturn(WebPushSender.Outcome.FAILED);
+
+        dispatcher.deliver(user.getId(), NotificationType.TRIP_REMINDER, Map.of(), true, null);
+
+        verify(pushSubscriptionRepository).delete(expired);
+        assertThat(flaky.getFailures()).isEqualTo(1);
+        verify(pushSubscriptionRepository).save(flaky);
+        verify(pushSubscriptionRepository, never()).save(expired);
+    }
+
+    @Test
+    void push_skipped_whenPreferenceOff_orPushDisabled() {
+        when(webPushSender.isEnabled()).thenReturn(true);
+        when(preferencesRepository.findByUserId(user.getId()))
+                .thenReturn(Optional.of(UserPreferences.builder().notifyByPush(false).build()));
+        dispatcher.deliver(user.getId(), NotificationType.NEW_MESSAGE, Map.of(), false, null);
+        verify(pushSubscriptionRepository, never()).findByUserIdOrderByCreatedAtAsc(any());
+
+        when(webPushSender.isEnabled()).thenReturn(false);
+        when(preferencesRepository.findByUserId(user.getId())).thenReturn(Optional.empty());
+        dispatcher.deliver(user.getId(), NotificationType.NEW_MESSAGE, Map.of(), false, null);
+        verify(pushSubscriptionRepository, never()).findByUserIdOrderByCreatedAtAsc(any());
+        verify(webPushSender, never()).send(any(), any(), any(), any());
     }
 }

@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/dialog'
 import { EmptyState, ErrorState } from '@/components/ui/states'
 import { AdminPageHeader } from '@/components/layout/AdminPageHeader'
+import { VerificationDocuments } from '@/features/admin/VerificationDocuments'
 import { useAdminVerifications, useReviewVerification } from '@/hooks/useAdmin'
 import { describeError } from '@/lib/errors'
 import { formatFromNow, formatPhone } from '@/lib/format'
@@ -83,12 +84,11 @@ export function AdminVerifications() {
         </TabsList>
       </Tabs>
 
-      {/* Le televersement du document n'existe pas encore cote serveur : le
-          moderateur controle le type et le numero declares, et peut croiser
-          avec le profil public. Dit tel quel, sans faux apercu. */}
+      {/* Pieces televersees (V20) : chiffrees cote serveur, lues ici face par face, chaque
+          consultation journalisee. Un dossier sans piece se controle par un autre canal. */}
       <Card className="mb-4 border-accent bg-accent-soft px-4 py-3 text-label leading-relaxed text-accent-ink">
-        Le dépôt de la photo du document n'est pas encore disponible : seuls le type et le numéro déclarés sont
-        vérifiables ici. Validez uniquement après contrôle par un autre canal (appel, rendez-vous).
+        Comparez la pièce téléversée au type et au numéro déclarés avant de valider. Chaque consultation d'une pièce est
+        inscrite au journal d'audit. Sans pièce, validez uniquement après contrôle par un autre canal (appel, rendez-vous).
       </Card>
 
       {verifications.isPending ? (
@@ -132,6 +132,9 @@ export function AdminVerifications() {
                           {item.status === 'APPROVED' ? 'Validée' : 'Refusée'}
                         </Badge>
                       ) : null}
+                    </div>
+                    <div className="mt-2">
+                      <VerificationDocuments verificationId={item.id} documents={item.documents ?? []} />
                     </div>
                     {/* Onglets historiques : la decision et son motif, tels que l'utilisateur les a recus. */}
                     {item.status === 'REJECTED' && item.rejectionReason ? (

@@ -35,7 +35,8 @@ class IdentityVerificationServiceTest {
     private final IdentityVerificationRepository repository = mock(IdentityVerificationRepository.class);
     private final UserRepository userRepository = mock(UserRepository.class);
     private final AuditService auditService = mock(AuditService.class);
-    private final IdentityVerificationService service = new IdentityVerificationService(repository, userRepository, auditService);
+    private final IdentityVerificationService service = new IdentityVerificationService(repository, userRepository, auditService,
+            mock(IdentityDocumentService.class));
 
     private final User user = User.builder().id(UUID.randomUUID()).firstName("Awa").lastName("K").phone("+2290100000000").build();
     private final SubmitIdentityRequest request = new SubmitIdentityRequest(IdentityDocumentType.CNI, "B1234567");

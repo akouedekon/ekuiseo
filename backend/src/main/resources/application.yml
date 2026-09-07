@@ -45,6 +45,12 @@ spring:
       mail.smtp.connectiontimeout: 10000
       mail.smtp.timeout: 10000
       mail.smtp.writetimeout: 10000
+  servlet:
+    multipart:
+      # Pieces d identite (POST /me/identity/documents, V20) : 5 Mo par fichier, une seule
+      # partie fichier par requete. Au-dela : 413 (GlobalExceptionHandler).
+      max-file-size: 5MB
+      max-request-size: 6MB
   flyway:
     enabled: true
     locations: classpath:db/migration
@@ -232,6 +238,24 @@ ekuiseo:
     # Alertes de recherche : desactivees une fois leur date passee, supprimees quand
     # inactives et plus vieilles que ce nombre de jours.
     search-alerts-days: ${SEARCH_ALERTS_RETENTION_DAYS:90}
+    # Pieces d identite televersees (V20) : fichiers et lignes supprimes ce nombre de jours
+    # apres la decision (APPROVED/REJECTED) du moderateur ; immediatement a l anonymisation.
+    identity-documents-days: ${IDENTITY_DOCUMENTS_RETENTION_DAYS:30}
+  storage:
+    # Pieces d identite (V20) : repertoire des fichiers chiffres, relatif au repertoire de travail
+    # du conteneur (/app) -> a monter sur un volume nomme en production (docker-compose.prod.yml).
+    identity-dir: ${IDENTITY_STORAGE_DIR:./data/identity}
+    # Cle AES-256 (32 octets en base64 : openssl rand -base64 32). Vide = televersement desactive
+    # (503 explicite) ; invalide = refus de demarrer. La perdre rend les fichiers illisibles.
+    identity-key: ${IDENTITY_STORAGE_KEY:}
+  push:
+    # Web Push (V20) : paire de cles VAPID (npx web-push generate-vapid-keys). Vides = canal
+    # push desactive proprement (GET /push/vapid-public-key -> 204, aucun envoi).
+    vapid:
+      public-key: ${PUSH_VAPID_PUBLIC_KEY:}
+      private-key: ${PUSH_VAPID_PRIVATE_KEY:}
+    # Contact declare aupres des services push (RFC 8292), mailto: ou https:.
+    subject: ${PUSH_VAPID_SUBJECT:mailto:contact@ekuiseo.com}
   payout:
     minimum-threshold-fcfa: ${PAYOUT_MIN_THRESHOLD_FCFA:2000}
     # Une reservation n est reversable qu une fois le depart passe depuis ce delai (heures).

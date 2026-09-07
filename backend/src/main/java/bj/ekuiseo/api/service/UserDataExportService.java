@@ -6,11 +6,13 @@ import bj.ekuiseo.api.common.exception.TooManyRequestsException;
 import bj.ekuiseo.api.domain.Booking;
 import bj.ekuiseo.api.domain.DriverPayout;
 import bj.ekuiseo.api.domain.DriverSubscription;
+import bj.ekuiseo.api.domain.IdentityDocument;
 import bj.ekuiseo.api.domain.IdentityVerification;
 import bj.ekuiseo.api.domain.Message;
 import bj.ekuiseo.api.domain.Notification;
 import bj.ekuiseo.api.domain.PaymentAccount;
 import bj.ekuiseo.api.domain.Payment;
+import bj.ekuiseo.api.domain.PushSubscription;
 import bj.ekuiseo.api.domain.Report;
 import bj.ekuiseo.api.domain.Review;
 import bj.ekuiseo.api.domain.SearchAlert;
@@ -22,11 +24,13 @@ import bj.ekuiseo.api.domain.Vehicle;
 import bj.ekuiseo.api.repository.BookingRepository;
 import bj.ekuiseo.api.repository.DriverPayoutRepository;
 import bj.ekuiseo.api.repository.DriverSubscriptionRepository;
+import bj.ekuiseo.api.repository.IdentityDocumentRepository;
 import bj.ekuiseo.api.repository.IdentityVerificationRepository;
 import bj.ekuiseo.api.repository.MessageRepository;
 import bj.ekuiseo.api.repository.NotificationRepository;
 import bj.ekuiseo.api.repository.PaymentAccountRepository;
 import bj.ekuiseo.api.repository.PaymentRepository;
+import bj.ekuiseo.api.repository.PushSubscriptionRepository;
 import bj.ekuiseo.api.repository.ReportRepository;
 import bj.ekuiseo.api.repository.ReviewRepository;
 import bj.ekuiseo.api.repository.SearchAlertRepository;
@@ -77,6 +81,8 @@ public class UserDataExportService {
     private final SearchAlertRepository searchAlertRepository;
     private final ReportRepository reportRepository;
     private final AuditService auditService;
+    private final PushSubscriptionRepository pushSubscriptionRepository;
+    private final IdentityDocumentRepository identityDocumentRepository;
     private final Duration cooldown;
 
     public UserDataExportService(UserRepository userRepository, UserPreferencesRepository userPreferencesRepository,
@@ -88,7 +94,11 @@ public class UserDataExportService {
                                  ReviewRepository reviewRepository, MessageRepository messageRepository,
                                  NotificationRepository notificationRepository, SearchAlertRepository searchAlertRepository,
                                  ReportRepository reportRepository, AuditService auditService,
+                                 PushSubscriptionRepository pushSubscriptionRepository,
+                                 IdentityDocumentRepository identityDocumentRepository,
                                  @Value("${ekuiseo.export.cooldown-hours:24}") long cooldownHours) {
+        this.pushSubscriptionRepository = pushSubscriptionRepository;
+        this.identityDocumentRepository = identityDocumentRepository;
         this.userRepository = userRepository;
         this.userPreferencesRepository = userPreferencesRepository;
         this.vehicleRepository = vehicleRepository;
@@ -137,6 +147,7 @@ public class UserDataExportService {
         doc.put("notifications", notificationRepository.findByUserIdOrderByCreatedAtDesc(userId).stream().map(this::notification).toList());
         doc.put("searchAlerts", searchAlertRepository.findByUserIdOrderByCreatedAtDesc(userId).stream().map(this::alert).toList());
         doc.put("reportsFiled", reportRepository.findByReporterIdOrderByCreatedAtDesc(userId).stream().map(this::report).toList());
+        doc.put("pushSubscriptions", pushSubscriptionRepository.findByUserIdOrderByCreatedAtAsc(userId).stream().map(this::pushSubscription).toList());
 
         user.setLastExportAt(now);
         userRepository.save(user);
@@ -210,7 +221,11 @@ public class UserDataExportService {
         return m;
     }
 
-    /** Statut, type et dates seulement : jamais le numero de la piece (constat F508). */
+    /**
+     * Statut, type et dates seulement : jamais le numero de la piece (constat F508). Les pieces
+     * televersees (V20) apparaissent par leur presence (face, type, taille, date) : le contenu
+     * chiffre n est pas joint a l export, l utilisateur en detient l original.
+     */
     private Map<String, Object> identity(IdentityVerification v) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("status", str(v.getStatus()));
@@ -218,7 +233,38 @@ public class UserDataExportService {
         m.put("submittedAt", str(v.getSubmittedAt()));
         m.put("reviewedAt", str(v.getReviewedAt()));
         m.put("rejectionReason", v.getRejectionReason());
+        m.put("documents", identityDocumentRepository.findByVerificationIdOrderBySideAsc(v.getId()).stream()
+                .map(this::identityDocument).toList());
         return m;
+    }
+
+    private Map<String, Object> identityDocument(IdentityDocument d) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("side", str(d.getSide()));
+        m.put("contentType", d.getContentType());
+        m.put("sizeBytes", d.getSizeBytes());
+        m.put("sha256", d.getSha256());
+        m.put("createdAt", str(d.getCreatedAt()));
+        return m;
+    }
+
+    /** Abonnement push : origine du service push et dates ; les cles de chiffrement et l endpoint complet ne sortent pas. */
+    private Map<String, Object> pushSubscription(PushSubscription s) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", str(s.getId()));
+        m.put("pushService", pushServiceOrigin(s.getEndpoint()));
+        m.put("userAgent", s.getUserAgent());
+        m.put("createdAt", str(s.getCreatedAt()));
+        m.put("lastUsedAt", str(s.getLastUsedAt()));
+        return m;
+    }
+
+    private static String pushServiceOrigin(String endpoint) {
+        if (endpoint == null) return null;
+        int scheme = endpoint.indexOf("://");
+        int start = scheme < 0 ? 0 : scheme + 3;
+        int slash = endpoint.indexOf('/', start);
+        return slash < 0 ? endpoint : endpoint.substring(0, slash);
     }
 
     private Map<String, Object> subscription(DriverSubscription s) {

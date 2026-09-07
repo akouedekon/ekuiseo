@@ -10,6 +10,7 @@ import { SettingRow, Skeleton, Switch } from '@/components/ui/misc'
 import { ErrorState } from '@/components/ui/states'
 import { SectionTitle } from '@/components/layout/PageContainer'
 import { useMyPreferences, useUpdatePreferences } from '@/hooks/useAccount'
+import { usePushSubscription } from '@/hooks/usePushSubscription'
 import { useTheme } from '@/hooks/useTheme'
 import { describeError } from '@/lib/errors'
 import { CHATTY_LABEL } from '@/lib/labels'
@@ -49,9 +50,24 @@ const THEME_OPTIONS = [
 /** Numero WhatsApp de l'equipe (VITE_SUPPORT_WHATSAPP, chiffres seuls) ; sans lui, le contact passe par e-mail. */
 const SUPPORT_WHATSAPP = (import.meta.env.VITE_SUPPORT_WHATSAPP as string | undefined)?.replace(/\D/g, '') || null
 
+/** Texte sous « Notifications push » selon la prise en charge et la permission du navigateur (V20). */
+function describePushRow(support: ReturnType<typeof usePushSubscription>['support'], permission: ReturnType<typeof usePushSubscription>['permission']): string {
+  if (support === 'ios-not-installed') {
+    return "Sur iPhone et iPad, installez d'abord Ekuiseo sur l'écran d'accueil (Partager → Sur l'écran d'accueil), puis activez-les ici."
+  }
+  if (support === 'unsupported') {
+    return 'Votre navigateur ne prend pas en charge les notifications push. Les informations indispensables arrivent par e-mail.'
+  }
+  if (permission === 'denied') {
+    return 'Bloquées dans les réglages du navigateur : autorisez les notifications pour ce site, puis réessayez.'
+  }
+  return "Confirmations, messages et rappels sur cet appareil, même l'application fermée."
+}
+
 export function PreferencesSection({ onLogout }: { onLogout: () => void }) {
   const preferences = useMyPreferences()
   const update = useUpdatePreferences()
+  const push = usePushSubscription()
   const { mode, setTheme } = useTheme()
   const prefs = preferences.data
 
@@ -59,6 +75,33 @@ export function PreferencesSection({ onLogout }: { onLogout: () => void }) {
     update.mutate(input, {
       onError: (error) => toast.error(describeError(error, "Le réglage n'a pas pu être enregistré.")),
     })
+
+  /*
+   * L'interrupteur push reflete l'abonnement de CET appareil. L'activer demande la
+   * permission au navigateur (premiere fois), enregistre l'abonnement et remet la
+   * preference serveur `notifyByPush` a vrai si elle avait ete coupee ; le desactiver
+   * retire seulement cet appareil (les autres continuent de recevoir).
+   */
+  const togglePush = async (checked: boolean) => {
+    try {
+      if (!checked) {
+        await push.disable()
+        toast.success('Notifications push désactivées sur cet appareil')
+        return
+      }
+      const result = await push.enable()
+      if (result === 'subscribed') {
+        if (prefs && !prefs.notifyByPush) save({ notifyByPush: true })
+        toast.success('Notifications push activées sur cet appareil')
+      } else if (result === 'denied') {
+        toast.error('Le navigateur a refusé les notifications. Autorisez-les dans ses réglages pour ce site.')
+      } else if (result === 'disabled') {
+        toast.info("Les notifications push ne sont pas encore activées sur ce serveur : vous restez prévenu par e-mail.")
+      }
+    } catch (error) {
+      toast.error(describeError(error, "Les notifications push n'ont pas pu être activées."))
+    }
+  }
 
   // Sans valeurs serveur, aucun interrupteur n'est affiche : un OFF par defaut
   // serait faux, et le premier clic ecraserait les vrais reglages.
@@ -93,14 +136,27 @@ export function PreferencesSection({ onLogout }: { onLogout: () => void }) {
         errorBlock
       ) : (
         <Card className="divide-y divide-rule">
-          {/* Web Push n'existe pas encore : pas d'interrupteur qui ne ferait rien (audit F256). */}
+          {/* Web Push (V20) : un interrupteur seulement la ou il fonctionne ; ailleurs, l'etat est dit tel quel (audit F256). */}
           <SettingRow
             title="Notifications push"
-            description="Confirmations, messages, rappels — bientôt disponibles"
-            interactive={false}
-            className="opacity-70"
+            description={describePushRow(push.support, push.permission)}
+            interactive={push.support === 'supported'}
+            htmlFor="push-switch"
+            className={push.support === 'supported' ? undefined : 'opacity-70'}
           >
-            <Badge tone="neutral">Bientôt</Badge>
+            {push.support !== 'supported' ? (
+              <Badge tone="neutral">Non pris en charge</Badge>
+            ) : push.subscribed === null ? (
+              <Skeleton className="h-6 w-11 rounded-full" />
+            ) : (
+              <Switch
+                id="push-switch"
+                checked={push.subscribed}
+                disabled={push.busy || (push.permission === 'denied' && !push.subscribed)}
+                onCheckedChange={(checked) => void togglePush(checked)}
+                aria-label="Notifications push"
+              />
+            )}
           </SettingRow>
           {renderRows(NOTIFICATION_ROWS)}
         </Card>

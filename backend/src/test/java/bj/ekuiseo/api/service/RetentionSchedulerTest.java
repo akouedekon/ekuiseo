@@ -38,8 +38,10 @@ class RetentionSchedulerTest {
     private final PlatformTransactionManager txManager = mock(PlatformTransactionManager.class);
     private final TransactionStatus txStatus = mock(TransactionStatus.class);
 
+    private final IdentityDocumentService identityDocuments = mock(IdentityDocumentService.class);
+
     private final RetentionScheduler scheduler = new RetentionScheduler(otpCodes, notifications, messages,
-            conversations, searchAlerts, txManager, 24, 180, 180, 90);
+            conversations, searchAlerts, identityDocuments, txManager, 24, 180, 180, 90, 30);
 
     private final Instant now = Instant.parse("2026-09-07T02:30:00Z"); // 03:30 a Porto-Novo
 
@@ -52,19 +54,22 @@ class RetentionSchedulerTest {
         when(conversations.deleteEmptyForTripsDepartedBefore(any())).thenReturn(2);
         when(searchAlerts.deactivateExpired(any())).thenReturn(4);
         when(searchAlerts.deleteInactiveCreatedBefore(any())).thenReturn(1);
+        when(identityDocuments.purgeDecidedBefore(any())).thenReturn(2);
 
         int total = scheduler.purgeAll(now);
 
-        assertThat(total).isEqualTo(27);
+        assertThat(total).isEqualTo(29);
+        // V20 : pieces d identite des dossiers decides depuis plus de 30 jours.
+        verify(identityDocuments).purgeDecidedBefore(now.minus(30, ChronoUnit.DAYS));
         verify(otpCodes).deleteByExpiresAtBefore(now.minus(24, ChronoUnit.HOURS));
         verify(notifications).deleteByCreatedAtBefore(now.minus(180, ChronoUnit.DAYS));
         verify(messages).deleteForTripsDepartedBefore(now.minus(180, ChronoUnit.DAYS));
         verify(conversations).deleteEmptyForTripsDepartedBefore(now.minus(180, ChronoUnit.DAYS));
         verify(searchAlerts).deactivateExpired(LocalDate.ofInstant(now, Tz.BENIN));
         verify(searchAlerts).deleteInactiveCreatedBefore(now.minus(90, ChronoUnit.DAYS));
-        // Six purges, six transactions : un echec n en annule pas une autre.
-        verify(txManager, times(6)).getTransaction(any());
-        verify(txManager, times(6)).commit(txStatus);
+        // Sept purges, sept transactions : un echec n en annule pas une autre.
+        verify(txManager, times(7)).getTransaction(any());
+        verify(txManager, times(7)).commit(txStatus);
         verify(txManager, never()).rollback(any());
     }
 
@@ -84,7 +89,7 @@ class RetentionSchedulerTest {
         verify(messages).deleteForTripsDepartedBefore(any());
         verify(searchAlerts).deleteInactiveCreatedBefore(any());
         verify(txManager).rollback(txStatus);
-        verify(txManager, times(5)).commit(txStatus);
+        verify(txManager, times(6)).commit(txStatus);
     }
 
     @Test

@@ -23,6 +23,81 @@ public final class NotificationTemplates {
     public record Rendered(String subject, String body, String sms) {
     }
 
+    /**
+     * Contenu d une notification Web Push (V20) : titre et corps courts, chemin de destination
+     * dans l application (relatif, ouvert par le service worker) et etiquette de regroupement.
+     */
+    public record Push(String title, String body, String url, String tag) {
+    }
+
+    /** Longueur maximale du corps d une notification push : au-dela, Android et iOS tronquent de toute facon. */
+    static final int PUSH_BODY_MAX = 160;
+
+    /**
+     * Derive le contenu push du gabarit e-mail/SMS du meme type : le sujet sert de titre, le
+     * texte SMS (deja court, sans le prefixe « Ekuiseo : ») de corps. Un seul endroit pour
+     * les textes, quel que soit le canal.
+     */
+    public static Push push(NotificationType type, Map<String, Object> payload) {
+        Map<String, Object> p = payload == null ? Map.of() : payload;
+        Rendered rendered = render(type, p);
+        String body = rendered.sms();
+        if (body.startsWith("Ekuiseo : ")) {
+            body = body.substring("Ekuiseo : ".length());
+        }
+        if (!body.isEmpty()) {
+            body = Character.toUpperCase(body.charAt(0)) + body.substring(1);
+        }
+        if (body.length() > PUSH_BODY_MAX) {
+            body = body.substring(0, PUSH_BODY_MAX - 3).trim() + "...";
+        }
+        return new Push(rendered.subject(), body, pushUrl(type, p), type.name().toLowerCase(Locale.ROOT));
+    }
+
+    /**
+     * Ecran a ouvrir au clic sur la notification (chemins du routeur front, App.tsx) : l objet
+     * de la notification quand le payload l identifie, sinon la liste correspondante.
+     */
+    static String pushUrl(NotificationType type, Map<String, Object> p) {
+        switch (type) {
+            case PAYMENT_SUCCEEDED:
+            case PAYMENT_FAILED:
+            case PAYMENT_REFUND_PENDING:
+            case PAYMENT_REFUNDED:
+            case BOOKING_CANCELLED:
+            case BOOKING_EXPIRED:
+            case BOOKING_NO_SHOW:
+            case TRIP_REMINDER:
+            case TRIP_UPDATED:
+                return "/bookings";
+            case BOOKING_CONFIRMED:
+                return Boolean.TRUE.equals(p.get("forPassenger")) ? "/bookings" : "/trips/mine";
+            case NEW_MESSAGE: {
+                String bookingId = str(p, "bookingId");
+                return bookingId.isEmpty() ? "/messages" : "/bookings/" + bookingId + "/messages";
+            }
+            case SEARCH_ALERT_MATCH: {
+                String tripId = str(p, "tripId");
+                return tripId.isEmpty() ? "/" : "/trips/" + tripId;
+            }
+            case NEW_REVIEW:
+            case SUBSCRIPTION_EXPIRING:
+            case SUBSCRIPTION_EXPIRED:
+            case SUBSCRIPTION_ACTIVATED:
+            case PAYOUT_SETTLED:
+            case PAYOUT_FAILED:
+            case PAYOUT_ACCOUNT_MISSING:
+            case IDENTITY_APPROVED:
+            case IDENTITY_REJECTED:
+            case IDENTITY_REVOKED:
+            case TERMS_UPDATED:
+            case ACCOUNT_SUSPENDED:
+                return "/me";
+            default:
+                return "/notifications";
+        }
+    }
+
     private static final String SIGNATURE = "\n\nEkuiseo - covoiturage au Benin";
     /** Adresse publique de l application, pour les liens des e-mails (le meme domaine que ShareController). */
     static final String PUBLIC_BASE_URL = "https://ekuiseo.com";
