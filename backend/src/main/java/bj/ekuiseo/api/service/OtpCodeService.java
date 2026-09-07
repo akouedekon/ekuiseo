@@ -46,6 +46,8 @@ public class OtpCodeService {
     private final Duration window;
     private final SecureRandom random = new SecureRandom();
 
+    /** Constructeur Spring : explicite car un second constructeur (tests) existe. */
+    @org.springframework.beans.factory.annotation.Autowired
     public OtpCodeService(OtpCodeRepository otpCodeRepository, PasswordEncoder passwordEncoder,
                           @Value("${ekuiseo.sms.otp.max-attempts:5}") int maxAttempts,
                           @Value("${ekuiseo.otp.max-per-day:20}") int maxPerDay,

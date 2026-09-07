@@ -340,6 +340,8 @@ Implémentation en mémoire (`ConcurrentHashMap` + fenêtre glissante), sans dé
 
 **Mise à jour (septembre 2026)** : le backend a été compilé et la suite exécutée (`mvn test`, 79 tests, 0 échec, 4 ignorés = les tests d'intégration Testcontainers). Deux corrections mécaniques ont suffi : une capture de variable non effectivement finale dans `PayoutService#runWeeklyBatch`, et une assertion Mockito erronée dans `RateLimitingFilterTest` (`times(2)` sur une paire requête/réponse qui n'est passée qu'une fois). Tests ajoutés avec la liquidité : `AdminLiquidityServiceTest` (taux, fenêtres de période, métrique nord, CSV) et `SearchEventServiceTest` (rattachement aux villes, bornage, jamais d'exception). Les requêtes natives de `SearchEventRepository`, `TripRepository#getFillStats*` et `BookingRepository#getSeatsByWeek` n'ont **pas** été rejouées contre PostGIS (Docker indisponible sur le poste) : à vérifier au premier démarrage, voir §10.
 
+**Mise à jour (7 septembre 2026, après les phases 0 à 5 de l audit)** : `mvn test` = 454 tests unitaires (0 échec) et `mvn verify` = 43 tests d intégration Testcontainers (`*IT.java`, PostGIS réel, exécutés en CI sous Docker) couvrant les requêtes natives de recherche, de KPI et de récurrence, la concurrence sur la dernière place et le webhook tardif ; tests `@WebMvcTest` sur la sécurité et les contrôleurs financiers. Spring Boot 3.5.16, Flyway V1 à V17.
+
 Complétés/ajoutés (tous écrits avec soin mais **non exécutés à l'origine**, faute de build) :
 - `MoneyUtilsTest`, `CancellationPolicyTest` — préexistants, conservés tels quels.
 - `BookingServiceConcurrencyTest` — mis à jour pour le nouveau constructeur de `BookingService`.
