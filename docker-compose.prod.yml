@@ -25,7 +25,7 @@ x-logging: &default-logging
 
 services:
   postgis:
-    image: postgis/postgis:16-3.4
+    image: postgis/postgis:16-3.5
     container_name: ekuiseo-postgis
     restart: unless-stopped
     environment:
@@ -217,7 +217,7 @@ services:
       - edge
 
   caddy:
-    image: caddy:2.8-alpine
+    image: caddy:2.11-alpine
     container_name: ekuiseo-caddy
     restart: unless-stopped
     # Durcissement (constat F445) : aucune escalade de privileges, processus bornes.
