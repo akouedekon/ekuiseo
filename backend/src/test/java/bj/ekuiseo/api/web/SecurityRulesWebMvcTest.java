@@ -15,15 +15,16 @@ import bj.ekuiseo.api.web.controller.MeController;
 import bj.ekuiseo.api.web.controller.admin.AdminPayoutController;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.math.BigDecimal;
-import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -91,16 +92,17 @@ class SecurityRulesWebMvcTest extends AbstractWebMvcTest {
                 .andExpect(jsonPath("$.status").value(403))
                 .andExpect(jsonPath("$.type").value("https://ekuiseo.bj/problems/forbidden"))
                 .andExpect(jsonPath("$.instance").value("/api/v1/admin/payouts"));
-        verify(payoutService, never()).listAllForAdmin();
+        verify(payoutService, never()).listAllForAdmin(any(), anyInt(), anyInt());
     }
 
     @Test
     void admin_onAdminRoute_is200() throws Exception {
-        when(payoutService.listAllForAdmin()).thenReturn(List.of());
+        when(payoutService.listAllForAdmin(any(), anyInt(), anyInt())).thenReturn(Page.empty());
 
         mockMvc.perform(authed(get("/api/v1/admin/payouts"), bearerFor(activeAdmin())))
                 .andExpect(status().isOk())
-                .andExpect(content().json("[]"));
+                .andExpect(jsonPath("$.content").isArray())
+                .andExpect(jsonPath("$.totalElements").value(0));
     }
 
     /** Un ADMIN reste un USER : il accede aussi aux routes authentifiees ordinaires. */
@@ -142,7 +144,7 @@ class SecurityRulesWebMvcTest extends AbstractWebMvcTest {
 
         mockMvc.perform(authed(get("/api/v1/admin/payouts"), bearerFor(suspendedAdmin)))
                 .andExpect(status().isUnauthorized());
-        verify(payoutService, never()).listAllForAdmin();
+        verify(payoutService, never()).listAllForAdmin(any(), anyInt(), anyInt());
     }
 
     @Test

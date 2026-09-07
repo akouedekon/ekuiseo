@@ -7,6 +7,7 @@ import { ErrorState, OfflineState } from '@/components/ui/states'
 import { StepIndicator } from '@/components/feedback/StepIndicator'
 import { PageContainer, PageHeader } from '@/components/layout/PageContainer'
 import { PageMeta } from '@/components/layout/PageMeta'
+import { AwaitingDriverStep } from '@/features/booking/AwaitingDriverStep'
 import { ConfirmedStep } from '@/features/booking/ConfirmedStep'
 import { CancelledStep, ExpiredStep, FailedStep, RefundStep } from '@/features/booking/ExpiredStep'
 import { PaymentStep } from '@/features/booking/PaymentStep'
@@ -87,15 +88,13 @@ export function BookingPage() {
     `Réservation ${bookingId ?? ''}${transactionRef ? ` – référence ${transactionRef}` : ''}`,
   )}`
   const backToTrip = () => navigate(`/trips/${data.id}`)
+  const title = step === 'confirmed' ? 'Réservation confirmée' : step === 'awaiting' ? 'Demande transmise' : 'Réserver'
 
   return (
     <PageContainer width="md" className="pb-12">
-      <PageMeta
-        title={`${step === 'confirmed' ? 'Réservation confirmée' : 'Réserver'} · ${data.originLabel} → ${data.destLabel}`}
-        noindex
-      />
+      <PageMeta title={`${title} · ${data.originLabel} → ${data.destLabel}`} noindex />
       <PageHeader
-        title={step === 'confirmed' ? 'Réservation confirmée' : 'Réserver'}
+        title={title}
         subtitle={`${data.originLabel} → ${flow.selectedStop?.label ?? data.destLabel} · ${formatRelativeDay(data.departureAt)}`}
         back={step === 'recap'}
       />
@@ -106,6 +105,7 @@ export function BookingPage() {
         {step === 'recap' ? <RecapStep flow={flow} trip={data} /> : null}
         {step === 'payment' ? <PaymentStep flow={flow} onBack={backToTrip} /> : null}
         {step === 'waiting' ? <WaitingStep flow={flow} supportHref={supportHref} /> : null}
+        {step === 'awaiting' ? <AwaitingDriverStep flow={flow} /> : null}
         {step === 'confirmed' ? <ConfirmedStep flow={flow} trip={data} /> : null}
         {step === 'refund' ? <RefundStep flow={flow} supportHref={supportHref} /> : null}
         {step === 'failed' ? <FailedStep flow={flow} supportHref={supportHref} /> : null}

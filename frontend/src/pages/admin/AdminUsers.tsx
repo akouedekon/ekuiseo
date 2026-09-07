@@ -14,6 +14,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Avatar } from '@/components/ui/misc'
 import { EmptyState, ErrorState } from '@/components/ui/states'
+import { AdminPagination } from '@/features/admin/AdminPagination'
 import { ContactCorrectionDialog } from '@/features/admin/ContactCorrectionDialog'
 import { SuspendUserDialog, type SuspensionTarget } from '@/features/admin/SuspendUserDialog'
 import { UserMotivatedActionDialog, type UserMotivatedAction } from '@/features/admin/UserMotivatedActionDialog'
@@ -122,19 +123,21 @@ const COLUMNS: DataTableColumn<AdminUserResponse>[] = [
 ]
 
 /**
- * Liste des utilisateurs. La recherche vit dans l'URL (?q=) : un lien vers une
- * recherche se partage et survit au retour arriere depuis une fiche.
+ * Liste des utilisateurs, paginee cote serveur (constat F237). La recherche et la page
+ * vivent dans l'URL (?q=&page=) : un lien se partage et survit au retour arriere depuis
+ * une fiche ; changer le terme ramene a la premiere page.
  */
 export function AdminUsers() {
   const [searchParams, setSearchParams] = useSearchParams()
   const query = searchParams.get('q')?.trim() ?? ''
+  const page = Math.max(0, Number(searchParams.get('page')) || 0)
   const [input, setInput] = useState(query)
   const debounce = useRef<number | undefined>(undefined)
   const [suspension, setSuspension] = useState<SuspensionTarget | null>(null)
   const [contactTarget, setContactTarget] = useState<AdminUserResponse | null>(null)
   /* Actions motivees du menu « Plus » : anonymisation (irreversible) et retrait du badge d'identite. */
   const [action, setAction] = useState<UserMotivatedAction | null>(null)
-  const users = useAdminUsers(query)
+  const users = useAdminUsers(query, page)
   const me = useMe()
 
   // Anti-rebond dans le gestionnaire (pas d'effet) : l'URL n'est ecrite qu'apres un court silence de saisie.
@@ -147,8 +150,14 @@ export function AdminUsers() {
     }, SEARCH_DEBOUNCE_MS)
   }
   useEffect(() => () => window.clearTimeout(debounce.current), [])
+  const goToPage = (next: number) => {
+    const params: Record<string, string> = {}
+    if (query) params.q = query
+    if (next > 0) params.page = String(next)
+    setSearchParams(params)
+  }
 
-  const list = users.data ?? []
+  const list = users.data?.content ?? []
 
   /** Un administrateur ne se suspend pas lui-meme, ni un autre administrateur : cela se regle en base, pas depuis l'interface. */
   const canSuspend = (user: AdminUserResponse) => user.role !== 'ADMIN' && user.id !== me.data?.id
@@ -157,7 +166,7 @@ export function AdminUsers() {
     <div>
       <AdminPageHeader
         title="Utilisateurs"
-        count={users.isSuccess ? list.length : undefined}
+        count={users.isSuccess ? users.data.totalElements : undefined}
         description="Recherche par nom, numéro ou e-mail. Une suspension bloque la connexion et les réservations ; elle est motivée et journalisée."
       />
 
@@ -180,6 +189,7 @@ export function AdminUsers() {
           rows={list}
           rowKey={(user) => user.id}
           loading={users.isPending}
+          // Le serveur trie par date d'inscription decroissante ; le tri client ne porte que sur la page affichee.
           initialSort={{ id: 'createdAt', direction: 'desc' }}
           rowAccent={(user) => (user.suspended ? 'var(--danger)' : undefined)}
           empty={
@@ -242,6 +252,15 @@ export function AdminUsers() {
           }
         />
       )}
+      {users.data ? (
+        <AdminPagination
+          page={users.data.number}
+          totalPages={users.data.totalPages}
+          onPageChange={goToPage}
+          busy={users.isFetching}
+          label="Pages de la liste des utilisateurs"
+        />
+      ) : null}
 
       <ContactCorrectionDialog user={contactTarget} onOpenChange={(open) => !open && setContactTarget(null)} />
       <SuspendUserDialog target={suspension} onOpenChange={(open) => !open && setSuspension(null)} />

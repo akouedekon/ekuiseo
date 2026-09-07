@@ -21,6 +21,7 @@ import type {
   IdentityVerificationStatus,
   PayoutBatchResultResponse,
   PayoutResponse,
+  PayoutStatus,
   ReportResponse,
   ReportStatus,
   SettlePayoutRequest,
@@ -116,12 +117,16 @@ export function useAdminOverview(enabled = true) {
 
 /* ----------------------------------------------------------- Signalements */
 
-/** GET /api/v1/admin/reports[?status=] */
-export function useAdminReports(status: ReportStatus | 'ALL') {
-  return useQuery<AdminReportResponse[]>({
-    queryKey: ['admin', 'reports', status],
+/** GET /api/v1/admin/reports?status=&page=&size= : Page Spring, plus recents d'abord (constat F237). */
+export function useAdminReports(status: ReportStatus | 'ALL', page: number, size = 20) {
+  return useQuery<Page<AdminReportResponse>>({
+    queryKey: ['admin', 'reports', status, page, size],
     queryFn: ({ signal }) =>
-      apiClient.get<AdminReportResponse[]>(`/api/v1/admin/reports${status === 'ALL' ? '' : `?status=${status}`}`, { signal }),
+      apiClient.get<Page<AdminReportResponse>>(
+        `/api/v1/admin/reports${toQuery({ status: status === 'ALL' ? undefined : status, page, size })}`,
+        { signal },
+      ),
+    placeholderData: (previous) => previous,
   })
 }
 
@@ -194,11 +199,16 @@ export function useReviewVerification() {
 
 /* ------------------------------------------------------------ Reversements */
 
-/** GET /api/v1/admin/payouts */
-export function useAdminPayouts() {
-  return useQuery<AdminPayoutResponse[]>({
-    queryKey: ['admin', 'payouts'],
-    queryFn: ({ signal }) => apiClient.get<AdminPayoutResponse[]>('/api/v1/admin/payouts', { signal }),
+/** GET /api/v1/admin/payouts?status=&page=&size= : Page Spring, plus recents d'abord (constat F237). */
+export function useAdminPayouts(status: PayoutStatus | 'ALL', page: number, size = 20) {
+  return useQuery<Page<AdminPayoutResponse>>({
+    queryKey: ['admin', 'payouts', status, page, size],
+    queryFn: ({ signal }) =>
+      apiClient.get<Page<AdminPayoutResponse>>(
+        `/api/v1/admin/payouts${toQuery({ status: status === 'ALL' ? undefined : status, page, size })}`,
+        { signal },
+      ),
+    placeholderData: (previous) => previous,
   })
 }
 
@@ -246,11 +256,13 @@ export function useRunPayoutBatch() {
 
 /* ------------------------------------------------------------ Utilisateurs */
 
-/** GET /api/v1/admin/users?q= */
-export function useAdminUsers(query: string) {
-  return useQuery<AdminUserResponse[]>({
-    queryKey: ['admin', 'users', query],
-    queryFn: ({ signal }) => apiClient.get<AdminUserResponse[]>(`/api/v1/admin/users?q=${encodeURIComponent(query)}`, { signal }),
+/** GET /api/v1/admin/users?q=&page=&size= : Page Spring, plus recents d'abord (constat F237). */
+export function useAdminUsers(query: string, page: number, size = 20) {
+  return useQuery<Page<AdminUserResponse>>({
+    queryKey: ['admin', 'users', query, page, size],
+    queryFn: ({ signal }) =>
+      apiClient.get<Page<AdminUserResponse>>(`/api/v1/admin/users${toQuery({ q: query, page, size })}`, { signal }),
+    placeholderData: (previous) => previous,
   })
 }
 

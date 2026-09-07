@@ -13,6 +13,7 @@ import { Sheet } from '@/components/ui/sheet'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AdminPageHeader } from '@/components/layout/AdminPageHeader'
 import { EmptyState, ErrorState } from '@/components/ui/states'
+import { AdminPagination } from '@/features/admin/AdminPagination'
 import { SuspendUserDialog, type SuspensionTarget } from '@/features/admin/SuspendUserDialog'
 import { useAdminReports, useReportConversations, useResolveReport, useUpdateReportStatus } from '@/hooks/useAdmin'
 import { useMe } from '@/hooks/useAuth'
@@ -59,17 +60,22 @@ function isClosed(status: ReportStatus): boolean {
  */
 export function AdminReports() {
   const [filter, setFilter] = useState<ReportStatus | 'ALL'>('OPEN')
+  const [page, setPage] = useState(0)
   const [closing, setClosing] = useState<Closing | null>(null)
   const [note, setNote] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
   const [conversationsOf, setConversationsOf] = useState<AdminReportResponse | null>(null)
   const [suspension, setSuspension] = useState<SuspensionTarget | null>(null)
-  const reports = useAdminReports(filter)
+  const reports = useAdminReports(filter, page)
   const update = useUpdateReportStatus()
   const resolve = useResolveReport()
   const me = useMe()
 
-  const list = reports.data ?? []
+  const list = reports.data?.content ?? []
+  const changeFilter = (value: ReportStatus | 'ALL') => {
+    setFilter(value)
+    setPage(0)
+  }
 
   const takeOver = (report: AdminReportResponse) => {
     setBusyId(report.id)
@@ -106,11 +112,11 @@ export function AdminReports() {
     <div>
       <AdminPageHeader
         title="Signalements"
-        count={reports.isSuccess ? list.length : undefined}
+        count={reports.isSuccess ? reports.data.totalElements : undefined}
         description="Prenez en charge, résolvez ou classez avec une note de résolution. La personne signalée n'est jamais informée de l'identité de l'auteur."
       />
 
-      <Tabs value={filter} onValueChange={(value) => setFilter(value as ReportStatus | 'ALL')} className="mb-4">
+      <Tabs value={filter} onValueChange={(value) => changeFilter(value as ReportStatus | 'ALL')} className="mb-4">
         <TabsList>
           <TabsTrigger value="OPEN">Ouverts</TabsTrigger>
           <TabsTrigger value="IN_REVIEW">En cours</TabsTrigger>
@@ -271,6 +277,15 @@ export function AdminReports() {
           })}
         </m.ul>
       )}
+      {reports.data ? (
+        <AdminPagination
+          page={reports.data.number}
+          totalPages={reports.data.totalPages}
+          onPageChange={setPage}
+          busy={reports.isFetching}
+          label="Pages de la liste des signalements"
+        />
+      ) : null}
 
       <ConfirmDialog
         open={closing !== null}

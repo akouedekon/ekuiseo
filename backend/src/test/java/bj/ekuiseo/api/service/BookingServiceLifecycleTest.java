@@ -54,7 +54,7 @@ class BookingServiceLifecycleTest {
             mock(TripStopRepository.class), userRepository, mock(DriverSubscriptionRepository.class),
             mock(MessageRepository.class), mock(ReviewRepository.class), mock(BookingMapper.class),
             new CancellationPolicy(), new DriverCancellationPolicy(), notificationService, paymentService,
-            auditService, new FeePolicy(0.08, 5, 1000), 20);
+            auditService, new FeePolicy(0.08, 5, 1000), new DriverApprovalPolicy(24), 20);
 
     private final User driver = User.builder().id(UUID.randomUUID()).phone("+2290197000001").firstName("Koffi").status(UserStatus.ACTIVE).build();
     private final User passenger = User.builder().id(UUID.randomUUID()).phone("+2290197000002").firstName("Awa").status(UserStatus.ACTIVE).build();

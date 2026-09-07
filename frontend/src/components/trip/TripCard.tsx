@@ -1,10 +1,11 @@
 import { m } from 'motion/react'
-import { BadgeCheck, Users } from 'lucide-react'
+import { BadgeCheck, UserCheck, Users } from 'lucide-react'
 import { Link } from 'react-router'
 import { Avatar, RatingStars } from '@/components/ui/misc'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/cn'
 import { formatDuration, formatFcfa, formatTime } from '@/lib/format'
+import { DRIVER_APPROVAL_BADGE } from '@/lib/labels'
 import { listItem } from '@/lib/motion'
 import { estimateArrival } from '@/lib/route'
 import type { TripResponse } from '@/api/types'
@@ -99,6 +100,12 @@ export function TripCard({
         ) : null}
 
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
+          {!trip.instantBooking ? (
+            <Badge tone="outline" title="Le conducteur accepte chaque passager avant confirmation">
+              <UserCheck aria-hidden />
+              {DRIVER_APPROVAL_BADGE}
+            </Badge>
+          ) : null}
           <Badge tone={full ? 'danger' : trip.seatsAvailable <= 1 ? 'warning' : 'neutral'}>
             <Users aria-hidden />
             {full ? 'Complet' : `${trip.seatsAvailable} pl.`}

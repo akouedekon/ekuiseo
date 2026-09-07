@@ -75,6 +75,7 @@ public class PaymentService {
     private final KkiapayGateway kkiapayGateway;
     private final RefundService refundService;
     private final KkiapayWebhookParser webhookParser;
+    private final DriverApprovalPolicy driverApprovalPolicy;
     private final String publicKey;
     private final String webhookSecret;
     private final boolean sandbox;
@@ -83,7 +84,7 @@ public class PaymentService {
                            DriverSubscriptionRepository driverSubscriptionRepository,
                            NotificationService notificationService, AuditService auditService,
                            KkiapayGateway kkiapayGateway, RefundService refundService,
-                           KkiapayWebhookParser webhookParser,
+                           KkiapayWebhookParser webhookParser, DriverApprovalPolicy driverApprovalPolicy,
                            @Value("${ekuiseo.kkiapay.public-key:}") String publicKey,
                            @Value("${ekuiseo.kkiapay.webhook-secret:}") String webhookSecret,
                            @Value("${ekuiseo.kkiapay.sandbox:true}") boolean sandbox) {
@@ -95,6 +96,7 @@ public class PaymentService {
         this.kkiapayGateway = kkiapayGateway;
         this.refundService = refundService;
         this.webhookParser = webhookParser;
+        this.driverApprovalPolicy = driverApprovalPolicy;
         this.publicKey = publicKey;
         this.webhookSecret = webhookSecret;
         this.sandbox = sandbox;
@@ -592,8 +594,8 @@ public class PaymentService {
 
     private void handleBookingPaymentResult(Payment payment, Booking booking, boolean success) {
         if (success) {
-            if (booking.getStatus() == BookingStatus.CONFIRMED) {
-                return; // deja confirmee (webhook et widget se sont croises)
+            if (booking.getStatus() == BookingStatus.CONFIRMED || booking.getStatus() == BookingStatus.PENDING_DRIVER_APPROVAL) {
+                return; // deja traitee (webhook et widget se sont croises)
             }
             if (booking.getStatus() != BookingStatus.PENDING_PAYMENT) {
                 // Les places ont deja ete liberees (expiration, annulation) : on ne peut pas
@@ -605,11 +607,16 @@ public class PaymentService {
                         payment.getAmount());
                 return;
             }
-            booking.setStatus(BookingStatus.CONFIRMED);
+            Trip trip = booking.getTrip();
+            // Trajet a accord conducteur (V19, point n.13) : l acompte est encaisse d abord, la place
+            // reste bloquee, et le conducteur a un delai pour accepter ; sinon remboursement integral.
+            boolean awaitingDriver = !trip.isInstantBooking();
+            Instant now = Instant.now();
+            booking.setStatus(awaitingDriver ? BookingStatus.PENDING_DRIVER_APPROVAL : BookingStatus.CONFIRMED);
             booking.setExpiresAt(null);
+            booking.setApprovalDeadlineAt(awaitingDriver ? driverApprovalPolicy.deadline(now, trip.getDepartureAt()) : null);
             bookingRepository.save(booking);
             // Recu d acompte (constat F107) : montant encaisse, solde a bord, reference Kkiapay.
-            Trip trip = booking.getTrip();
             Map<String, Object> receipt = new HashMap<>();
             receipt.put("bookingId", booking.getId().toString());
             receipt.put("tripId", trip.getId().toString());
@@ -619,15 +626,30 @@ public class PaymentService {
             receipt.put("reference", payment.getProviderTxId() == null ? "" : payment.getProviderTxId());
             receipt.put("route", trip.getOriginLabel() + " -> " + trip.getDestLabel());
             receipt.put("departureAt", Objects.toString(trip.getDepartureAt(), ""));
+            if (awaitingDriver) {
+                receipt.put("awaitingDriver", true);
+                receipt.put("approvalDeadlineAt", Objects.toString(booking.getApprovalDeadlineAt(), ""));
+            }
             notificationService.notifyCritical(booking.getPassenger(), NotificationType.PAYMENT_SUCCEEDED, receipt,
-                    "Ekuiseo : votre paiement a ete recu, votre reservation est confirmee."
-                            + (booking.getBalanceDueOnBoard() > 0
-                            ? " Solde a regler a bord : " + booking.getBalanceDueOnBoard() + " FCFA." : ""));
-            notificationService.notify(trip.getDriver(), NotificationType.BOOKING_CONFIRMED,
-                    NotificationTemplates.payload("bookingId", booking.getId().toString(), "tripId", trip.getId().toString(),
-                            "passengerName", booking.getPassenger().getFirstName(), "seats", booking.getSeats(),
-                            "route", trip.getOriginLabel() + " -> " + trip.getDestLabel(),
-                            "departureAt", Objects.toString(trip.getDepartureAt(), "")));
+                    awaitingDriver
+                            ? "Ekuiseo : votre paiement a ete recu, votre demande est transmise au conducteur. "
+                                    + "Sans accord de sa part avant le " + BookingService.formatLocal(booking.getApprovalDeadlineAt())
+                                    + ", vous serez rembourse integralement."
+                            : "Ekuiseo : votre paiement a ete recu, votre reservation est confirmee."
+                                    + (booking.getBalanceDueOnBoard() > 0
+                                    ? " Solde a regler a bord : " + booking.getBalanceDueOnBoard() + " FCFA." : ""));
+            Map<String, Object> driverPayload = NotificationTemplates.payload("bookingId", booking.getId().toString(),
+                    "tripId", trip.getId().toString(),
+                    "passengerName", booking.getPassenger().getFirstName(), "seats", booking.getSeats(),
+                    "route", trip.getOriginLabel() + " -> " + trip.getDestLabel(),
+                    "departureAt", Objects.toString(trip.getDepartureAt(), ""),
+                    "approvalDeadlineAt", awaitingDriver ? booking.getApprovalDeadlineAt().toString() : null);
+            if (awaitingDriver) {
+                // Le conducteur doit repondre : e-mail critique, pas seulement une pastille in-app.
+                notificationService.notifyCritical(trip.getDriver(), NotificationType.BOOKING_REQUESTED, driverPayload);
+            } else {
+                notificationService.notify(trip.getDriver(), NotificationType.BOOKING_CONFIRMED, driverPayload);
+            }
         } else {
             notificationService.notify(booking.getPassenger(), NotificationType.PAYMENT_FAILED,
                     Map.of("bookingId", booking.getId().toString()));

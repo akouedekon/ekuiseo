@@ -121,6 +121,10 @@ ekuiseo:
     refresh-absolute-ttl-days: ${JWT_REFRESH_ABSOLUTE_TTL_DAYS:90}
   booking:
     pending-payment-ttl-minutes: 20
+    # Trajets a accord conducteur (trips.instant_booking = false, V19) : delai de reponse du
+    # conducteur a une demande, plafonne a 2 h avant le depart (DriverApprovalPolicy). Passe ce
+    # delai, la demande est traitee comme un refus : acompte rembourse, places liberees.
+    driver-approval-hours: ${BOOKING_DRIVER_APPROVAL_HOURS:24}
   trip:
     # Cycle de vie (TripLifecycleScheduler) : delai apres le depart au-dela duquel un trajet
     # ONGOING est repute termine (COMPLETED) et ses reservations confirmees cloturees.

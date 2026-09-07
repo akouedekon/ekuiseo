@@ -1,5 +1,6 @@
 package bj.ekuiseo.api.service;
 
+import bj.ekuiseo.api.common.Paging;
 import bj.ekuiseo.api.common.exception.BadRequestException;
 import bj.ekuiseo.api.common.exception.ConflictException;
 import bj.ekuiseo.api.common.exception.NotFoundException;
@@ -25,6 +26,9 @@ import bj.ekuiseo.api.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -236,21 +240,27 @@ public class PayoutService {
         return driverPayoutRepository.findAll().stream().map(payoutMapper::toResponse).toList();
     }
 
-    /** Vue back-office GET /api/v1/admin/payouts (voir AdminPayoutResponse). */
+    /**
+     * Vue back-office GET /api/v1/admin/payouts (voir AdminPayoutResponse), paginee cote
+     * serveur (constat F237), du plus recent au plus ancien, filtrable par statut.
+     */
     @Transactional(readOnly = true)
-    public List<AdminPayoutResponse> listAllForAdmin() {
+    public Page<AdminPayoutResponse> listAllForAdmin(PayoutStatus status, int page, int size) {
         // Conducteurs charges avec les lots (EntityGraph) et comptes des reservations en une
-        // requete group by (constats F119/F308) : trois requetes au total, quel que soit le nombre de lots.
-        List<DriverPayout> payouts = driverPayoutRepository.findAllWithDriver();
+        // requete group by (constats F119/F308) : trois requetes par page, quel que soit le nombre de lots.
+        Pageable pageable = Paging.of(page, size, Sort.by("requestedAt").descending());
+        Page<DriverPayout> payouts = status != null
+                ? driverPayoutRepository.findByStatusWithDriver(status, pageable)
+                : driverPayoutRepository.findAllWithDriver(pageable);
         if (payouts.isEmpty()) {
-            return List.of();
+            return payouts.map(p -> toAdminResponse(p, null));
         }
         Map<UUID, DriverPayoutItemRepository.PayoutItemStats> stats = new java.util.HashMap<>();
         for (DriverPayoutItemRepository.PayoutItemStats s : driverPayoutItemRepository.getStatsByPayoutIds(
-                payouts.stream().map(DriverPayout::getId).toList())) {
+                payouts.getContent().stream().map(DriverPayout::getId).toList())) {
             stats.put(s.getPayoutId(), s);
         }
-        return payouts.stream().map(p -> toAdminResponse(p, stats.get(p.getId()))).toList();
+        return payouts.map(p -> toAdminResponse(p, stats.get(p.getId())));
     }
 
     private AdminPayoutResponse toAdminResponse(DriverPayout payout, DriverPayoutItemRepository.PayoutItemStats stats) {

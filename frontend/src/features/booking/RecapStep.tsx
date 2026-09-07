@@ -1,5 +1,5 @@
 import { m } from 'motion/react'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, UserCheck } from 'lucide-react'
 import { Link } from 'react-router'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -12,6 +12,7 @@ import type { PaymentMode } from '@/api/extended'
 import type { TripResponse } from '@/api/types'
 import { describeError } from '@/lib/errors'
 import { formatFcfa } from '@/lib/format'
+import { DRIVER_APPROVAL_BADGE } from '@/lib/labels'
 import { PAYMENT_MODES } from '@/lib/payments'
 import { buildRoutePoints, estimateArrival } from '@/lib/route'
 import type { BookingFlow } from './useBookingFlow'
@@ -151,9 +152,11 @@ export function RecapStep({ flow, trip }: { flow: BookingFlow; trip: TripRespons
           <p className="font-semibold">Vous avez déjà une réservation active sur ce trajet.</p>
           {flow.myBookings.isPending ? (
             <p>Recherche de votre réservation…</p>
-          ) : flow.existing?.status === 'PENDING_PAYMENT' ? (
+          ) : flow.existing?.status === 'PENDING_PAYMENT' || flow.existing?.status === 'PENDING_DRIVER_APPROVAL' ? (
             <Button asChild variant="secondary" size="sm">
-              <Link to={`/book/${flow.tripId}?booking=${flow.existing.id}`}>Reprendre ma réservation en attente</Link>
+              <Link to={`/book/${flow.tripId}?booking=${flow.existing.id}`}>
+                {flow.existing.status === 'PENDING_PAYMENT' ? 'Reprendre ma réservation en attente' : 'Voir ma demande en attente'}
+              </Link>
             </Button>
           ) : (
             <Button asChild variant="secondary" size="sm">
@@ -165,10 +168,24 @@ export function RecapStep({ flow, trip }: { flow: BookingFlow; trip: TripRespons
 
       <PaymentSplit plan={flow.plan} estimated={flow.planIsEstimate} />
 
+      {flow.requiresDriverApproval ? (
+        <Card className="flex items-start gap-3 border-accent bg-accent-soft p-4 text-body text-accent-ink" role="note">
+          <UserCheck className="mt-0.5 size-5 shrink-0" aria-hidden />
+          <p>
+            <span className="font-semibold">{DRIVER_APPROVAL_BADGE}.</span> {trip.driver.firstName} accepte chaque passager :
+            {flow.paymentMode === 'CASH' ? ' votre demande lui est transmise' : " l'acompte est encaissé, puis la demande lui est transmise"}
+            . Sans accord de sa part sous 24 h (au plus tard 2 h avant le départ), la place est libérée
+            {flow.paymentMode === 'CASH' ? '' : ' et l’acompte remboursé intégralement'}.
+          </p>
+        </Card>
+      ) : null}
+
       <Button size="lg" block loading={flow.createBooking.isPending} disabled={flow.quote.isError} onClick={flow.goToPayment}>
         {flow.paymentMode === 'CASH'
           ? 'Demander la place'
-          : `${flow.paymentMode === 'MOMO_FULL' ? 'Payer' : 'Bloquer ma place pour'} ${formatFcfa(flow.plan.depositAmount)}`}
+          : flow.requiresDriverApproval
+            ? `Demander ma place pour ${formatFcfa(flow.plan.depositAmount)}`
+            : `${flow.paymentMode === 'MOMO_FULL' ? 'Payer' : 'Bloquer ma place pour'} ${formatFcfa(flow.plan.depositAmount)}`}
         <ArrowRight className="size-5" aria-hidden />
       </Button>
       <p className="text-center text-caption text-muted">

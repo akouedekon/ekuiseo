@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 import { Button } from '@/components/ui/button'
 import { FieldError, Input, Textarea } from '@/components/ui/input'
-import { Stepper } from '@/components/ui/misc'
+import { SettingRow, Stepper, Switch } from '@/components/ui/misc'
 import { Sheet } from '@/components/ui/sheet'
 import { useUpdateTrip } from '@/hooks/useTrips'
 import { describeError } from '@/lib/errors'
@@ -22,6 +22,7 @@ const schema = z
     pricePerSeat: z.number().min(100, 'Prix trop bas').max(100_000, 'Prix trop élevé'),
     luggagePolicy: z.string().max(120, '120 caractères maximum'),
     description: z.string().max(400, '400 caractères maximum'),
+    instantBooking: z.boolean(),
   })
   .superRefine((values, ctx) => {
     const departure = departureFromFields(values.date, values.time)
@@ -64,6 +65,7 @@ export function EditTripSheet({
       pricePerSeat: trip.pricePerSeat,
       luggagePolicy: trip.luggagePolicy ?? '',
       description: trip.description ?? '',
+      instantBooking: trip.instantBooking,
     },
   })
 
@@ -86,6 +88,7 @@ export function EditTripSheet({
           pricePerSeat: values.pricePerSeat,
           luggagePolicy: values.luggagePolicy.trim(),
           description: values.description.trim(),
+          instantBooking: values.instantBooking,
         },
       },
       {
@@ -177,6 +180,24 @@ export function EditTripSheet({
           rows={3}
           error={form.formState.errors.description?.message}
           {...form.register('description')}
+        />
+
+        <Controller
+          control={form.control}
+          name="instantBooking"
+          render={({ field }) => (
+            <SettingRow
+              title="Réservation immédiate"
+              description={
+                field.value
+                  ? "Une place est confirmée dès que l'acompte est reçu (ou immédiatement en espèces)."
+                  : 'Acceptez chaque passager avant confirmation : 24 h pour répondre, au plus tard 2 h avant le départ ; sans réponse, le passager est remboursé.'
+              }
+              className="-mx-1 rounded-[var(--radius-control)] border border-rule px-3"
+            >
+              <Switch checked={field.value} onCheckedChange={field.onChange} aria-label="Réservation immédiate" />
+            </SettingRow>
+          )}
         />
       </form>
     </Sheet>

@@ -79,6 +79,7 @@ const IDENTITY_LABEL: Record<IdentityVerificationStatus, { label: string; tone: 
 
 const BOOKING_STATUS_LABEL: Record<string, { label: string; tone: 'success' | 'danger' | 'warning' | 'neutral' | 'indigo' }> = {
   PENDING_PAYMENT: { label: 'Acompte attendu', tone: 'warning' },
+  PENDING_DRIVER_APPROVAL: { label: 'Accord conducteur attendu', tone: 'warning' },
   CONFIRMED: { label: 'Confirmée', tone: 'success' },
   COMPLETED: { label: 'Terminée', tone: 'indigo' },
   CANCELLED_BY_PASSENGER: { label: 'Annulée (passager)', tone: 'danger' },

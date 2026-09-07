@@ -146,7 +146,9 @@ public final class NotificationTemplates {
                     // Confirmation adressee au passager (reservation en especes, constat F134) : son billet
                     // et le montant a regler a bord.
                     String due = has(p, "balanceDueOnBoardFcfa") ? number(p, "balanceDueOnBoardFcfa") + " F" : "";
-                    String pBody = "Votre reservation est confirmee" + (tripLine.isEmpty() ? "" : " sur le trajet " + tripLine) + "."
+                    String pBody = (Boolean.TRUE.equals(p.get("acceptedByDriver"))
+                            ? "Le conducteur a accepte votre demande : votre reservation est confirmee"
+                            : "Votre reservation est confirmee") + (tripLine.isEmpty() ? "" : " sur le trajet " + tripLine) + "."
                             + (has(p, "seats") ? "\nPlaces reservees : " + number(p, "seats") + "." : "")
                             + (due.isEmpty() ? "" : "\nA regler au conducteur a bord : " + due + ".")
                             + "\n\nPresentez-vous a l heure au point de rendez-vous ; la messagerie de l application "
@@ -274,6 +276,58 @@ public final class NotificationTemplates {
                                 + "\n\nVerifiez votre compte mobile money dans Mon compte > Mobile money ; notre equipe relancera "
                                 + "le virement des que possible.",
                         "Ekuiseo : le virement de votre reversement n'a pas abouti, verifiez votre compte mobile money.");
+            case BOOKING_REQUESTED: {
+                // Trajet a accord conducteur (V19). Au conducteur : une demande attend sa reponse.
+                // Au passager (forPassenger) : accuse de reception, avec l echeance.
+                String until = instant(p, "approvalDeadlineAt");
+                String seats = has(p, "seats") ? number(p, "seats") + " place(s)" : "une place";
+                if (Boolean.TRUE.equals(p.get("forPassenger"))) {
+                    String pBody = "Votre demande de " + seats + (tripLine.isEmpty() ? "" : " sur le trajet " + tripLine)
+                            + " a ete transmise au conducteur."
+                            + (until.isEmpty() ? "" : "\nIl a jusqu'au " + until + " pour repondre.")
+                            + "\n\nSans accord de sa part dans ce delai, votre acompte vous sera rembourse integralement "
+                            + "et les places seront liberees. Vous pouvez aussi annuler sans frais tant qu'il n'a pas repondu.";
+                    return finish("Demande transmise au conducteur", pBody,
+                            "Ekuiseo : votre demande" + (route.isEmpty() ? "" : " " + route) + " est transmise au conducteur"
+                                    + (until.isEmpty() ? "." : ", reponse attendue avant le " + until + "."));
+                }
+                String passenger = str(p, "passengerName");
+                String body = (passenger.isEmpty() ? "Un passager" : passenger) + " demande " + seats
+                        + " sur votre trajet" + (tripLine.isEmpty() ? "" : " " + tripLine) + "."
+                        + (until.isEmpty() ? "" : "\nRepondez avant le " + until + " : passe ce delai, la demande sera "
+                        + "refusee automatiquement et le passager rembourse.")
+                        + "\n\nAcceptez ou refusez depuis Mes trajets, rubrique Passagers.";
+                return finish("Une demande de reservation attend votre reponse", body,
+                        "Ekuiseo : " + (passenger.isEmpty() ? "un passager" : passenger) + " demande " + seats
+                                + " sur votre trajet" + (route.isEmpty() ? "" : " " + route)
+                                + (until.isEmpty() ? "." : ", repondez avant le " + until + "."));
+            }
+            case BOOKING_DECLINED: {
+                // Refus explicite du conducteur, ou demande restee sans reponse (timedOut) : dans les
+                // deux cas l acompte est rembourse integralement (V19).
+                boolean timedOut = Boolean.TRUE.equals(p.get("timedOut"));
+                if (Boolean.TRUE.equals(p.get("forDriver"))) {
+                    String passenger = str(p, "passengerName");
+                    return finish("Une demande de reservation a expire sans reponse",
+                            "La demande de " + (passenger.isEmpty() ? "un passager" : passenger)
+                                    + (tripLine.isEmpty() ? "" : " sur votre trajet " + tripLine)
+                                    + " est restee sans reponse dans le delai : elle a ete refusee automatiquement, "
+                                    + "le passager est rembourse et les places sont de nouveau disponibles."
+                                    + "\n\nPensez a repondre plus vite aux prochaines demandes, ou activez la reservation immediate.",
+                            "Ekuiseo : une demande de reservation a expire sans votre reponse, le passager est rembourse.");
+                }
+                String reason = str(p, "reason");
+                String body = (timedOut
+                        ? "Le conducteur n'a pas repondu a votre demande dans le delai"
+                        : "Le conducteur n'a pas pu accepter votre demande")
+                        + (tripLine.isEmpty() ? "" : " sur le trajet " + tripLine) + "."
+                        + (reason.isEmpty() ? "" : "\nMotif : " + reason)
+                        + refundLine(p)
+                        + "\n\nLes places ont ete liberees ; d'autres trajets sur cet axe sont peut-etre disponibles dans l'application.";
+                return finish(timedOut ? "Demande sans reponse du conducteur" : "Demande refusee par le conducteur", body,
+                        "Ekuiseo : " + (timedOut ? "le conducteur n'a pas repondu a votre demande" : "le conducteur a refuse votre demande")
+                                + (route.isEmpty() ? "" : " " + route) + ", votre acompte vous est rembourse integralement.");
+            }
             case TERMS_UPDATED:
                 return finish("Nos conditions d'utilisation evoluent",
                         "Les conditions d'utilisation d'Ekuiseo ont ete mises a jour"

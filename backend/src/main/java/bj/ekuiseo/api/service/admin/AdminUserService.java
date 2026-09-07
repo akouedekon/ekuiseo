@@ -1,5 +1,6 @@
 package bj.ekuiseo.api.service.admin;
 
+import bj.ekuiseo.api.common.Paging;
 import bj.ekuiseo.api.common.PhoneNumbers;
 import bj.ekuiseo.api.common.exception.BadRequestException;
 import bj.ekuiseo.api.common.exception.ConflictException;
@@ -35,7 +36,6 @@ import bj.ekuiseo.api.service.NotificationService;
 import bj.ekuiseo.api.service.RefreshTokenService;
 import bj.ekuiseo.api.service.UserService;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -60,10 +60,8 @@ import java.util.UUID;
 @Service
 public class AdminUserService {
 
-    /** Plafond de la liste (non paginee, voir GET /api/v1/admin/users?q=...) pour eviter un dump complet de la table. */
-    private static final int SEARCH_LIMIT = 100;
-    /** Taille maximale d une page de sous-ressource (reservations, trajets, paiements). */
-    static final int MAX_PAGE_SIZE = 100;
+    /** Taille maximale d une page (recherche et sous-ressources), alignee sur {@link Paging#MAX_PAGE_SIZE}. */
+    static final int MAX_PAGE_SIZE = Paging.MAX_PAGE_SIZE;
 
     private final UserRepository userRepository;
     private final VehicleRepository vehicleRepository;
@@ -106,22 +104,22 @@ public class AdminUserService {
     }
 
     /**
-     * Recherche libre (nom/prenom/telephone/e-mail), a plat et plafonnee (voir
-     * SEARCH_LIMIT) plutot que paginee : le front (useAdminUsers) attend un
-     * tableau simple, pas une Page. Une chaine vide renvoie les utilisateurs les
-     * plus recents (voir UserRepository#search, tri par createdAt desc). Chaque
-     * consultation est journalisee (ADMIN_USERS_SEARCHED : terme et nombre de
-     * resultats, constat F520) : une liste de donnees personnelles a un lecteur.
+     * Recherche libre (nom/prenom/telephone/e-mail), paginee cote serveur (constat F237,
+     * taille bornee par {@link Paging#MAX_PAGE_SIZE}). Une chaine vide renvoie les
+     * utilisateurs les plus recents (voir UserRepository#search, tri par createdAt desc).
+     * Chaque consultation est journalisee (ADMIN_USERS_SEARCHED : terme, page et nombre
+     * de resultats, constat F520) : une liste de donnees personnelles a un lecteur.
      */
     @Transactional(readOnly = true)
-    public List<AdminUserResponse> search(UUID adminId, String q) {
+    public Page<AdminUserResponse> search(UUID adminId, String q, int page, int size) {
         String term = q == null ? "" : q.trim();
-        Page<User> page = userRepository.search(term, PageRequest.of(0, SEARCH_LIMIT));
-        List<User> users = page.getContent();
+        Page<User> found = userRepository.search(term, Paging.of(page, size));
+        List<User> users = found.getContent();
         auditService.log(adminId, "ADMIN_USERS_SEARCHED", "user", null,
-                Map.of("q", term, "resultCount", users.size()));
+                Map.of("q", term, "page", found.getNumber(), "resultCount", users.size(),
+                        "totalCount", found.getTotalElements()));
         if (users.isEmpty()) {
-            return List.of();
+            return found.map(u -> toResponse(u, 0L, 0L));
         }
         // Deux requetes group by sur la liste d identifiants au lieu de deux count par
         // utilisateur (constats F016/F119/F308).
@@ -134,9 +132,7 @@ public class AdminUserService {
         for (BookingRepository.IdCount c : bookingRepository.countByPassengerIds(ids)) {
             bookings.put(c.getId(), c.getCount());
         }
-        return users.stream()
-                .map(u -> toResponse(u, trips.getOrDefault(u.getId(), 0L), bookings.getOrDefault(u.getId(), 0L)))
-                .toList();
+        return found.map(u -> toResponse(u, trips.getOrDefault(u.getId(), 0L), bookings.getOrDefault(u.getId(), 0L)));
     }
 
     /** Fiche complete (GET /api/v1/admin/users/{id}), constats F305/F306. */
@@ -183,7 +179,7 @@ public class AdminUserService {
     }
 
     private static Pageable pageable(int page, int size) {
-        return PageRequest.of(Math.max(0, page), Math.max(1, Math.min(MAX_PAGE_SIZE, size)));
+        return Paging.of(page, size);
     }
 
     private static AdminPaymentResponse toPaymentResponse(Payment p, User user) {

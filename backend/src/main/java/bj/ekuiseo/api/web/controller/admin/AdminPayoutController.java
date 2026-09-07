@@ -1,5 +1,6 @@
 package bj.ekuiseo.api.web.controller.admin;
 
+import bj.ekuiseo.api.domain.enums.PayoutStatus;
 import bj.ekuiseo.api.dto.payout.AdminPayoutResponse;
 import bj.ekuiseo.api.dto.payout.FailPayoutRequest;
 import bj.ekuiseo.api.dto.payout.PayoutBatchResultResponse;
@@ -10,14 +11,15 @@ import bj.ekuiseo.api.service.PayoutService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
 import java.util.UUID;
 
 /**
@@ -38,10 +40,12 @@ public class AdminPayoutController {
         this.currentUser = currentUser;
     }
 
-    @Operation(summary = "Lister tous les reversements", description = "Forme back-office (driverName, provider, tripCount, reference de virement...), voir AdminPayoutResponse.")
+    @Operation(summary = "Lister les reversements", description = "Forme back-office (driverName, provider, tripCount, reference de virement...), voir AdminPayoutResponse. Page Spring (content, totalElements, number, size, last), plus recents d abord, size <= 100, filtrable par statut (PENDING/PROCESSING/SETTLED/FAILED).")
     @GetMapping
-    public List<AdminPayoutResponse> list() {
-        return payoutService.listAllForAdmin();
+    public Page<AdminPayoutResponse> list(@RequestParam(required = false) PayoutStatus status,
+                                          @RequestParam(defaultValue = "0") int page,
+                                          @RequestParam(defaultValue = "20") int size) {
+        return payoutService.listAllForAdmin(status, page, size);
     }
 
     @Operation(summary = "Declencher un lot de reversement", description = "Cree un DriverPayout PENDING par conducteur dont le solde atteint le seuil minimum (2000 FCFA par defaut). 409 si un lot est deja en cours de constitution.")

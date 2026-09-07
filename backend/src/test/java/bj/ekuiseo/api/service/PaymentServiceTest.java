@@ -7,6 +7,7 @@ import bj.ekuiseo.api.domain.Payment;
 import bj.ekuiseo.api.domain.Trip;
 import bj.ekuiseo.api.domain.User;
 import bj.ekuiseo.api.domain.enums.BookingStatus;
+import bj.ekuiseo.api.domain.enums.NotificationType;
 import bj.ekuiseo.api.domain.enums.PaymentChannel;
 import bj.ekuiseo.api.domain.enums.PaymentMethod;
 import bj.ekuiseo.api.domain.enums.PaymentProvider;
@@ -28,6 +29,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -67,7 +69,7 @@ class PaymentServiceTest {
     @BeforeEach
     void setUp() {
         service = new PaymentService(paymentRepository, bookingRepository, subscriptionRepository,
-                notificationService, auditService, gateway, refundService, new KkiapayWebhookParser(new ObjectMapper()),
+                notificationService, auditService, gateway, refundService, new KkiapayWebhookParser(new ObjectMapper()), new DriverApprovalPolicy(24),
                 "pk_test", "secret", true);
         passenger = User.builder().id(UUID.randomUUID()).build();
         User driver = User.builder().id(UUID.randomUUID()).build();
@@ -288,6 +290,39 @@ class PaymentServiceTest {
         assertThat(payment.getRawPayload()).containsEntry("declaredMethod", "MOBILE_MONEY");
         assertThat(booking.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
         verify(paymentRepository).findByIdForUpdate(payment.getId());
+    }
+
+    /** V19 : sur un trajet a accord conducteur, l acompte encaisse met la reservation en attente du conducteur, pas CONFIRMED. */
+    @Test
+    @SuppressWarnings("unchecked")
+    void handleWebhook_onANonInstantTrip_awaitsTheDriver_andAsksHimToAnswer() {
+        Trip trip = booking.getTrip();
+        trip.setInstantBooking(false);
+        trip.setDepartureAt(Instant.now().plus(3, ChronoUnit.DAYS));
+        trip.setOriginLabel("Cotonou");
+        trip.setDestLabel("Parakou");
+        when(bookingRepository.findById(booking.getId())).thenReturn(Optional.of(booking));
+        when(paymentRepository.findFirstByBookingIdAndStatusOrderByCreatedAtDesc(booking.getId(), PaymentStatus.INITIATED))
+                .thenReturn(Optional.of(payment));
+        when(gateway.verifyTransaction("kk_123")).thenReturn(verified(true, 1000, "SUCCESS"));
+
+        service.handleWebhook(webhook(Map.of("bookingId", booking.getId().toString())));
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCEEDED);
+        assertThat(booking.getStatus()).isEqualTo(BookingStatus.PENDING_DRIVER_APPROVAL);
+        assertThat(booking.getExpiresAt()).isNull();
+        Instant expected = Instant.now().plus(24, ChronoUnit.HOURS);
+        assertThat(booking.getApprovalDeadlineAt()).isBetween(expected.minusSeconds(5), expected.plusSeconds(5));
+        // Recu de paiement au passager, qui precise l attente ; demande critique au conducteur.
+        ArgumentCaptor<Map<String, Object>> receipt = ArgumentCaptor.forClass(Map.class);
+        verify(notificationService).notifyCritical(eq(passenger), eq(NotificationType.PAYMENT_SUCCEEDED), receipt.capture(), any());
+        assertThat(receipt.getValue()).containsEntry("awaitingDriver", true).containsKey("approvalDeadlineAt");
+        verify(notificationService).notifyCritical(eq(trip.getDriver()), eq(NotificationType.BOOKING_REQUESTED), any());
+        verify(notificationService, never()).notify(eq(trip.getDriver()), eq(NotificationType.BOOKING_CONFIRMED), any());
+
+        // Un second passage (widget apres webhook) ne touche plus a rien.
+        service.handleWebhook(webhook(Map.of("bookingId", booking.getId().toString())));
+        assertThat(booking.getStatus()).isEqualTo(BookingStatus.PENDING_DRIVER_APPROVAL);
     }
 
     /** Constat F149 : le webhook d un abonnement reutilise lui aussi le paiement INITIATED. */

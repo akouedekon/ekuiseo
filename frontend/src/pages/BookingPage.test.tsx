@@ -34,7 +34,11 @@ const TRIP: TripResponse = {
   parentTripId: null,
 }
 
-function bookingOf(status: BookingDetailResponse['status'], paymentStatus: BookingDetailResponse['paymentPlan']['paymentStatus']): BookingDetailResponse {
+function bookingOf(
+  status: BookingDetailResponse['status'],
+  paymentStatus: BookingDetailResponse['paymentPlan']['paymentStatus'],
+  approvalDeadlineAt: string | null = null,
+): BookingDetailResponse {
   return {
     id: 'b1',
     tripId: 't1',
@@ -55,6 +59,7 @@ function bookingOf(status: BookingDetailResponse['status'], paymentStatus: Booki
       paymentStatus,
       depositDueAt: '2026-09-01T08:20:00Z',
       freeCancellationHours: 24,
+      approvalDeadlineAt,
     },
     trip: {
       id: 't1',
@@ -120,6 +125,48 @@ describe('BookingPage', () => {
     expect(screen.getByText(/Acompte de 3\s205 FCFA reçu/)).toBeInTheDocument()
     expect(screen.getByText(/36\s795 FCFA/)).toBeInTheDocument()
     expect(screen.queryByText(/1\s600 FCFA/)).not.toBeInTheDocument()
+  })
+
+  it('affiche l attente de l accord du conducteur avec l echeance du serveur, jamais « Place confirmee »', async () => {
+    installFakeApi({
+      '/api/v1/trips/t1': { body: { ...TRIP, instantBooking: false } },
+      '/api/v1/trips/t1/stops': { body: [] },
+      '/api/v1/me': { body: ME },
+      '/api/v1/bookings/b1': { body: bookingOf('PENDING_DRIVER_APPROVAL', 'AWAITING_DRIVER', '2026-11-30T05:00:00Z') },
+    })
+    renderBooking('/book/t1?booking=b1')
+
+    expect(await screen.findByText("En attente de l'accord du conducteur")).toBeInTheDocument()
+    expect(screen.getByText(/Acompte de 3\s205 FCFA reçu/)).toBeInTheDocument()
+    // L echeance vient de paymentPlan.approvalDeadlineAt : 05:00 UTC = 06:00 au Benin, le 30 novembre.
+    expect(screen.getByText(/30 nov\. à 06:00/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retirer ma demande' })).toBeInTheDocument()
+    expect(screen.queryByText('Place confirmée')).not.toBeInTheDocument()
+  })
+
+  it('annonce « sur accord du conducteur » au recapitulatif d un trajet sans reservation immediate', async () => {
+    installFakeApi({
+      '/api/v1/trips/t1': { body: { ...TRIP, instantBooking: false } },
+      '/api/v1/trips/t1/stops': { body: [] },
+      '/api/v1/me': { body: ME },
+      'POST /api/v1/trips/t1/booking-quote': {
+        body: {
+          totalAmount: 20_000,
+          serviceFee: 1_600,
+          depositAmount: 1_600,
+          balanceAmount: 18_400,
+          paymentMethod: 'MOMO_DEPOSIT',
+          paymentStatus: 'PENDING',
+          depositDueAt: null,
+          freeCancellationHours: 24,
+        },
+      },
+    })
+    renderBooking('/book/t1')
+
+    expect(await screen.findByText('Votre réservation')).toBeInTheDocument()
+    expect(screen.getByRole('note')).toHaveTextContent('Sur accord du conducteur')
+    expect(await screen.findByRole('button', { name: /Demander ma place pour 1\s600 FCFA/ })).toBeInTheDocument()
   })
 
   it('montre « expiree » sur decision du serveur et « Recommencer » remet tout a zero, URL comprise', async () => {

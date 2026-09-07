@@ -23,7 +23,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
 import java.util.UUID;
 
 /**
@@ -45,10 +44,12 @@ public class AdminUserController {
         this.currentUser = currentUser;
     }
 
-    @Operation(summary = "Rechercher des utilisateurs", description = "Recherche libre sur nom/prenom/telephone/e-mail ; liste a plat, plafonnee a 100 resultats (pas de pagination, voir AdminUserService). Consultation journalisee (ADMIN_USERS_SEARCHED).")
+    @Operation(summary = "Rechercher des utilisateurs", description = "Recherche libre sur nom/prenom/telephone/e-mail. Page Spring (content, totalElements, number, size, last), plus recents d abord, size <= 100. Consultation journalisee (ADMIN_USERS_SEARCHED).")
     @GetMapping
-    public List<AdminUserResponse> search(@RequestParam(defaultValue = "") String q) {
-        return adminUserService.search(currentUser.id(), q);
+    public Page<AdminUserResponse> search(@RequestParam(defaultValue = "") String q,
+                                          @RequestParam(defaultValue = "0") int page,
+                                          @RequestParam(defaultValue = "20") int size) {
+        return adminUserService.search(currentUser.id(), q, page, size);
     }
 
     @Operation(summary = "Fiche d un utilisateur", description = "Identite (statut, type, 4 derniers caracteres de la piece), vehicules, comptes mobile money, compteurs, motif de suspension, e-mail verifie et derniere connexion. Les reservations, trajets et paiements sont pagines sous /bookings, /trips, /payments.")

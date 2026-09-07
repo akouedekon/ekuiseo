@@ -30,6 +30,9 @@ import java.util.List;
  *       reversables au conducteur (PayoutService) et comptent dans « trajets effectues »
  *       et la fiabilite. Un NO_SHOW pose par le conducteur avant la cloture est conserve.</li>
  * </ul>
+ * Une demande encore PENDING_DRIVER_APPROVAL au depart (V19) n est pas cloturee ici : elle est
+ * traitee comme un refus (remboursement integral) par {@link BookingExpiryScheduler}, qui
+ * balaie chaque minute les demandes dont l echeance est passee ou le trajet parti.
  */
 @Component
 public class TripLifecycleScheduler {

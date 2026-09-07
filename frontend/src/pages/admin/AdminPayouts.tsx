@@ -10,9 +10,11 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input, Textarea } from '@/components/ui/input'
 import { EmptyState, ErrorState } from '@/components/ui/states'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { providerLabel } from '@/lib/payments'
+import { AdminPagination } from '@/features/admin/AdminPagination'
 import { PaymentAccountsToVerify } from '@/features/admin/PaymentAccountsToVerify'
-import { useAdminPayouts, useFailPayout, useRunPayoutBatch, useSettlePayout } from '@/hooks/useAdmin'
+import { useAdminOverview, useAdminPayouts, useFailPayout, useRunPayoutBatch, useSettlePayout } from '@/hooks/useAdmin'
 import { describeError } from '@/lib/errors'
 import { formatDayShort, formatFcfa, formatPhone } from '@/lib/format'
 import type { AdminPayoutResponse, PayoutStatus } from '@/api/extended'
@@ -161,6 +163,8 @@ const COLUMNS: DataTableColumn<AdminPayoutResponse>[] = [
 
 type SettleDraft = { payout: AdminPayoutResponse; reference: string; amount: string }
 type FailDraft = { payout: AdminPayoutResponse; reason: string }
+/** Files servies par le serveur (?status=) ; « Tous » sans filtre. PROCESSING n'existe pas encore en pratique (virement manuel). */
+type PayoutFilter = Extract<PayoutStatus, 'PENDING' | 'FAILED' | 'SETTLED'> | 'ALL'
 
 /**
  * Reversements : le decaissement mobile money se fait hors plateforme, puis se
@@ -168,7 +172,11 @@ type FailDraft = { payout: AdminPayoutResponse; reason: string }
  * lot en echec se relance par le meme geste une fois le virement refait.
  */
 export function AdminPayouts() {
-  const payouts = useAdminPayouts()
+  const [filter, setFilter] = useState<PayoutFilter>('PENDING')
+  const [page, setPage] = useState(0)
+  const payouts = useAdminPayouts(filter, page)
+  // Le total du aux conducteurs vient de la vue d'ensemble (toute la table), jamais de la page affichee.
+  const overview = useAdminOverview()
   const settle = useSettlePayout()
   const fail = useFailPayout()
   const runBatch = useRunPayoutBatch()
@@ -176,9 +184,11 @@ export function AdminPayouts() {
   const [failing, setFailing] = useState<FailDraft | null>(null)
   const [runOpen, setRunOpen] = useState(false)
 
-  const list = payouts.data ?? []
-  const due = list.filter(isDue)
-  const pendingTotal = due.reduce((sum, p) => sum + p.amount, 0)
+  const list = payouts.data?.content ?? []
+  const changeFilter = (value: PayoutFilter) => {
+    setFilter(value)
+    setPage(0)
+  }
 
   const settledAmount = settling && settling.amount.trim() ? Number(settling.amount) : undefined
   const settledAmountValid =
@@ -256,7 +266,7 @@ export function AdminPayouts() {
     <div>
       <AdminPageHeader
         title="Reversements"
-        count={payouts.isSuccess ? due.length : undefined}
+        count={overview.data?.pendingPayouts}
         description="Lots hebdomadaires dus aux conducteurs. Le décaissement mobile money se fait hors plateforme, puis se consigne ici avec la référence de l'opérateur."
         actions={
           <Button variant="secondary" size="sm" onClick={() => setRunOpen(true)} loading={runBatch.isPending}>
@@ -273,12 +283,21 @@ export function AdminPayouts() {
         <div>
           <p className="text-label text-muted">Reste à verser aux conducteurs</p>
           <p className="tnum font-display text-display font-extrabold leading-none tracking-[-0.03em]">
-            {payouts.isPending ? '…' : payouts.isError ? '—' : formatFcfa(pendingTotal)}
+            {overview.isPending ? '…' : overview.isError ? '—' : formatFcfa(overview.data.pendingPayoutsAmountFcfa)}
           </p>
         </div>
       </Card>
 
       <PaymentAccountsToVerify />
+
+      <Tabs value={filter} onValueChange={(value) => changeFilter(value as PayoutFilter)} className="mb-4">
+        <TabsList>
+          <TabsTrigger value="PENDING">À verser</TabsTrigger>
+          <TabsTrigger value="FAILED">En échec</TabsTrigger>
+          <TabsTrigger value="SETTLED">Versés</TabsTrigger>
+          <TabsTrigger value="ALL">Tous</TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {payouts.isError ? (
         <ErrorState description={describeError(payouts.error)} onRetry={() => payouts.refetch()} />
@@ -289,13 +308,18 @@ export function AdminPayouts() {
           rows={list}
           rowKey={(payout) => payout.id}
           loading={payouts.isPending}
-          initialSort={{ id: 'status', direction: 'asc' }}
+          // Le serveur sert les lots du plus recent au plus ancien ; le tri client ne porte que sur la page affichee.
+          initialSort={{ id: 'period', direction: 'desc' }}
           rowAccent={(payout) => ACCENT[payout.status]}
           empty={
             <EmptyState
               icon={Banknote}
               title="Aucun reversement"
-              description="Aucun lot pour l'instant. Constituez les lots de la semaine pour les conducteurs au-dessus du seuil."
+              description={
+                filter === 'PENDING'
+                  ? "Aucun lot à verser pour l'instant. Constituez les lots de la semaine pour les conducteurs au-dessus du seuil."
+                  : 'Aucun lot dans cette file.'
+              }
             />
           }
           rowActions={(payout) =>
@@ -327,6 +351,15 @@ export function AdminPayouts() {
           }
         />
       )}
+      {payouts.data ? (
+        <AdminPagination
+          page={payouts.data.number}
+          totalPages={payouts.data.totalPages}
+          onPageChange={setPage}
+          busy={payouts.isFetching}
+          label="Pages de la liste des reversements"
+        />
+      ) : null}
 
       <ConfirmDialog
         open={settling !== null}

@@ -344,6 +344,7 @@ public class UserDataExportService {
         plan.put("depositAmountFcfa", b.getDepositAmount());
         plan.put("balanceDueOnBoardFcfa", b.getBalanceDueOnBoard());
         plan.put("expiresAt", str(b.getExpiresAt()));
+        plan.put("approvalDeadlineAt", str(b.getApprovalDeadlineAt()));
         plan.put("freeCancellationUntil", str(b.getFreeCancellationUntil()));
         m.put("paymentPlan", plan);
         return m;

@@ -104,7 +104,8 @@ public class MessageService {
             return false;
         }
         BookingStatus status = booking.getStatus();
-        if (status == BookingStatus.PENDING_PAYMENT || status == BookingStatus.CONFIRMED) {
+        if (status == BookingStatus.PENDING_PAYMENT || status == BookingStatus.PENDING_DRIVER_APPROVAL
+                || status == BookingStatus.CONFIRMED) {
             return true;
         }
         if (status == BookingStatus.COMPLETED || status == BookingStatus.NO_SHOW) {

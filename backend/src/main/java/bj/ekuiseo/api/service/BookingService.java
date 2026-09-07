@@ -56,8 +56,13 @@ import java.util.UUID;
 public class BookingService {
 
     private static final Logger log = LoggerFactory.getLogger(BookingService.class);
-    private static final List<BookingStatus> ACTIVE_STATUSES =
-            List.of(BookingStatus.PENDING_PAYMENT, BookingStatus.CONFIRMED);
+    /** Une reservation qui bloque des places : acompte attendu, accord du conducteur attendu (V19), ou confirmee. */
+    static final List<BookingStatus> ACTIVE_STATUSES =
+            List.of(BookingStatus.PENDING_PAYMENT, BookingStatus.PENDING_DRIVER_APPROVAL, BookingStatus.CONFIRMED);
+    /** Motif de remboursement d un refus explicite du conducteur (V19). */
+    static final String REFUND_REASON_DECLINED = "REFUS_CONDUCTEUR";
+    /** Motif de remboursement d une demande restee sans reponse dans le delai (V19). */
+    static final String REFUND_REASON_TIMED_OUT = "DELAI_ACCORD_CONDUCTEUR";
     /** Point n.13 de l audit : le paiement en especes contourne l acompte, il est reserve aux conducteurs a identite verifiee. */
     static final String CASH_REQUIRES_VERIFIED_DRIVER =
             "Le paiement en especes n est possible qu avec un conducteur dont l identite est verifiee";
@@ -76,6 +81,7 @@ public class BookingService {
     private final PaymentService paymentService;
     private final AuditService auditService;
     private final FeePolicy feePolicy;
+    private final DriverApprovalPolicy driverApprovalPolicy;
     private final int pendingPaymentTtlMinutes;
 
     public BookingService(BookingRepository bookingRepository, TripRepository tripRepository,
@@ -83,7 +89,7 @@ public class BookingService {
                            MessageRepository messageRepository, ReviewRepository reviewRepository, BookingMapper bookingMapper,
                            CancellationPolicy cancellationPolicy, DriverCancellationPolicy driverCancellationPolicy,
                            NotificationService notificationService, PaymentService paymentService,
-                           AuditService auditService, FeePolicy feePolicy,
+                           AuditService auditService, FeePolicy feePolicy, DriverApprovalPolicy driverApprovalPolicy,
                            @Value("${ekuiseo.booking.pending-payment-ttl-minutes:20}") int pendingPaymentTtlMinutes) {
         this.bookingRepository = bookingRepository;
         this.tripRepository = tripRepository;
@@ -99,6 +105,7 @@ public class BookingService {
         this.paymentService = paymentService;
         this.auditService = auditService;
         this.feePolicy = feePolicy;
+        this.driverApprovalPolicy = driverApprovalPolicy;
         this.pendingPaymentTtlMinutes = pendingPaymentTtlMinutes;
     }
 
@@ -142,6 +149,11 @@ public class BookingService {
         boolean commissionWaived = driverSubscriptionRepository.hasActiveSubscription(trip.getDriver().getId(), Instant.now());
         BookingAmounts amounts = computeAmounts(unitPrice, req.seats(), commissionWaived, method);
         boolean isCash = method == PaymentMethod.CASH;
+        // Trajet a accord conducteur (V19, point n.13) : rien n est confirme sans le conducteur.
+        // En mobile money, c est PaymentService#handleBookingPaymentResult qui pose
+        // PENDING_DRIVER_APPROVAL une fois l acompte encaisse ; en especes, tout de suite.
+        boolean awaitingDriver = isCash && !trip.isInstantBooking();
+        Instant now = Instant.now();
 
         Booking booking = Booking.builder()
                 .trip(trip)
@@ -154,20 +166,31 @@ public class BookingService {
                 .depositAmount(amounts.depositAmount())
                 .balanceDueOnBoard(amounts.balanceDueOnBoard())
                 .paymentMethod(method)
-                // Le paiement especes est confirme immediatement (regle au comptant a bord),
-                // et n est ouvert qu aux conducteurs a identite verifiee (assertCashAllowed,
-                // point n.13 de l audit) : une validation du conducteur reservation par
-                // reservation n est pas implementee. Le paiement mobile money (acompte ou
-                // totalite selon le mode) reste PENDING_PAYMENT jusqu'au webhook Kkiapay
+                // Le paiement especes est confirme immediatement (regle au comptant a bord) sur un
+                // trajet a reservation immediate, et n est ouvert qu aux conducteurs a identite
+                // verifiee (assertCashAllowed, point n.13 de l audit). Le paiement mobile money
+                // (acompte ou totalite selon le mode) reste PENDING_PAYMENT jusqu'au webhook Kkiapay
                 // confirmant l'encaissement de deposit_amount.
-                .status(isCash ? BookingStatus.CONFIRMED : BookingStatus.PENDING_PAYMENT)
+                .status(isCash ? (awaitingDriver ? BookingStatus.PENDING_DRIVER_APPROVAL : BookingStatus.CONFIRMED)
+                        : BookingStatus.PENDING_PAYMENT)
                 // Echeance de l acompte (V12) : le scheduler d expiration lit cette colonne, que
                 // PaymentService#initiate prolonge si le paiement est lance juste avant la limite.
-                .expiresAt(isCash ? null : Instant.now().plus(pendingPaymentTtlMinutes, ChronoUnit.MINUTES))
+                .expiresAt(isCash ? null : now.plus(pendingPaymentTtlMinutes, ChronoUnit.MINUTES))
+                .approvalDeadlineAt(awaitingDriver ? driverApprovalPolicy.deadline(now, trip.getDepartureAt()) : null)
                 .build();
         booking = bookingRepository.save(booking);
 
-        if (isCash) {
+        if (awaitingDriver) {
+            Map<String, Object> payload = NotificationTemplates.payload("bookingId", booking.getId().toString(),
+                    "tripId", trip.getId().toString(), "passengerName", passenger.getFirstName(),
+                    "seats", booking.getSeats(), "route", trip.getOriginLabel() + " -> " + trip.getDestLabel(),
+                    "departureAt", Objects.toString(trip.getDepartureAt(), ""),
+                    "approvalDeadlineAt", Objects.toString(booking.getApprovalDeadlineAt(), ""));
+            notificationService.notifyCritical(trip.getDriver(), NotificationType.BOOKING_REQUESTED, payload);
+            Map<String, Object> passengerPayload = new LinkedHashMap<>(payload);
+            passengerPayload.put("forPassenger", true);
+            notificationService.notify(passenger, NotificationType.BOOKING_REQUESTED, passengerPayload);
+        } else if (isCash) {
             notificationService.notify(trip.getDriver(), NotificationType.BOOKING_CONFIRMED,
                     NotificationTemplates.payload("bookingId", booking.getId().toString(), "tripId", trip.getId().toString(),
                             "passengerName", booking.getPassenger().getFirstName(), "seats", booking.getSeats(),
@@ -235,7 +258,7 @@ public class BookingService {
         Instant depositDueAt = isCash ? null : Instant.now().plus(pendingPaymentTtlMinutes, ChronoUnit.MINUTES);
         return new PaymentPlanResponse(amounts.amount(), amounts.depositAmount(), amounts.balanceDueOnBoard(),
                 amounts.serviceFee(), method, "PENDING", depositDueAt,
-                (int) CancellationPolicy.FREE_CANCELLATION_WINDOW.toHours());
+                (int) CancellationPolicy.FREE_CANCELLATION_WINDOW.toHours(), null);
     }
 
     /**
@@ -376,9 +399,11 @@ public class BookingService {
                 ? (booking.getExpiresAt() != null ? booking.getExpiresAt()
                         : booking.getCreatedAt().plus(pendingPaymentTtlMinutes, ChronoUnit.MINUTES))
                 : null;
+        Instant approvalDeadlineAt = booking.getStatus() == BookingStatus.PENDING_DRIVER_APPROVAL
+                ? booking.getApprovalDeadlineAt() : null;
         return new PaymentPlanResponse(booking.getAmount(), booking.getDepositAmount(), booking.getBalanceDueOnBoard(),
                 booking.getServiceFee(), booking.getPaymentMethod(), paymentPlanStatus(booking), depositDueAt,
-                (int) CancellationPolicy.FREE_CANCELLATION_WINDOW.toHours());
+                (int) CancellationPolicy.FREE_CANCELLATION_WINDOW.toHours(), approvalDeadlineAt);
     }
 
     /**
@@ -397,6 +422,10 @@ public class BookingService {
         }
         if (status == BookingStatus.PENDING_PAYMENT) {
             return "PENDING";
+        }
+        if (status == BookingStatus.PENDING_DRIVER_APPROVAL) {
+            // Acompte encaisse (ou especes), place bloquee, mais rien de confirme sans le conducteur (V19).
+            return "AWAITING_DRIVER";
         }
         return switch (booking.getPaymentMethod()) {
             case MOMO_FULL -> "PAID_IN_FULL";
@@ -470,7 +499,7 @@ public class BookingService {
         if (!booking.getPassenger().getId().equals(passengerId)) {
             throw new ForbiddenException("Cette reservation ne vous appartient pas");
         }
-        if (booking.getStatus() != BookingStatus.PENDING_PAYMENT && booking.getStatus() != BookingStatus.CONFIRMED) {
+        if (!ACTIVE_STATUSES.contains(booking.getStatus())) {
             throw new BadRequestException("Cette reservation ne peut plus etre annulee");
         }
         Trip trip = booking.getTrip();
@@ -485,7 +514,11 @@ public class BookingService {
         // il n y a donc rien a en rembourser, le passager ne le doit simplement plus
         // puisque le trajet n aura pas lieu).
         CancellationPolicy.Outcome outcome;
-        if (booking.getFreeCancellationUntil() != null && now.isBefore(booking.getFreeCancellationUntil())) {
+        if (booking.getStatus() == BookingStatus.PENDING_DRIVER_APPROVAL) {
+            // Le conducteur n a pas encore repondu (V19) : le passager n est engage a rien.
+            outcome = new CancellationPolicy.Outcome(booking.getDepositAmount(), 0L,
+                    "Annulation gratuite (demande en attente de l accord du conducteur)");
+        } else if (booking.getFreeCancellationUntil() != null && now.isBefore(booking.getFreeCancellationUntil())) {
             // Le conducteur a modifie l horaire : annulation gratuite pendant 24 h (lot 1.3).
             outcome = new CancellationPolicy.Outcome(booking.getDepositAmount(), 0L,
                     "Annulation gratuite (horaire modifie par le conducteur)");
@@ -495,9 +528,12 @@ public class BookingService {
         log.info("Annulation reservation {} : remboursement={} retenu={} ({})",
                 booking.getId(), outcome.refundAmount(), outcome.retainedAmount(), outcome.reason());
 
-        boolean wasConfirmed = booking.getStatus() == BookingStatus.CONFIRMED;
+        // Le conducteur n est prevenu que si la place lui etait deja acquise ou demandee (V19) :
+        // un acompte jamais paye ne l a jamais concerne.
+        boolean wasConfirmed = booking.getStatus() != BookingStatus.PENDING_PAYMENT;
         booking.setStatus(BookingStatus.CANCELLED_BY_PASSENGER);
         booking.setExpiresAt(null);
+        booking.setApprovalDeadlineAt(null);
         bookingRepository.save(booking);
         releaseSeats(trip.getId(), booking.getSeats());
 
@@ -536,8 +572,8 @@ public class BookingService {
 
     /**
      * Reservations d un trajet, pour son conducteur (GET /api/v1/trips/{id}/bookings) :
-     * les reservations actives, terminees ou signalees absentes ; les annulations et les
-     * acomptes jamais payes n interessent pas le depart.
+     * les demandes en attente de sa reponse (V19), les reservations confirmees, terminees ou
+     * signalees absentes ; les annulations et les acomptes jamais payes n interessent pas le depart.
      */
     @Transactional(readOnly = true)
     public List<TripBookingResponse> listForDriver(UUID tripId, UUID driverId) {
@@ -546,13 +582,120 @@ public class BookingService {
             throw new ForbiddenException("Vous n etes pas le conducteur de ce trajet");
         }
         return bookingRepository.findByTripIdAndStatusIn(tripId,
-                        List.of(BookingStatus.CONFIRMED, BookingStatus.COMPLETED, BookingStatus.NO_SHOW)).stream()
+                        List.of(BookingStatus.PENDING_DRIVER_APPROVAL, BookingStatus.CONFIRMED,
+                                BookingStatus.COMPLETED, BookingStatus.NO_SHOW)).stream()
                 .sorted(Comparator.comparing(Booking::getCreatedAt))
                 .map(b -> new TripBookingResponse(b.getId(), b.getPassenger().getId(),
                         b.getPassenger().getFirstName(), b.getPassenger().getLastName(), b.getPassenger().getPhotoUrl(),
                         b.getPassenger().getRatingAvg(), b.getSeats(), b.getStatus(), b.getPaymentMethod(),
-                        b.getBalanceDueOnBoard(), b.getPickupStopId(), b.getDropoffStopId(), b.getCreatedAt()))
+                        b.getBalanceDueOnBoard(), b.getPickupStopId(), b.getDropoffStopId(), b.getCreatedAt(),
+                        b.getStatus() == BookingStatus.PENDING_DRIVER_APPROVAL ? b.getApprovalDeadlineAt() : null))
                 .toList();
+    }
+
+    /**
+     * Accord du conducteur sur une demande (POST /api/v1/bookings/{id}/accept, V19) : la
+     * reservation passe CONFIRMED, le passager est prevenu (critique : c est son billet).
+     * Refuse une fois le trajet parti : le cycle de vie a alors deja tranche.
+     */
+    @Transactional
+    public BookingResponse acceptByDriver(UUID id, UUID driverId) {
+        Booking booking = findBooking(id);
+        Trip trip = booking.getTrip();
+        assertDriverDecision(booking, driverId);
+        booking.setStatus(BookingStatus.CONFIRMED);
+        booking.setApprovalDeadlineAt(null);
+        bookingRepository.save(booking);
+        auditService.log(driverId, "BOOKING_ACCEPTED_BY_DRIVER", "booking", booking.getId(),
+                Map.of("tripId", trip.getId().toString(), "seats", booking.getSeats()));
+        notificationService.notifyCritical(booking.getPassenger(), NotificationType.BOOKING_CONFIRMED,
+                NotificationTemplates.payload("bookingId", booking.getId().toString(), "tripId", trip.getId().toString(),
+                        "seats", booking.getSeats(), "balanceDueOnBoardFcfa", booking.getBalanceDueOnBoard(),
+                        "route", trip.getOriginLabel() + " -> " + trip.getDestLabel(),
+                        "departureAt", Objects.toString(trip.getDepartureAt(), ""), "forPassenger", true,
+                        "acceptedByDriver", true),
+                "Ekuiseo : le conducteur a accepte votre demande, " + booking.getSeats() + " place(s) "
+                        + trip.getOriginLabel() + " - " + trip.getDestLabel() + " le " + formatLocal(trip.getDepartureAt())
+                        + (booking.getBalanceDueOnBoard() > 0 ? ". A regler a bord : " + booking.getBalanceDueOnBoard() + " F." : "."));
+        return bookingMapper.toResponse(booking);
+    }
+
+    /**
+     * Refus du conducteur (POST /api/v1/bookings/{id}/decline, V19) : places liberees, acompte
+     * rembourse INTEGRALEMENT (ce n est jamais la faute du passager), passager prevenu avec le
+     * motif eventuel. Un refus n est pas une annulation tardive : rien n est compte au conducteur.
+     */
+    @Transactional
+    public BookingResponse declineByDriver(UUID id, UUID driverId, String reason) {
+        Booking booking = findBooking(id);
+        assertDriverDecision(booking, driverId);
+        String trimmed = reason == null ? "" : reason.trim();
+        decline(booking, driverId, trimmed, false, REFUND_REASON_DECLINED, "BOOKING_DECLINED_BY_DRIVER");
+        return bookingMapper.toResponse(booking);
+    }
+
+    /** Seul le conducteur du trajet decide, et seulement tant que la demande est en attente et le trajet pas parti. */
+    private static void assertDriverDecision(Booking booking, UUID driverId) {
+        Trip trip = booking.getTrip();
+        if (!trip.getDriver().getId().equals(driverId)) {
+            throw new ForbiddenException("Vous n etes pas le conducteur de ce trajet");
+        }
+        if (booking.getStatus() != BookingStatus.PENDING_DRIVER_APPROVAL) {
+            throw new BadRequestException("Cette reservation n attend pas votre reponse");
+        }
+        if (trip.getStatus() == TripStatus.CANCELLED || !Instant.now().isBefore(trip.getDepartureAt())) {
+            throw new BadRequestException("Le trajet est deja parti ou annule : la demande ne peut plus etre traitee");
+        }
+    }
+
+    /**
+     * Demandes restees sans reponse (echeance depassee, ou trajet parti : le cycle de vie ne
+     * laisse pas une demande survivre au depart) : traitees comme un refus, avec remboursement
+     * integral et notification « sans reponse du conducteur ». Appele par {@link BookingExpiryScheduler}.
+     */
+    @Transactional
+    public int expireStaleApprovals() {
+        List<Booking> stale = bookingRepository.findExpirableApprovals(Instant.now());
+        for (Booking booking : stale) {
+            decline(booking, null, "", true, REFUND_REASON_TIMED_OUT, "BOOKING_APPROVAL_TIMED_OUT");
+            log.info("Demande {} sans reponse du conducteur dans le delai : traitee comme un refus", booking.getId());
+        }
+        return stale.size();
+    }
+
+    private void decline(Booking booking, UUID actorId, String reason, boolean timedOut, String refundReason, String auditAction) {
+        // Trajet et passager lus AVANT releaseSeats (voir expireStalePendingBookings).
+        Trip trip = booking.getTrip();
+        User passenger = booking.getPassenger();
+        booking.setStatus(BookingStatus.CANCELLED_BY_DRIVER);
+        booking.setExpiresAt(null);
+        booking.setApprovalDeadlineAt(null);
+        bookingRepository.save(booking);
+        releaseSeats(trip.getId(), booking.getSeats());
+
+        long refundAmount = booking.getDepositAmount();
+        PaymentService.RefundOutcome refund = paymentService.refundBooking(booking, refundAmount, refundReason);
+        log.info("Refus de la demande {} ({}) : remboursement {} ({})", booking.getId(), refundReason,
+                refund.status(), refund.message());
+        auditService.log(actorId, auditAction, "booking", booking.getId(),
+                Map.of("tripId", trip.getId().toString(), "seatsReleased", booking.getSeats(),
+                        "refundAmountFcfa", refundAmount, "refundStatus", refund.status().name(),
+                        "reason", reason));
+
+        Map<String, Object> payload = NotificationTemplates.payload("bookingId", booking.getId().toString(),
+                "tripId", trip.getId().toString(), "seats", booking.getSeats(),
+                "refundAmountFcfa", refundAmount, "refundStatus", refund.status().name(),
+                "timedOut", timedOut, "reason", reason.isEmpty() ? null : reason,
+                "route", trip.getOriginLabel() + " -> " + trip.getDestLabel(),
+                "departureAt", Objects.toString(trip.getDepartureAt(), ""));
+        notificationService.notifyCritical(passenger, NotificationType.BOOKING_DECLINED, payload);
+        if (timedOut) {
+            // Le conducteur apprend qu une demande lui a echappe : in-app suffit.
+            Map<String, Object> driverPayload = new LinkedHashMap<>(payload);
+            driverPayload.put("forDriver", true);
+            driverPayload.put("passengerName", passenger.getFirstName());
+            notificationService.notify(trip.getDriver(), NotificationType.BOOKING_DECLINED, driverPayload);
+        }
     }
 
     /** Fenetre pendant laquelle le conducteur peut signaler l absence d un passager apres le depart. */
@@ -625,11 +768,13 @@ public class BookingService {
         boolean late = driverCancellationPolicy.isLate(now, trip.getDepartureAt());
 
         for (Booking booking : active) {
-            // Seule une reservation confirmee a un acompte a rembourser (constat F144) ; une
-            // reservation en attente de paiement n a rien encaisse.
-            boolean paid = booking.getStatus() == BookingStatus.CONFIRMED && booking.getDepositAmount() > 0;
+            // Seule une reservation confirmee, ou en attente de l accord du conducteur (V19 : acompte
+            // deja encaisse), a un acompte a rembourser (constat F144) ; une reservation en attente
+            // de paiement n a rien encaisse.
+            boolean paid = booking.getStatus() != BookingStatus.PENDING_PAYMENT && booking.getDepositAmount() > 0;
             booking.setStatus(BookingStatus.CANCELLED_BY_DRIVER);
             booking.setExpiresAt(null);
+            booking.setApprovalDeadlineAt(null);
             bookingRepository.save(booking);
 
             long refundAmount = paid ? booking.getDepositAmount() : 0L;
@@ -680,9 +825,10 @@ public class BookingService {
                     || !Instant.now().isBefore(trip.getDepartureAt())) {
                 continue;
             }
-            boolean wasConfirmed = booking.getStatus() == BookingStatus.CONFIRMED;
+            boolean wasConfirmed = booking.getStatus() != BookingStatus.PENDING_PAYMENT;
             booking.setStatus(BookingStatus.CANCELLED_BY_PASSENGER);
             booking.setExpiresAt(null);
+            booking.setApprovalDeadlineAt(null);
             bookingRepository.save(booking);
             releaseSeats(trip.getId(), booking.getSeats());
             PaymentService.RefundOutcome refund = paymentService.refundBooking(booking, booking.getDepositAmount(), "SUSPENSION_PASSAGER");

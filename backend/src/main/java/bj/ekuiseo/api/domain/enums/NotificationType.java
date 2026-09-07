@@ -43,5 +43,9 @@ public enum NotificationType {
     /** Virement du reversement en echec, motif transmis. */
     PAYOUT_FAILED,
     /** Nouvelle version des conditions d utilisation a accepter (F509). */
-    TERMS_UPDATED
+    TERMS_UPDATED,
+    /** Demande de reservation sur un trajet a accord conducteur (V19) : au conducteur (critique) et au passager (accuse). */
+    BOOKING_REQUESTED,
+    /** Demande refusee par le conducteur, ou restee sans reponse dans le delai : acompte rembourse integralement. */
+    BOOKING_DECLINED
 }

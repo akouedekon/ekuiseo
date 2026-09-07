@@ -13,6 +13,9 @@ import bj.ekuiseo.api.service.PayoutService;
 import bj.ekuiseo.api.web.controller.admin.AdminPayoutController;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
@@ -22,6 +25,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
@@ -61,7 +65,7 @@ class AdminPayoutControllerWebMvcTest extends AbstractWebMvcTest {
                 .andExpect(jsonPath("$.type").value("https://ekuiseo.bj/problems/forbidden"));
         mockMvc.perform(authed(post(PATH + "/" + payoutId + "/settle"), userBearer)).andExpect(status().isForbidden());
 
-        verify(payoutService, never()).listAllForAdmin();
+        verify(payoutService, never()).listAllForAdmin(any(), anyInt(), anyInt());
         verify(payoutService, never()).runWeeklyBatch(any());
         verify(payoutService, never()).settle(any(), any(), any(), any());
     }
@@ -74,25 +78,43 @@ class AdminPayoutControllerWebMvcTest extends AbstractWebMvcTest {
     }
 
     @Test
-    void list_asAdmin_returnsBackOfficeView() throws Exception {
+    void list_asAdmin_returnsBackOfficePage_withFilterAndPaging() throws Exception {
         User admin = activeAdmin();
         UUID payoutId = UUID.randomUUID();
         UUID driverId = UUID.randomUUID();
         Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
-        when(payoutService.listAllForAdmin()).thenReturn(List.of(new AdminPayoutResponse(
+        AdminPayoutResponse row = new AdminPayoutResponse(
                 payoutId, driverId, "Awa Test", MobileMoneyOperator.MTN_MOMO, "+2290197000322",
-                4600, 2, now.minus(7, ChronoUnit.DAYS), now, PayoutStatus.PENDING, null, 0, 0, null, null, null, null)));
+                4600, 2, now.minus(7, ChronoUnit.DAYS), now, PayoutStatus.PENDING, null, 0, 0, null, null, null, null);
+        when(payoutService.listAllForAdmin(PayoutStatus.PENDING, 1, 10))
+                .thenReturn(new PageImpl<>(List.of(row), PageRequest.of(1, 10), 11));
 
-        mockMvc.perform(authed(get(PATH), bearerFor(admin)))
+        mockMvc.perform(authed(get(PATH).param("status", "PENDING").param("page", "1").param("size", "10"), bearerFor(admin)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].id").value(payoutId.toString()))
-                .andExpect(jsonPath("$[0].driverName").value("Awa Test"))
-                .andExpect(jsonPath("$[0].provider").value("MTN_MOMO"))
-                .andExpect(jsonPath("$[0].amount").value(4600))
-                .andExpect(jsonPath("$[0].tripCount").value(2))
-                .andExpect(jsonPath("$[0].status").value("PENDING"))
-                .andExpect(jsonPath("$[0].paidAt").doesNotExist());
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.totalElements").value(11))
+                .andExpect(jsonPath("$.number").value(1))
+                .andExpect(jsonPath("$.size").value(10))
+                .andExpect(jsonPath("$.last").value(true))
+                .andExpect(jsonPath("$.content[0].id").value(payoutId.toString()))
+                .andExpect(jsonPath("$.content[0].driverName").value("Awa Test"))
+                .andExpect(jsonPath("$.content[0].provider").value("MTN_MOMO"))
+                .andExpect(jsonPath("$.content[0].amount").value(4600))
+                .andExpect(jsonPath("$.content[0].tripCount").value(2))
+                .andExpect(jsonPath("$.content[0].status").value("PENDING"))
+                .andExpect(jsonPath("$.content[0].paidAt").doesNotExist());
+        verify(payoutService).listAllForAdmin(PayoutStatus.PENDING, 1, 10);
+    }
+
+    @Test
+    void list_withoutParameters_usesFirstPageOfTwenty_andNoFilter() throws Exception {
+        when(payoutService.listAllForAdmin(isNull(), eq(0), eq(20))).thenReturn(Page.empty());
+
+        mockMvc.perform(authed(get(PATH), bearerFor(activeAdmin())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").isEmpty())
+                .andExpect(jsonPath("$.totalElements").value(0));
+        verify(payoutService).listAllForAdmin(null, 0, 20);
     }
 
     @Test

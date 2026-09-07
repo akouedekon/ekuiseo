@@ -127,6 +127,49 @@ class BookingControllerWebMvcTest extends AbstractWebMvcTest {
         verify(bookingService).markNoShow(bookingId, passenger.getId());
     }
 
+    /** V19 : accord et refus du conducteur, l identifiant du conducteur vient du jeton. */
+    @Test
+    void accept_confirmsTheRequest_forTheTokenSubject() throws Exception {
+        when(bookingService.acceptByDriver(bookingId, passenger.getId())).thenReturn(booking(bookingId, BookingStatus.CONFIRMED));
+
+        mockMvc.perform(authed(post("/api/v1/bookings/" + bookingId + "/accept"), bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CONFIRMED"));
+        verify(bookingService).acceptByDriver(bookingId, passenger.getId());
+    }
+
+    @Test
+    void decline_withReason_passesIt_andWithoutBodyPassesNull() throws Exception {
+        when(bookingService.declineByDriver(eq(bookingId), eq(passenger.getId()), any()))
+                .thenReturn(booking(bookingId, BookingStatus.CANCELLED_BY_DRIVER));
+
+        mockMvc.perform(authed(json(post("/api/v1/bookings/" + bookingId + "/decline"), Map.of("reason", "Vehicule plein")), bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CANCELLED_BY_DRIVER"));
+        verify(bookingService).declineByDriver(bookingId, passenger.getId(), "Vehicule plein");
+
+        mockMvc.perform(authed(post("/api/v1/bookings/" + bookingId + "/decline"), bearer))
+                .andExpect(status().isOk());
+        verify(bookingService).declineByDriver(bookingId, passenger.getId(), null);
+    }
+
+    @Test
+    void decline_withATooLongReason_is400_withoutCallingTheService() throws Exception {
+        mockMvc.perform(authed(json(post("/api/v1/bookings/" + bookingId + "/decline"), Map.of("reason", "x".repeat(301))), bearer))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.type").value("https://ekuiseo.bj/problems/validation-error"));
+        verify(bookingService, never()).declineByDriver(any(), any(), any());
+    }
+
+    @Test
+    void accept_bySomeoneElse_is403() throws Exception {
+        when(bookingService.acceptByDriver(any(), any())).thenThrow(new ForbiddenException("Vous n etes pas le conducteur de ce trajet"));
+
+        mockMvc.perform(authed(post("/api/v1/bookings/" + bookingId + "/accept"), bearer))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.type").value("https://ekuiseo.bj/problems/forbidden"));
+    }
+
     @Test
     void get_delegatesWithRequesterId() throws Exception {
         when(bookingService.getBookingDetailed(bookingId, passenger.getId()))

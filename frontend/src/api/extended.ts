@@ -68,6 +68,8 @@ export type PaymentMode = 'MOMO_DEPOSIT' | 'MOMO_FULL' | 'CASH'
 export type PaymentPlanStatus =
   | 'ESTIMATED'
   | 'PENDING'
+  /** Acompte encaisse (ou especes), place bloquee, en attente de l'accord du conducteur (V19). */
+  | 'AWAITING_DRIVER'
   | 'CANCELLED'
   | 'DEPOSIT_PAID'
   | 'PAID_IN_FULL'
@@ -103,6 +105,8 @@ export interface PaymentPlanResponse {
   depositDueAt: string | null
   /** Delai d'annulation sans frais, en heures avant le depart. */
   freeCancellationHours: number
+  /** Echeance de la reponse du conducteur (ISO), renseignee seulement en AWAITING_DRIVER (V19). */
+  approvalDeadlineAt?: string | null
 }
 
 /** Devis demande avant reservation : POST /api/v1/trips/{id}/booking-quote */

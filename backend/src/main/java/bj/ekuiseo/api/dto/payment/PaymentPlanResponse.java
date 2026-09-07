@@ -31,9 +31,11 @@ import java.time.Instant;
  *       plateforme ne percoit rien pour cette reservation (voir README).</li>
  * </ul>
  * {@code paymentStatus} est une vue simplifiee derivee de l'etat de la
- * reservation (PENDING / DEPOSIT_PAID / PAID_IN_FULL / CASH_DUE_ON_BOARD /
- * CANCELLED) - pour l'etat brut du paiement Kkiapay lui-meme (sondage webhook),
- * voir GET /api/v1/payments/{paymentId}.
+ * reservation (PENDING / AWAITING_DRIVER / DEPOSIT_PAID / PAID_IN_FULL /
+ * CASH_DUE_ON_BOARD / CANCELLED / EXPIRED) - pour l'etat brut du paiement Kkiapay
+ * lui-meme (sondage webhook), voir GET /api/v1/payments/{paymentId}.
+ * {@code approvalDeadlineAt} (V19) n est renseigne qu en AWAITING_DRIVER : echeance de la
+ * reponse du conducteur, passee laquelle l acompte est rembourse integralement.
  */
 public record PaymentPlanResponse(
         long totalAmount,
@@ -43,6 +45,7 @@ public record PaymentPlanResponse(
         PaymentMethod paymentMethod,
         String paymentStatus,
         Instant depositDueAt,
-        int freeCancellationHours
+        int freeCancellationHours,
+        Instant approvalDeadlineAt
 ) {
 }

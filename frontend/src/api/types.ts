@@ -7,6 +7,8 @@ export type TripType = 'INTERURBAIN' | 'QUOTIDIEN'
 export type TripStatus = 'DRAFT' | 'TEMPLATE' | 'PUBLISHED' | 'FULL' | 'ONGOING' | 'COMPLETED' | 'CANCELLED'
 export type BookingStatus =
   | 'PENDING_PAYMENT'
+  /** Acompte encaisse (ou especes) sur un trajet a accord conducteur : place bloquee, reponse attendue avant `paymentPlan.approvalDeadlineAt`. */
+  | 'PENDING_DRIVER_APPROVAL'
   | 'CONFIRMED'
   | 'CANCELLED_BY_PASSENGER'
   | 'CANCELLED_BY_DRIVER'
@@ -57,6 +59,9 @@ export type NotificationType =
   | 'PAYOUT_SETTLED'
   | 'PAYOUT_FAILED'
   | 'TERMS_UPDATED'
+  /* Validation conducteur (V19) : demande recue (conducteur) ou transmise (passager, forPassenger), refus ou delai depasse. */
+  | 'BOOKING_REQUESTED'
+  | 'BOOKING_DECLINED'
 
 /** GET /api/v1/notifications/unread-count : compteur seul, rafraichi chaque minute pour la pastille. */
 export interface UnreadCountResponse {
@@ -192,6 +197,13 @@ export interface TripBookingResponse {
   pickupStopId: string | null
   dropoffStopId: string | null
   createdAt: string
+  /** Echeance de la reponse du conducteur (V19) ; renseignee seulement en PENDING_DRIVER_APPROVAL. */
+  approvalDeadlineAt?: string | null
+}
+
+/** POST /api/v1/bookings/{id}/decline : motif facultatif transmis au passager. */
+export interface DeclineBookingRequest {
+  reason?: string
 }
 
 export interface StopRequest {
@@ -216,9 +228,9 @@ export interface CreateTripRequest {
   seatsTotal: number
   pricePerSeat: number
   /**
-   * Toujours `true` : l'acceptation par le conducteur n'existe pas cote serveur
-   * (audit F213), l'interrupteur a ete retire de l'interface. Le champ reste
-   * exige par le contrat de creation.
+   * `true` : place confirmee des l'acompte. `false` (V19, audit F048) : le conducteur
+   * accepte chaque passager ; l'acompte est encaisse puis rembourse integralement s'il
+   * refuse ou ne repond pas dans le delai.
    */
   instantBooking: boolean
   luggagePolicy?: string

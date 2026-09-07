@@ -35,6 +35,7 @@ import { ChartTooltip, DeltaBadge, StatTile } from './AdminWidgets'
 const STATUS_LABEL: Record<BookingStatus, string> = {
   CONFIRMED: 'Confirmées',
   PENDING_PAYMENT: 'Acompte attendu',
+  PENDING_DRIVER_APPROVAL: 'Accord conducteur attendu',
   COMPLETED: 'Terminées',
   CANCELLED_BY_PASSENGER: 'Annul. passager',
   CANCELLED_BY_DRIVER: 'Annul. conducteur',
@@ -45,6 +46,8 @@ const STATUS_LABEL: Record<BookingStatus, string> = {
 const STATUS_COLOR: Record<BookingStatus, string> = {
   CONFIRMED: CHART.vert,
   PENDING_PAYMENT: CHART.ocre,
+  // Acompte encaisse mais conducteur pas encore prononce : meme famille d'attente que l'acompte.
+  PENDING_DRIVER_APPROVAL: CHART.ocre,
   // Terminee = graphite : la reservation a vecu, elle n'appelle plus d'action.
   COMPLETED: CHART.indigo,
   CANCELLED_BY_PASSENGER: CHART.vermillon,
