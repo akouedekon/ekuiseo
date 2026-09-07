@@ -96,8 +96,9 @@ class GlobalExceptionHandlerBusinessTest {
 
     @Test
     void tooManyRequests_is429() {
-        ProblemDetail pd = handler.handleTooManyRequests(new TooManyRequestsException("Trop de demandes de code"), request);
-        assertProblem(pd, HttpStatus.TOO_MANY_REQUESTS, "too-many-requests", "Trop de demandes de code");
+        var response = handler.handleTooManyRequests(new TooManyRequestsException("Trop de demandes de code"), request);
+        assertProblem(response.getBody(), HttpStatus.TOO_MANY_REQUESTS, "too-many-requests", "Trop de demandes de code");
+        org.assertj.core.api.Assertions.assertThat(response.getHeaders().getFirst("Retry-After")).isNotBlank();
     }
 
     @Test
@@ -131,7 +132,7 @@ class GlobalExceptionHandlerBusinessTest {
         binding.addError(new FieldError("otpRegisterRequest", "email", "ne doit pas etre vide"));
         binding.addError(new FieldError("otpRegisterRequest", "phone", "Indiquez un numero de telephone"));
         MethodParameter parameter = new MethodParameter(
-                GlobalExceptionHandlerTest.class.getDeclaredMethod("sampleHandler", String.class), 0);
+                GlobalExceptionHandlerBusinessTest.class.getDeclaredMethod("sampleHandler", String.class), 0);
 
         ProblemDetail pd = handler.handleValidation(new MethodArgumentNotValidException(parameter, binding), request);
 
@@ -142,8 +143,10 @@ class GlobalExceptionHandlerBusinessTest {
     @Test
     void anyOtherException_is500_withoutLeakingTheMessage() {
         ProblemDetail pd = handler.handleGeneric(new IllegalStateException("NullPointer dans BookingService ligne 42"), request);
-        assertProblem(pd, HttpStatus.INTERNAL_SERVER_ERROR, "internal-error", "Une erreur inattendue est survenue");
-        assertThat(pd.getDetail()).doesNotContain("BookingService");
+        assertThat(pd.getStatus()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR.value());
+        assertThat(pd.getType()).isEqualTo(URI.create("https://ekuiseo.bj/problems/internal-error"));
+        assertThat(pd.getDetail()).startsWith("Une erreur inattendue est survenue").doesNotContain("BookingService");
+        assertThat(pd.getProperties()).containsKey("errorId");
     }
 
     private static void assertProblem(ProblemDetail pd, HttpStatus status, String type, String detail) {
