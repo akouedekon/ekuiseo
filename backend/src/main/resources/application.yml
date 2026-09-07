@@ -168,6 +168,9 @@ ekuiseo:
     # Journaliser les codes EN CLAIR en mode log (developpement local uniquement ; jamais
     # pose par docker-compose.prod.yml : par defaut destinataires masques, codes etoiles).
     log-plain-codes: ${OTP_LOG_PLAIN_CODES:false}
+    # Plafond de codes emis par numero et par 24 h, compte en base sur otp_codes (constat F512),
+    # en plus du limiteur glissant en memoire (3 / 10 min).
+    max-per-day: ${OTP_MAX_PER_DAY:20}
   gateways:
     # Derogation de recette : autoriser MAIL_MODE=log alors que KKIAPAY_MODE=http.
     allow-log-with-real-payments: ${EKUISEO_ALLOW_LOG_GATEWAYS:false}
@@ -176,7 +179,24 @@ ekuiseo:
     connect-timeout-ms: ${HTTP_CONNECT_TIMEOUT_MS:5000}
     read-timeout-ms: ${HTTP_READ_TIMEOUT_MS:15000}
   search-alert:
-    radius-km: ${SEARCH_ALERT_RADIUS_KM:10}
+    # Rayon par defaut d une alerte (km) quand la requete n en precise pas (V16, constat F530).
+    radius-km: ${SEARCH_ALERT_RADIUS_KM:15}
+  terms:
+    # Version courante des conditions d utilisation (constat F509) : un compte dont
+    # users.terms_version differe voit termsAcceptanceRequired=true sur GET /me et doit
+    # accepter via PATCH /me/terms. A changer a chaque nouvelle version des textes.
+    version: ${TERMS_VERSION:2026-09}
+  export:
+    # Delai minimal entre deux exports des donnees personnelles (GET /me/export, constat F508).
+    cooldown-hours: ${EXPORT_COOLDOWN_HOURS:24}
+  momo:
+    # Prefixes nationaux (apres +229) par operateur mobile money, listes separees par des
+    # virgules ; permettent de suivre les attributions ARCEP sans redeploiement (constat F607).
+    # Valeurs par defaut dans MobileMoneyPrefixes.
+    prefixes:
+      MTN_MOMO: ${MOMO_PREFIXES_MTN:0151,0152,0153,0154,0156,0157,0159,0161,0162,0166,0167,0169,0190,0191,0196,0197}
+      MOOV_MONEY: ${MOMO_PREFIXES_MOOV:0155,0158,0160,0163,0164,0165,0168,0194,0195,0198,0199}
+      CELTIIS_CASH: ${MOMO_PREFIXES_CELTIIS:0140,0141,0142,0143,0144,0145,0146,0147,0148,0149,0150}
   search-events:
     # Duree de conservation des traces de recherche (table search_events, migration V9),
     # purgees chaque nuit par SearchEventRetentionScheduler. Duree declaree dans

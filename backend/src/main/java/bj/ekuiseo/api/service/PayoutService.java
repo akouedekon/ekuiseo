@@ -1,5 +1,6 @@
 package bj.ekuiseo.api.service;
 
+import bj.ekuiseo.api.common.exception.BadRequestException;
 import bj.ekuiseo.api.common.exception.ConflictException;
 import bj.ekuiseo.api.common.exception.NotFoundException;
 import bj.ekuiseo.api.domain.Booking;
@@ -69,6 +70,12 @@ public class PayoutService {
     private static final List<PaymentMethod> PAYABLE_METHODS =
             List.of(PaymentMethod.MOMO_DEPOSIT, PaymentMethod.MOMO_FULL);
     public static final String SKIP_NO_ACCOUNT = "Aucun compte mobile money verifie";
+    /** Cle du verrou consultatif pg_advisory_xact_lock de la constitution des lots (arbitraire, unique dans l application). */
+    static final long BATCH_LOCK_KEY = 7_291_001L;
+    /** Statuts depuis lesquels un lot peut etre regle (constats F133/F458/F302). */
+    private static final List<PayoutStatus> SETTLEABLE = List.of(PayoutStatus.PENDING, PayoutStatus.FAILED);
+    /** Statuts depuis lesquels un lot peut etre marque en echec. */
+    private static final List<PayoutStatus> FAILABLE = List.of(PayoutStatus.PENDING, PayoutStatus.PROCESSING);
 
     private final BookingRepository bookingRepository;
     private final DriverPayoutRepository driverPayoutRepository;
@@ -125,6 +132,13 @@ public class PayoutService {
      */
     @Transactional
     public PayoutBatchResultResponse runWeeklyBatch(UUID adminId) {
+        // Verrou consultatif transactionnel (constat F303) : deux lancements simultanes ne
+        // constituent jamais deux lots pour les memes reservations. Le second recoit 409 plutot
+        // que d attendre la fin du premier (l unicite driver_payout_items.booking_id, V5, reste
+        // la garde finale au niveau base).
+        if (!driverPayoutRepository.tryLockBatch(BATCH_LOCK_KEY)) {
+            throw new ConflictException("Un lot de reversement est deja en cours de constitution");
+        }
         Instant cutoff = eligibilityCutoff();
         List<UUID> driverIds = bookingRepository.findDriverIdsWithPayableBookings(PAYABLE_STATUSES, PAYABLE_METHODS, cutoff);
         Instant now = Instant.now();
@@ -237,7 +251,8 @@ public class PayoutService {
                 driver.getFirstName() + " " + driver.getLastName(), payout.getDestinationProvider(),
                 payout.getDestinationMsisdn(), payout.getAmount(), tripCount, payout.getPeriodStart(),
                 payout.getPeriodEnd(), toAdminStatus(payout.getStatus()), payout.getSettledAt(),
-                reversedCount, reversedAmount);
+                reversedCount, reversedAmount, payout.getExternalReference(), payout.getSettledAmount(),
+                payout.getFailureReason(), payout.getSettledAt());
     }
 
     /** PENDING/PROCESSING/FAILED sont identiques ; SETTLED (interne) devient PAID (vocabulaire front, extended.ts). */
@@ -245,24 +260,85 @@ public class PayoutService {
         return status == PayoutStatus.SETTLED ? "PAID" : status.name();
     }
 
-    /** Marque un reversement comme regle (virement effectue manuellement, voir limitation en tete de classe). */
+    /** Variante sans corps de {@link #settle(UUID, UUID, String, Long)} (alias historique POST .../pay). */
     @Transactional
     public PayoutResponse settle(UUID adminId, UUID payoutId) {
+        return settle(adminId, payoutId, null, null);
+    }
+
+    /**
+     * Marque un reversement comme regle (virement effectue manuellement, voir limitation en
+     * tete de classe). Exige un lot PENDING ou FAILED (409 sinon : un lot deja regle ne se
+     * re-regle pas, constats F133/F458/F302). La reference du virement et le montant
+     * effectivement vire, s ils sont fournis, sont conserves et journalises ; le conducteur
+     * est prevenu (PAYOUT_SETTLED).
+     */
+    @Transactional
+    public PayoutResponse settle(UUID adminId, UUID payoutId, String externalReference, Long settledAmountFcfa) {
         DriverPayout payout = driverPayoutRepository.findById(payoutId)
                 .orElseThrow(() -> new NotFoundException("Reversement introuvable"));
-        if (payout.getStatus() == PayoutStatus.SETTLED) {
-            throw new ConflictException("Ce reversement est deja regle");
+        if (!SETTLEABLE.contains(payout.getStatus())) {
+            throw new ConflictException(payout.getStatus() == PayoutStatus.SETTLED
+                    ? "Ce reversement est deja regle"
+                    : "Ce reversement est " + payout.getStatus() + " : il ne peut pas etre regle dans cet etat");
         }
         if (payout.getDestinationMsisdn() == null) {
             throw new ConflictException("Ce lot n a pas de compte mobile money de destination");
         }
+        if (settledAmountFcfa != null && (settledAmountFcfa < 0 || settledAmountFcfa > payout.getAmount())) {
+            throw new BadRequestException("Le montant regle doit etre compris entre 0 et " + payout.getAmount() + " FCFA");
+        }
         long reversedCount = driverPayoutItemRepository.countByPayoutIdAndReversedAtIsNotNull(payoutId);
+        String reference = externalReference == null || externalReference.isBlank() ? null : externalReference.trim();
+        long settled = settledAmountFcfa != null ? settledAmountFcfa : payout.getAmount();
+        PayoutStatus previous = payout.getStatus();
         payout.setStatus(PayoutStatus.SETTLED);
         payout.setSettledAt(Instant.now());
+        payout.setSettledBy(adminId);
+        payout.setExternalReference(reference);
+        payout.setSettledAmount(settled);
+        payout.setFailureReason(null);
         payout = driverPayoutRepository.save(payout);
-        auditService.log(adminId, "PAYOUT_SETTLED", "driver_payout", payout.getId(),
-                Map.of("amountFcfa", payout.getAmount(), "driverId", payout.getDriver().getId().toString(),
-                        "destination", String.valueOf(payout.getDestinationMsisdn()), "reversedItems", reversedCount));
+        Map<String, Object> details = new java.util.LinkedHashMap<>();
+        details.put("amountFcfa", payout.getAmount());
+        details.put("settledAmountFcfa", settled);
+        details.put("externalReference", reference == null ? "" : reference);
+        details.put("previousStatus", previous.name());
+        details.put("driverId", payout.getDriver().getId().toString());
+        details.put("destination", String.valueOf(payout.getDestinationMsisdn()));
+        details.put("reversedItems", reversedCount);
+        auditService.log(adminId, "PAYOUT_SETTLED", "driver_payout", payout.getId(), details);
+        notificationService.notify(payout.getDriver(), NotificationType.PAYOUT_SETTLED,
+                NotificationTemplates.payload("payoutId", payout.getId().toString(), "amountFcfa", settled,
+                        "destination", payout.getDestinationMsisdn(), "externalReference", reference));
+        return payoutMapper.toResponse(payout);
+    }
+
+    /**
+     * Virement en echec (POST /admin/payouts/{id}/fail, constats F133/F458) : le lot passe
+     * FAILED avec le motif, pour que « Relancer » (settle depuis FAILED) ait un sens ; le
+     * conducteur est prevenu avec le motif (compte errone, plafond operateur...).
+     */
+    @Transactional
+    public PayoutResponse fail(UUID adminId, UUID payoutId, String reason) {
+        DriverPayout payout = driverPayoutRepository.findById(payoutId)
+                .orElseThrow(() -> new NotFoundException("Reversement introuvable"));
+        if (!FAILABLE.contains(payout.getStatus())) {
+            throw new ConflictException("Ce reversement est " + payout.getStatus() + " : il ne peut pas etre marque en echec");
+        }
+        if (reason == null || reason.isBlank()) {
+            throw new BadRequestException("Le motif de l echec est obligatoire");
+        }
+        PayoutStatus previous = payout.getStatus();
+        payout.setStatus(PayoutStatus.FAILED);
+        payout.setFailureReason(reason.trim());
+        payout = driverPayoutRepository.save(payout);
+        auditService.log(adminId, "PAYOUT_FAILED", "driver_payout", payout.getId(),
+                Map.of("reason", reason.trim(), "previousStatus", previous.name(),
+                        "driverId", payout.getDriver().getId().toString(), "amountFcfa", payout.getAmount()));
+        notificationService.notify(payout.getDriver(), NotificationType.PAYOUT_FAILED,
+                NotificationTemplates.payload("payoutId", payout.getId().toString(), "amountFcfa", payout.getAmount(),
+                        "reason", reason.trim()));
         return payoutMapper.toResponse(payout);
     }
 

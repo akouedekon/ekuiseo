@@ -54,7 +54,7 @@ public class TripController {
         return ResponseEntity.status(HttpStatus.CREATED).body(tripService.createTrip(currentUser.id(), req));
     }
 
-    @Operation(summary = "Rechercher des trajets", description = "Recherche geospatiale : origine ET destination a moins de radiusKm (5 km par defaut) des points donnes, trie par pertinence. originLabel/destLabel (optionnels) ne filtrent rien : ils lisibilisent la trace de recherche conservee pour les indicateurs de liquidite du back-office (table search_events).")
+    @Operation(summary = "Rechercher des trajets", description = "Recherche geospatiale : un point de montee (origine ou arret intermediaire du trajet) a moins de radiusKm (5 km par defaut) de l origine cherchee ET un point de descente ulterieur a moins de radiusKm de la destination. Quand la correspondance passe par un arret, pickupStopId/dropoffStopId/segmentPriceFcfa sont renseignes. Tri serveur : sort = departure (defaut) | price | rating ; filtres : maxPrice (FCFA), minRating (0-5), verifiedOnly. originLabel/destLabel (optionnels) ne filtrent rien : ils lisibilisent la trace de recherche conservee pour les indicateurs de liquidite du back-office (table search_events).")
     @GetMapping("/search")
     public Page<TripResponse> search(@RequestParam double originLat,
                                       @RequestParam double originLng,
@@ -66,13 +66,18 @@ public class TripController {
                                       @RequestParam(defaultValue = "1") int seats,
                                       @RequestParam(required = false) Double radiusKm,
                                       @RequestParam(required = false) TripType tripType,
+                                      @RequestParam(required = false) String sort,
+                                      @RequestParam(required = false) Long maxPrice,
+                                      @RequestParam(required = false) Double minRating,
+                                      @RequestParam(required = false) Boolean verifiedOnly,
                                       @RequestParam(defaultValue = "0") int page,
                                       @RequestParam(defaultValue = "20") int size) {
-        Pageable pageable = PageRequest.of(page, size);
+        Pageable pageable = PageRequest.of(page, Math.max(1, Math.min(50, size)));
         // Endpoint public : requesterId est null pour un appelant anonyme (la trace de
         // recherche est alors anonyme elle aussi).
         return tripService.search(currentUser.idOrNull(), originLabel, destLabel,
-                originLat, originLng, destLat, destLng, date, seats, radiusKm, tripType, pageable);
+                originLat, originLng, destLat, destLng, date, seats, radiusKm, tripType,
+                sort, maxPrice, minRating, verifiedOnly, pageable);
     }
 
     @Operation(summary = "Axes les plus proposes", description = "Public. Trajets PUBLISHED a venir avec au moins une place, regroupes par origine/destination, classes par nombre de departs. Alimente les raccourcis de l'accueil.")

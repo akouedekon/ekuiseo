@@ -1,6 +1,7 @@
 package bj.ekuiseo.api.service;
 
 import bj.ekuiseo.api.common.exception.BadRequestException;
+import bj.ekuiseo.api.common.exception.TooManyRequestsException;
 import bj.ekuiseo.api.domain.OtpCode;
 import bj.ekuiseo.api.repository.OtpCodeRepository;
 import org.junit.jupiter.api.Test;
@@ -19,15 +20,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** Constat F536 : le compteur d essais est persiste et les usages (LOGIN / CHANGE_EMAIL) sont etanches. */
+/**
+ * Constat F536 : le compteur d essais est persiste et les usages (LOGIN / CHANGE_EMAIL) sont etanches.
+ * Phase 2 (F540/F512) : un nouveau code invalide les precedents ; plafond quotidien par numero.
+ */
 class OtpCodeServiceTest {
 
     private final OtpCodeRepository repository = mock(OtpCodeRepository.class);
     private final PasswordEncoder encoder = new BCryptPasswordEncoder(4);
-    private final OtpCodeService service = new OtpCodeService(repository, encoder, 5);
+    private final OtpCodeService service = new OtpCodeService(repository, encoder, 5, 20);
 
     @Test
     void issueHashesTheCodeAndStoresPurposeAndChannel() {
@@ -42,6 +47,25 @@ class OtpCodeServiceTest {
         assertThat(encoder.matches(code, saved.getValue().getCodeHash())).isTrue();
         assertThat(saved.getValue().getPurpose()).isEqualTo("CHANGE_EMAIL");
         assertThat(saved.getValue().getChannel()).isEqualTo("EMAIL");
+    }
+
+    @Test
+    void issueInvalidatesActiveCodesOfTheSamePhoneAndPurpose() {
+        when(repository.save(any(OtpCode.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.issue("+2290197000322", OtpCodeService.PURPOSE_LOGIN, "EMAIL");
+
+        verify(repository).consumeActive(eq("+2290197000322"), eq("LOGIN"), any(Instant.class));
+    }
+
+    @Test
+    void issueRefusesBeyondTheDailyCap() {
+        when(repository.countByPhoneAndCreatedAtAfter(eq("+2290197000322"), any())).thenReturn(20L);
+
+        assertThatThrownBy(() -> service.issue("+2290197000322", OtpCodeService.PURPOSE_LOGIN, "EMAIL"))
+                .isInstanceOf(TooManyRequestsException.class);
+        verify(repository, never()).save(any());
+        verify(repository, never()).consumeActive(any(), any(), any());
     }
 
     @Test

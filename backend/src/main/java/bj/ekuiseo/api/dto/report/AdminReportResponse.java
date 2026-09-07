@@ -15,6 +15,10 @@ import java.util.UUID;
  *                conducteur du trajet signale (un signalement porte toujours sur un
  *                utilisateur OU un trajet, jamais aucun des deux - voir Report).
  * @param bookingId reservation qui lie le signalant a la cible (V14), null si aucune
+ * @param resolutionNote note de cloture (obligatoire pour RESOLVED / DISMISSED, constat F552)
+ * @param resolvedBy administrateur ayant clos le signalement (null tant qu il est ouvert ou en examen)
+ * @param resolvedAt date de cloture (null tant qu il est ouvert ou en examen)
+ * @param priorReportsAgainstTarget autres signalements (tous statuts) visant la meme personne (constat F307)
  */
 public record AdminReportResponse(
         UUID id,
@@ -25,7 +29,11 @@ public record AdminReportResponse(
         PersonRef reporter,
         PersonRef target,
         UUID tripId,
-        UUID bookingId
+        UUID bookingId,
+        String resolutionNote,
+        UUID resolvedBy,
+        Instant resolvedAt,
+        long priorReportsAgainstTarget
 ) {
     public record PersonRef(UUID id, String firstName, String lastName) {
     }

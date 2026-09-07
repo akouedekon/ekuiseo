@@ -7,7 +7,9 @@ import bj.ekuiseo.api.domain.Conversation;
 import bj.ekuiseo.api.domain.Message;
 import bj.ekuiseo.api.domain.User;
 import bj.ekuiseo.api.domain.Trip;
+import bj.ekuiseo.api.domain.enums.BookingStatus;
 import bj.ekuiseo.api.domain.enums.NotificationType;
+import bj.ekuiseo.api.domain.enums.TripStatus;
 import bj.ekuiseo.api.dto.conversation.ConversationSummary;
 import bj.ekuiseo.api.dto.message.MessageResponse;
 import bj.ekuiseo.api.dto.message.SendMessageRequest;
@@ -19,13 +21,26 @@ import bj.ekuiseo.api.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/** Messagerie liee a une reservation, entre le passager et le conducteur du trajet. */
+/**
+ * Messagerie liee a une reservation, entre le passager et le conducteur du trajet.
+ *
+ * <p>Phase 2 (constat F546) : la conversation suit le cycle de vie de la reservation. On
+ * ecrit tant que la reservation est PENDING_PAYMENT ou CONFIRMED, puis, une fois le trajet
+ * effectue (COMPLETED / NO_SHOW), pendant {@link #POST_TRIP_WINDOW} apres le depart (le
+ * temps de regler un oubli ou un litige) ; jamais sur une reservation annulee, expiree, ni
+ * sur un trajet annule. La lecture reste possible dans tous les cas.</p>
+ */
 @Service
 public class MessageService {
+
+    /** Fenetre d ecriture apres le depart d un trajet effectue (J+7). */
+    static final Duration POST_TRIP_WINDOW = Duration.ofDays(7);
 
     private final BookingRepository bookingRepository;
     private final ConversationRepository conversationRepository;
@@ -49,6 +64,7 @@ public class MessageService {
     public MessageResponse send(UUID bookingId, UUID senderId, SendMessageRequest req) {
         Booking booking = findBooking(bookingId);
         assertParticipant(booking, senderId);
+        assertWritable(booking, Instant.now());
         User sender = userRepository.findById(senderId).orElseThrow(() -> new NotFoundException("Utilisateur introuvable"));
 
         Conversation conversation = conversationRepository.findByBookingId(bookingId)
@@ -67,6 +83,32 @@ public class MessageService {
                 Map.of("bookingId", bookingId.toString(), "messageId", message.getId().toString()));
 
         return messageMapper.toResponse(message);
+    }
+
+    /**
+     * Conversation ouverte a l ecriture ? Reservation PENDING_PAYMENT ou CONFIRMED sur un
+     * trajet non annule ; ou COMPLETED / NO_SHOW jusqu a J+7 apres le depart. 403
+     * « conversation close » sinon (constat F546).
+     */
+    static boolean isWritable(Booking booking, Instant now) {
+        Trip trip = booking.getTrip();
+        if (trip.getStatus() == TripStatus.CANCELLED) {
+            return false;
+        }
+        BookingStatus status = booking.getStatus();
+        if (status == BookingStatus.PENDING_PAYMENT || status == BookingStatus.CONFIRMED) {
+            return true;
+        }
+        if (status == BookingStatus.COMPLETED || status == BookingStatus.NO_SHOW) {
+            return trip.getDepartureAt() != null && now.isBefore(trip.getDepartureAt().plus(POST_TRIP_WINDOW));
+        }
+        return false;
+    }
+
+    private static void assertWritable(Booking booking, Instant now) {
+        if (!isWritable(booking, now)) {
+            throw new ForbiddenException("Cette conversation est close : la reservation est terminee, annulee ou expiree");
+        }
     }
 
     @Transactional(readOnly = true)

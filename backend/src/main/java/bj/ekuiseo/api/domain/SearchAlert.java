@@ -68,6 +68,11 @@ public class SearchAlert {
     @Builder.Default
     private boolean active = true;
 
+    /** Rayon de correspondance (km) autour de l origine et de la destination, fige a la creation (V16, constat F530). */
+    @Column(name = "radius_km", nullable = false)
+    @Builder.Default
+    private double radiusKm = 15.0;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;

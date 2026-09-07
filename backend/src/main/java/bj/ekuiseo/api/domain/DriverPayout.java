@@ -59,4 +59,20 @@ public class DriverPayout {
 
     @Column(name = "period_end")
     private Instant periodEnd;
+
+    /** Reference du virement mobile money saisie par l administrateur au reglement (V16). */
+    @Column(name = "external_reference", length = 100)
+    private String externalReference;
+
+    /** Montant effectivement vire (V16) ; egal a {@code amount} sauf mention contraire au reglement. */
+    @Column(name = "settled_amount")
+    private Long settledAmount;
+
+    /** Motif d echec du virement (statut FAILED, V16). */
+    @Column(name = "failure_reason", columnDefinition = "text")
+    private String failureReason;
+
+    /** Administrateur ayant marque le lot regle (V16). */
+    @Column(name = "settled_by")
+    private UUID settledBy;
 }

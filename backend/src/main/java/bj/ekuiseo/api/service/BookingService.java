@@ -343,6 +343,9 @@ public class BookingService {
         if (status == BookingStatus.CANCELLED_BY_PASSENGER || status == BookingStatus.CANCELLED_BY_DRIVER) {
             return "CANCELLED";
         }
+        if (status == BookingStatus.EXPIRED) {
+            return "EXPIRED";
+        }
         if (status == BookingStatus.PENDING_PAYMENT) {
             return "PENDING";
         }
@@ -368,8 +371,9 @@ public class BookingService {
         List<Booking> history = bookingRepository.findByPassengerIdWithTripFetched(passengerId);
         Map<String, List<Booking>> byRoute = new LinkedHashMap<>();
         for (Booking b : history) {
-            if (b.getStatus() == BookingStatus.CANCELLED_BY_PASSENGER || b.getStatus() == BookingStatus.CANCELLED_BY_DRIVER) {
-                continue;
+            if (b.getStatus() == BookingStatus.CANCELLED_BY_PASSENGER || b.getStatus() == BookingStatus.CANCELLED_BY_DRIVER
+                    || b.getStatus() == BookingStatus.EXPIRED) {
+                continue; // une reservation jamais payee n est pas une habitude de trajet
             }
             String key = b.getTrip().getOriginLabel() + "||" + b.getTrip().getDestLabel();
             byRoute.computeIfAbsent(key, k -> new ArrayList<>()).add(b);
@@ -454,12 +458,20 @@ public class BookingService {
                         "refundStatus", refund.status().name()));
         log.info("Resultat remboursement reservation {} : {} ({})", booking.getId(), refund.status(), refund.message());
 
-        Map<String, Object> payload = Map.of("bookingId", booking.getId().toString(), "tripId", trip.getId().toString(),
+        // refundStatus (constat F037) : MANUAL_REQUIRED fait mentionner le delai de 5 jours
+        // ouvres dans le gabarit (NotificationTemplates#refundLine).
+        Map<String, Object> payload = NotificationTemplates.payload("bookingId", booking.getId().toString(),
+                "tripId", trip.getId().toString(),
                 "refundAmountFcfa", outcome.refundAmount(), "retainedAmountFcfa", outcome.retainedAmount(),
+                "refundStatus", refund.status().name(),
                 "seats", booking.getSeats(), "cancelledBy", "PASSENGER",
                 "route", trip.getOriginLabel() + " -> " + trip.getDestLabel(),
                 "departureAt", java.util.Objects.toString(trip.getDepartureAt(), ""));
-        notificationService.notify(booking.getPassenger(), NotificationType.BOOKING_CANCELLED, payload);
+        // Le passager recoit un accuse de reception avec le sort de son acompte (forPassenger
+        // distingue le gabarit de celui envoye au conducteur, meme type et memes montants).
+        Map<String, Object> passengerPayload = new java.util.LinkedHashMap<>(payload);
+        passengerPayload.put("forPassenger", true);
+        notificationService.notify(booking.getPassenger(), NotificationType.BOOKING_CANCELLED, passengerPayload);
         if (wasConfirmed) {
             String summary = "Ekuiseo : " + booking.getPassenger().getFirstName() + " a annule sa reservation ("
                     + booking.getSeats() + " place(s)) sur votre trajet " + trip.getOriginLabel() + " - "
@@ -641,9 +653,20 @@ public class BookingService {
     public int expireStalePendingBookings() {
         List<Booking> stale = bookingRepository.findExpirable(BookingStatus.PENDING_PAYMENT, Instant.now());
         for (Booking b : stale) {
-            b.setStatus(BookingStatus.CANCELLED_BY_PASSENGER);
+            // Constats F010/F116/F232 : une expiration n est pas une annulation volontaire. Le
+            // statut EXPIRED est journalise (acteur : le systeme) et le passager prevenu in-app.
+            b.setStatus(BookingStatus.EXPIRED);
             bookingRepository.save(b);
-            releaseSeats(b.getTrip().getId(), b.getSeats());
+            Trip trip = b.getTrip();
+            releaseSeats(trip.getId(), b.getSeats());
+            auditService.log(null, "BOOKING_EXPIRED", "booking", b.getId(),
+                    Map.of("tripId", trip.getId().toString(), "seatsReleased", b.getSeats(),
+                            "ttlMinutes", pendingPaymentTtlMinutes));
+            notificationService.notify(b.getPassenger(), NotificationType.BOOKING_EXPIRED,
+                    NotificationTemplates.payload("bookingId", b.getId().toString(), "tripId", trip.getId().toString(),
+                            "seats", b.getSeats(), "ttlMinutes", pendingPaymentTtlMinutes,
+                            "route", trip.getOriginLabel() + " -> " + trip.getDestLabel(),
+                            "departureAt", java.util.Objects.toString(trip.getDepartureAt(), "")));
             log.info("Reservation {} expiree (paiement non recu sous {} min), places liberees",
                     b.getId(), pendingPaymentTtlMinutes);
         }

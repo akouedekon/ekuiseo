@@ -11,15 +11,22 @@ public final class Masking {
     private Masking() {
     }
 
-    /** {@code lakouedekon@gmail.com} devient {@code la***@gmail.com}. */
+    /**
+     * {@code lakouedekon@gmail.com} devient {@code l***@g***.com} (constat F512) : un seul
+     * caractere de la partie locale et le domaine tronque a sa premiere lettre et son
+     * extension, pour que qui ne connait que le numero ne puisse pas reconstituer l adresse.
+     */
     public static String email(String email) {
         if (email == null) return "***";
         int at = email.indexOf('@');
-        if (at <= 0) return "***";
+        if (at <= 0 || at == email.length() - 1) return "***";
         String local = email.substring(0, at);
-        String domain = email.substring(at);
-        String visible = local.substring(0, Math.min(2, local.length()));
-        return visible + "***" + domain;
+        String domain = email.substring(at + 1);
+        int dot = domain.lastIndexOf('.');
+        String domainMasked = dot > 0
+                ? domain.charAt(0) + "***" + domain.substring(dot)
+                : domain.charAt(0) + "***";
+        return local.charAt(0) + "***@" + domainMasked;
     }
 
     /** {@code +2290196870371} devient {@code ************71}. */

@@ -1,6 +1,7 @@
 package bj.ekuiseo.api.service;
 
 import bj.ekuiseo.api.common.Masking;
+import bj.ekuiseo.api.common.exception.BadRequestException;
 import bj.ekuiseo.api.common.exception.ConflictException;
 import bj.ekuiseo.api.common.exception.NotFoundException;
 import bj.ekuiseo.api.common.exception.TooManyRequestsException;
@@ -17,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -84,8 +86,12 @@ public class IdentityVerificationService {
                 audit.put("previousReviewedBy", verification.getReviewedBy().getId().toString());
             }
         }
+        String documentNumber = normalizeDocumentNumber(req.documentNumber());
+        if (documentNumber.isEmpty()) {
+            throw new BadRequestException("Le numero de la piece d identite est obligatoire");
+        }
         verification.setDocumentType(req.documentType());
-        verification.setDocumentNumber(req.documentNumber());
+        verification.setDocumentNumber(documentNumber);
         verification.setStatus(IdentityVerificationStatus.PENDING);
         verification.setSubmittedAt(now);
         verification.setReviewedAt(null);
@@ -94,9 +100,19 @@ public class IdentityVerificationService {
         verification = identityVerificationRepository.save(verification);
 
         audit.put("documentType", req.documentType().name());
-        audit.put("documentNumber", Masking.documentNumber(req.documentNumber()));
+        audit.put("documentNumber", Masking.documentNumber(documentNumber));
         auditService.log(userId, "IDENTITY_SUBMITTED", "identity_verification", verification.getId(), audit);
         return toResponse(verification);
+    }
+
+    /**
+     * Forme canonique d un numero de piece (constat F604) : sans espaces ni caracteres
+     * blancs, en majuscules. « b 123 4567 » et « B1234567 » designent la meme piece ; la
+     * recherche des doublons (AdminVerificationService) et l index V16 s appuient dessus.
+     */
+    public static String normalizeDocumentNumber(String raw) {
+        if (raw == null) return "";
+        return raw.replaceAll("\\s", "").toUpperCase(Locale.ROOT);
     }
 
     private IdentityVerificationResponse toResponse(IdentityVerification v) {

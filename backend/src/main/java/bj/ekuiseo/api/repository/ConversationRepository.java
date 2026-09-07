@@ -5,12 +5,16 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 public interface ConversationRepository extends JpaRepository<Conversation, UUID> {
     Optional<Conversation> findByBookingId(UUID bookingId);
+
+    /** Conversations de plusieurs reservations (instruction d un signalement, ReportService#conversations). */
+    List<Conversation> findByBookingIdIn(Collection<UUID> bookingIds);
 
     /**
      * Toutes les conversations ou l'utilisateur est participant, cote passager OU

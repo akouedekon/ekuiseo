@@ -186,6 +186,73 @@ class PaymentServiceTest {
         assertThat(booking.getStatus()).isEqualTo(BookingStatus.PENDING_PAYMENT);
     }
 
+    /** Constat F011 : un webhook non conclusif laisse le paiement INITIATED (avec l identifiant) et repond 503 pour un rejeu. */
+    @Test
+    void handleWebhook_pendingAtKkiapay_keepsInitiated_andAsksForReplay() {
+        when(bookingRepository.findById(booking.getId())).thenReturn(Optional.of(booking));
+        when(paymentRepository.findFirstByBookingIdAndStatusOrderByCreatedAtDesc(booking.getId(), PaymentStatus.INITIATED))
+                .thenReturn(Optional.of(payment));
+        when(gateway.verifyTransaction("kk_123")).thenReturn(verified(false, 0, "PENDING"));
+
+        assertThatThrownBy(() -> service.handleWebhook(new KkiapayWebhookPayload("transaction.success", "kk_123", true, null,
+                null, "MOBILE_MONEY", 1000L, 19L, null, null, Map.of("bookingId", booking.getId().toString()))))
+                .isInstanceOf(bj.ekuiseo.api.service.kkiapay.KkiapayUnavailableException.class);
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.INITIATED);
+        assertThat(payment.getProviderTxId()).isEqualTo("kk_123");
+        assertThat(booking.getStatus()).isEqualTo(BookingStatus.PENDING_PAYMENT);
+        verify(notificationService, never()).notify(any(), any(), any());
+        verify(notificationService, never()).notifyCritical(any(), any(), any());
+    }
+
+    /** Constat F130 : un paiement rembourse, en cours de remboursement ou refuse est terminal ; le rejeu est ignore. */
+    @Test
+    void handleWebhook_onTerminalPayment_isIgnored() {
+        for (PaymentStatus terminal : java.util.List.of(PaymentStatus.REFUNDED, PaymentStatus.REFUND_PENDING,
+                PaymentStatus.REFUND_MANUAL, PaymentStatus.FAILED, PaymentStatus.SUCCEEDED)) {
+            payment.setStatus(terminal);
+            when(paymentRepository.findByProviderAndProviderTxId(PaymentProvider.KKIAPAY, "kk_123")).thenReturn(Optional.of(payment));
+
+            service.handleWebhook(new KkiapayWebhookPayload("transaction.success", "kk_123", true, null,
+                    null, "MOBILE_MONEY", 1000L, 19L, null, null, Map.of("bookingId", booking.getId().toString())));
+
+            assertThat(payment.getStatus()).isEqualTo(terminal);
+        }
+        verify(gateway, never()).verifyTransaction(any());
+        assertThat(booking.getStatus()).isEqualTo(BookingStatus.PENDING_PAYMENT);
+    }
+
+    @Test
+    void confirmFromWidget_onRefundedPayment_doesNotReverify() {
+        payment.setStatus(PaymentStatus.REFUND_PENDING);
+
+        service.confirmFromWidget(payment.getId(), passenger.getId(), "kk_123");
+
+        verify(gateway, never()).verifyTransaction(any());
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REFUND_PENDING);
+    }
+
+    /** Constat F011 : la meme decision sert le widget et le webhook. */
+    @Test
+    void applyVerification_decidesSucceededFailedOrPending() {
+        assertThat(service.applyVerification(payment, verified(true, 1000, "SUCCESS"), 1000, "t")).isEqualTo(PaymentService.Decision.SUCCEEDED);
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCEEDED);
+
+        Payment insufficient = Payment.builder().status(PaymentStatus.INITIATED).build();
+        assertThat(service.applyVerification(insufficient, verified(true, 5, "SUCCESS"), 1000, "t")).isEqualTo(PaymentService.Decision.FAILED);
+        assertThat(insufficient.getStatus()).isEqualTo(PaymentStatus.FAILED);
+
+        Payment pending = Payment.builder().status(PaymentStatus.INITIATED).build();
+        assertThat(service.applyVerification(pending, verified(false, 0, "PROCESSING"), 1000, "t")).isEqualTo(PaymentService.Decision.PENDING);
+        assertThat(pending.getStatus()).isEqualTo(PaymentStatus.INITIATED);
+        assertThat(pending.getRawPayload()).containsEntry("decision", "PENDING").containsEntry("source", "t");
+
+        Payment failed = Payment.builder().status(PaymentStatus.INITIATED).build();
+        assertThat(service.applyVerification(failed, verified(false, 0, "FAILED"), 1000, "t")).isEqualTo(PaymentService.Decision.FAILED);
+        assertThat(PaymentService.isTerminal(PaymentStatus.INITIATED)).isFalse();
+        assertThat(PaymentService.isTerminal(PaymentStatus.REFUNDED)).isTrue();
+    }
+
     @Test
     void handleWebhook_expiredBooking_isNotReconfirmed() {
         booking.setStatus(BookingStatus.CANCELLED_BY_PASSENGER); // expiree, places liberees

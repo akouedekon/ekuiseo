@@ -62,7 +62,7 @@ class UserServiceAnonymizeTest {
     private final UserService service = new UserService(userRepository, vehicleRepository, tripRepository,
             bookingRepository, messageRepository, userPreferencesRepository, paymentAccountRepository,
             searchAlertRepository, notificationRepository, identityVerificationRepository, driverPayoutRepository,
-            refreshTokenService, auditService, mock(UserMapper.class), mock(VehicleMapper.class));
+            refreshTokenService, auditService, mock(UserMapper.class), mock(VehicleMapper.class), new TermsPolicy("2026-09"));
 
     private final UUID userId = UUID.fromString("6f1c2a3e-9b4d-4c5e-8f60-1a2b3c4d5e6f");
     private final User user = User.builder().id(userId).phone("+2290197000322").email("awa@example.bj")

@@ -16,6 +16,11 @@ import java.util.UUID;
  * @param reversedCount reservations remboursees apres inclusion dans un lot deja traite ;
  *                      {@code reversedAmount} est a deduire du prochain virement.
  * @param status PENDING/PROCESSING/PAID/FAILED (PAID = SETTLED interne).
+ * @param paidAt date de reglement (alias historique de {@code settledAt}).
+ * @param externalReference reference du virement saisie au reglement (V16).
+ * @param settledAmount montant effectivement vire (V16), null tant que le lot n est pas regle.
+ * @param failureReason motif d echec du virement (statut FAILED, V16).
+ * @param settledAt date de reglement (V16, meme valeur que {@code paidAt}).
  */
 public record AdminPayoutResponse(
         UUID id,
@@ -30,6 +35,10 @@ public record AdminPayoutResponse(
         String status,
         Instant paidAt,
         long reversedCount,
-        long reversedAmount
+        long reversedAmount,
+        String externalReference,
+        Long settledAmount,
+        String failureReason,
+        Instant settledAt
 ) {
 }

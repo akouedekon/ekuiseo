@@ -52,7 +52,7 @@ class UserServicePublicProfileTest {
             mock(bj.ekuiseo.api.repository.NotificationRepository.class),
             mock(bj.ekuiseo.api.repository.IdentityVerificationRepository.class),
             mock(bj.ekuiseo.api.repository.DriverPayoutRepository.class),
-            mock(RefreshTokenService.class), mock(AuditService.class), userMapper, vehicleMapper);
+            mock(RefreshTokenService.class), mock(AuditService.class), userMapper, vehicleMapper, new TermsPolicy("2026-09"));
 
     private static BookingRepository.DriverReliabilityStats reliability(long completed, long noShow, long lateCancelled) {
         return new BookingRepository.DriverReliabilityStats() {

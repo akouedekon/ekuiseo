@@ -109,4 +109,19 @@ class AdminVerificationServiceTest {
         assertThat(history.get(0).reviewedAt()).isNotNull();
         assertThat(history.get(0).reviewedBy()).isEqualTo(adminId);
     }
+
+    /** Constat F604 : les autres comptes ayant declare la meme piece sont signales au moderateur. */
+    @Test
+    void listByStatus_flagsAccountsSharingTheSameDocument() {
+        pending.setDocumentType(bj.ekuiseo.api.domain.enums.IdentityDocumentType.CNI);
+        pending.setDocumentNumber("B1234567");
+        UUID other = UUID.randomUUID();
+        when(repository.findByStatusOrderBySubmittedAtAsc(IdentityVerificationStatus.PENDING)).thenReturn(List.of(pending));
+        when(repository.findOtherUserIdsWithDocument(bj.ekuiseo.api.domain.enums.IdentityDocumentType.CNI, "B1234567", user.getId()))
+                .thenReturn(List.of(other));
+
+        List<AdminVerificationResponse> queue = service.listByStatus(IdentityVerificationStatus.PENDING);
+
+        assertThat(queue.get(0).duplicateOfUserIds()).containsExactly(other);
+    }
 }

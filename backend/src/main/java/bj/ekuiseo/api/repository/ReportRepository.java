@@ -5,6 +5,8 @@ import bj.ekuiseo.api.domain.enums.ReportStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
 import java.util.List;
@@ -21,4 +23,18 @@ public interface ReportRepository extends JpaRepository<Report, UUID> {
 
     /** Plafond de signalements par auteur et par fenetre glissante (constat F548). */
     long countByReporterIdAndCreatedAtAfter(UUID reporterId, Instant after);
+
+    /** File de moderation (GET /api/v1/admin/overview). */
+    long countByStatus(ReportStatus status);
+
+    /**
+     * Autres signalements (tous statuts) visant la meme personne, directement ou via l un
+     * de ses trajets (constat F307) : un recidiviste se repere avant de trancher.
+     */
+    @Query("select count(r) from Report r left join r.reportedTrip t where r.id <> :reportId "
+            + "and (r.reportedUser.id = :targetId or t.driver.id = :targetId)")
+    long countOthersAgainstTarget(@Param("reportId") UUID reportId, @Param("targetId") UUID targetId);
+
+    /** Signalements deposes par un utilisateur (export de ses donnees, UserDataExportService). */
+    List<Report> findByReporterIdOrderByCreatedAtDesc(UUID reporterId);
 }

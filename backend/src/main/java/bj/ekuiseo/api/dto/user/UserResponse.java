@@ -9,6 +9,8 @@ import java.util.UUID;
  * Profil de l'utilisateur connecte (GET /api/v1/me, AuthResponse.user).
  * {@code role} permet au front de n'afficher l'entree « Back-office » qu'aux
  * comptes ADMIN ; la securite reelle reste cote serveur (/api/v1/admin/**).
+ * {@code termsAcceptanceRequired} (constat F509) : la version en vigueur des conditions
+ * d utilisation n a pas encore ete acceptee, le front doit la presenter (PATCH /me/terms).
  */
 public record UserResponse(
         UUID id,
@@ -23,6 +25,7 @@ public record UserResponse(
         boolean phoneVerified,
         boolean emailVerified,
         boolean identityVerified,
-        Role role
+        Role role,
+        boolean termsAcceptanceRequired
 ) {
 }

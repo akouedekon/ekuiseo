@@ -1,6 +1,8 @@
 package bj.ekuiseo.api.repository;
 
 import bj.ekuiseo.api.domain.Notification;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -12,6 +14,13 @@ import java.util.UUID;
 
 public interface NotificationRepository extends JpaRepository<Notification, UUID> {
     List<Notification> findByUserIdOrderByCreatedAtDesc(UUID userId);
+
+    /** Page de notifications (GET /api/v1/notifications?page&size), les plus recentes d abord. */
+    Page<Notification> findByUserIdOrderByCreatedAtDesc(UUID userId, Pageable pageable);
+
+    /** Compteur du badge (GET /api/v1/notifications/unread-count). */
+    long countByUserIdAndReadAtIsNull(UUID userId);
+
     /** Anonymisation d un compte (UserService#anonymize) : les payloads contiennent des donnees personnelles. */
     void deleteByUserId(UUID userId);
 

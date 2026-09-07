@@ -31,5 +31,17 @@ public enum NotificationType {
     /** Compte suspendu par la moderation, avec motif. */
     ACCOUNT_SUSPENDED,
     /** Issue d un signalement, envoyee a son auteur. */
-    REPORT_RESOLVED
+    REPORT_RESOLVED,
+    /** Acompte jamais recu dans le delai : reservation expiree, places liberees (phase 2, F010). */
+    BOOKING_EXPIRED,
+    /** Abonnement conducteur arrivant a echeance sous 3 jours (F049/F129). */
+    SUBSCRIPTION_EXPIRING,
+    /** Abonnement conducteur echu : la commission s applique de nouveau. */
+    SUBSCRIPTION_EXPIRED,
+    /** Reversement vire sur le compte mobile money du conducteur (F133). */
+    PAYOUT_SETTLED,
+    /** Virement du reversement en echec, motif transmis. */
+    PAYOUT_FAILED,
+    /** Nouvelle version des conditions d utilisation a accepter (F509). */
+    TERMS_UPDATED
 }

@@ -1,13 +1,24 @@
 package bj.ekuiseo.api.service.admin;
 
+import bj.ekuiseo.api.common.exception.ConflictException;
 import bj.ekuiseo.api.domain.IdentityVerification;
+import bj.ekuiseo.api.domain.PaymentAccount;
 import bj.ekuiseo.api.domain.User;
+import bj.ekuiseo.api.domain.enums.IdentityDocumentType;
 import bj.ekuiseo.api.domain.enums.IdentityVerificationStatus;
+import bj.ekuiseo.api.domain.enums.MobileMoneyOperator;
 import bj.ekuiseo.api.domain.enums.NotificationType;
+import bj.ekuiseo.api.domain.enums.Role;
 import bj.ekuiseo.api.domain.enums.UserStatus;
+import bj.ekuiseo.api.dto.admin.AdminUserDetailResponse;
 import bj.ekuiseo.api.dto.admin.AdminUserResponse;
+import bj.ekuiseo.api.mapper.BookingMapper;
+import bj.ekuiseo.api.mapper.TripMapper;
+import bj.ekuiseo.api.mapper.VehicleMapper;
 import bj.ekuiseo.api.repository.BookingRepository;
 import bj.ekuiseo.api.repository.IdentityVerificationRepository;
+import bj.ekuiseo.api.repository.PaymentAccountRepository;
+import bj.ekuiseo.api.repository.PaymentRepository;
 import bj.ekuiseo.api.repository.TripRepository;
 import bj.ekuiseo.api.repository.UserRepository;
 import bj.ekuiseo.api.repository.VehicleRepository;
@@ -20,38 +31,52 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** Constats F601 (retrait du badge) et F212 (suspension notifiee avec motif). */
+/**
+ * Constats F601 (retrait du badge) et F212 (suspension notifiee avec motif). Phase 2 :
+ * F304 (ni soi-meme ni un administrateur), F305/F306 (fiche detaillee, numero de piece tronque).
+ */
 class AdminUserServiceIdentityTest {
 
     private final UserRepository userRepository = mock(UserRepository.class);
     private final IdentityVerificationRepository identityVerificationRepository = mock(IdentityVerificationRepository.class);
+    private final PaymentAccountRepository paymentAccountRepository = mock(PaymentAccountRepository.class);
     private final AuditService auditService = mock(AuditService.class);
     private final NotificationService notificationService = mock(NotificationService.class);
     private final RefreshTokenService refreshTokenService = mock(RefreshTokenService.class);
     private final UserService userService = mock(UserService.class);
+    private final TripRepository tripRepository = mock(TripRepository.class);
+    private final BookingRepository bookingRepository = mock(BookingRepository.class);
     private final AdminUserService service = new AdminUserService(userRepository, mock(VehicleRepository.class),
-            mock(TripRepository.class), mock(BookingRepository.class), auditService, refreshTokenService,
-            mock(BookingService.class), identityVerificationRepository, notificationService, userService);
+            tripRepository, bookingRepository, auditService, refreshTokenService,
+            mock(BookingService.class), identityVerificationRepository, notificationService, userService,
+            paymentAccountRepository, mock(PaymentRepository.class), mock(VehicleMapper.class),
+            mock(BookingMapper.class), mock(TripMapper.class));
 
     private final UUID adminId = UUID.randomUUID();
+    private final User admin = User.builder().id(adminId).firstName("Admin").lastName("E").role(Role.ADMIN)
+            .status(UserStatus.ACTIVE).build();
     private final User user = User.builder().id(UUID.randomUUID()).firstName("Awa").lastName("K").phone("+2290100000000")
             .identityVerified(true).status(UserStatus.ACTIVE).build();
 
     @BeforeEach
     void setUp() {
         when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
-        when(userRepository.findById(adminId)).thenReturn(Optional.of(User.builder().id(adminId).build()));
+        when(userRepository.findById(adminId)).thenReturn(Optional.of(admin));
         when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
         when(identityVerificationRepository.save(any(IdentityVerification.class))).thenAnswer(inv -> inv.getArgument(0));
     }
@@ -65,6 +90,7 @@ class AdminUserServiceIdentityTest {
         AdminUserResponse response = service.revokeIdentity(adminId, user.getId(), "Piece signalee comme falsifiee");
 
         assertThat(response.identityVerified()).isFalse();
+        assertThat(response.role()).isEqualTo(Role.USER);
         assertThat(user.isIdentityVerified()).isFalse();
         assertThat(approved.getStatus()).isEqualTo(IdentityVerificationStatus.REJECTED);
         assertThat(approved.getRejectionReason()).isEqualTo("Piece signalee comme falsifiee");
@@ -98,9 +124,53 @@ class AdminUserServiceIdentityTest {
     }
 
     @Test
-    void anonymize_delegatesToUserService_andReturnsAdminView() {
-        service.anonymize(adminId, user.getId(), "Demande APDP");
+    void suspend_refusesSelf_andOtherAdmins() {
+        assertThatThrownBy(() -> service.suspend(adminId, adminId, "x"))
+                .isInstanceOf(ConflictException.class).hasMessageContaining("vous-meme");
 
+        User otherAdmin = User.builder().id(UUID.randomUUID()).firstName("B").lastName("C").role(Role.ADMIN)
+                .status(UserStatus.ACTIVE).build();
+        when(userRepository.findById(otherAdmin.getId())).thenReturn(Optional.of(otherAdmin));
+        assertThatThrownBy(() -> service.suspend(adminId, otherAdmin.getId(), "x"))
+                .isInstanceOf(ConflictException.class).hasMessageContaining("administrateur");
+
+        assertThat(admin.getStatus()).isEqualTo(UserStatus.ACTIVE);
+        assertThat(otherAdmin.getStatus()).isEqualTo(UserStatus.ACTIVE);
+        verify(refreshTokenService, never()).revokeAll(any());
+        verify(auditService, never()).log(any(), eq("USER_SUSPENDED"), any(), any(), any());
+    }
+
+    @Test
+    void anonymize_delegatesToUserService_butRefusesSelfAndAdmins() {
+        service.anonymize(adminId, user.getId(), "Demande APDP");
         verify(userService).anonymize(user.getId(), adminId, "Demande APDP");
+
+        assertThatThrownBy(() -> service.anonymize(adminId, adminId, "x")).isInstanceOf(ConflictException.class);
+        verify(userService, never()).anonymize(eq(adminId), any(), any());
+    }
+
+    @Test
+    void getDetail_exposesIdentityWithLast4_andPaymentAccounts() {
+        IdentityVerification approved = IdentityVerification.builder().id(UUID.randomUUID()).user(user)
+                .status(IdentityVerificationStatus.APPROVED).documentType(IdentityDocumentType.CNI)
+                .documentNumber("B1234567").submittedAt(Instant.now()).build();
+        when(identityVerificationRepository.findByUserId(user.getId())).thenReturn(Optional.of(approved));
+        when(paymentAccountRepository.findByUserIdOrderByCreatedAtAsc(user.getId())).thenReturn(List.of(
+                PaymentAccount.builder().id(UUID.randomUUID()).user(user).provider(MobileMoneyOperator.MTN_MOMO)
+                        .phone("+2290197000322").isDefault(true).verifiedAt(Instant.now()).build()));
+        when(tripRepository.countByDriverId(user.getId())).thenReturn(4L);
+        when(bookingRepository.countByPassengerId(user.getId())).thenReturn(2L);
+
+        AdminUserDetailResponse detail = service.getDetail(user.getId());
+
+        assertThat(detail.identity().documentLast4()).isEqualTo("4567");
+        assertThat(detail.identity().status()).isEqualTo(IdentityVerificationStatus.APPROVED);
+        assertThat(detail.paymentAccounts()).hasSize(1);
+        assertThat(detail.paymentAccounts().get(0).verified()).isTrue();
+        assertThat(detail.tripsPublished()).isEqualTo(4L);
+        assertThat(detail.bookingsMade()).isEqualTo(2L);
+        assertThat(detail.role()).isEqualTo(Role.USER);
+        assertThat(AdminUserService.last4("AB")).isEqualTo("AB");
+        assertThat(AdminUserService.last4(null)).isNull();
     }
 }

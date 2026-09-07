@@ -4,6 +4,7 @@ import bj.ekuiseo.api.dto.conversation.ConversationSummary;
 import bj.ekuiseo.api.dto.trip.RecurringTripResponse;
 import bj.ekuiseo.api.dto.trip.TripResponse;
 import bj.ekuiseo.api.dto.auth.OtpRequestResponse;
+import bj.ekuiseo.api.dto.user.AcceptTermsRequest;
 import bj.ekuiseo.api.dto.user.AccountDeleteConfirmRequest;
 import bj.ekuiseo.api.dto.user.EmailChangeConfirmRequest;
 import bj.ekuiseo.api.dto.user.EmailChangeRequest;
@@ -17,15 +18,19 @@ import bj.ekuiseo.api.service.BookingService;
 import bj.ekuiseo.api.service.EmailChangeService;
 import bj.ekuiseo.api.service.MessageService;
 import bj.ekuiseo.api.service.TripService;
+import bj.ekuiseo.api.service.UserDataExportService;
 import bj.ekuiseo.api.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Tag(name = "Mon compte", description = "Profil prive, vehicules et trajets de l'utilisateur connecte")
@@ -39,13 +44,16 @@ public class MeController {
     private final MessageService messageService;
     private final EmailChangeService emailChangeService;
     private final AccountDeletionService accountDeletionService;
+    private final UserDataExportService userDataExportService;
     private final CurrentUser currentUser;
 
     public MeController(UserService userService, TripService tripService, BookingService bookingService,
                          MessageService messageService, EmailChangeService emailChangeService,
-                         AccountDeletionService accountDeletionService, CurrentUser currentUser) {
+                         AccountDeletionService accountDeletionService, UserDataExportService userDataExportService,
+                         CurrentUser currentUser) {
         this.emailChangeService = emailChangeService;
         this.accountDeletionService = accountDeletionService;
+        this.userDataExportService = userDataExportService;
         this.userService = userService;
         this.tripService = tripService;
         this.bookingService = bookingService;
@@ -126,5 +134,22 @@ public class MeController {
     @GetMapping("/conversations")
     public List<ConversationSummary> conversations() {
         return messageService.myConversations(currentUser.id());
+    }
+
+    @Operation(summary = "Accepter les conditions d utilisation", description = "Enregistre l acceptation horodatee de la version en vigueur (ekuiseo.terms.version). 400 si termsVersion n est pas la version courante. GET /me renvoie ensuite termsAcceptanceRequired=false.")
+    @PatchMapping("/terms")
+    public ResponseEntity<Void> acceptTerms(@Valid @RequestBody AcceptTermsRequest req) {
+        userService.acceptTerms(currentUser.id(), req.termsVersion());
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Exporter mes donnees", description = "Droit d acces : document JSON de toutes les donnees du compte (profil, preferences, vehicules, comptes mobile money masques, identite sans numero, abonnements, trajets et arrets, reservations et plans de paiement, paiements, reversements, avis, messages envoyes, notifications, alertes, signalements deposes), en piece jointe. Un export par 24 h (429 sinon).")
+    @GetMapping(value = "/export", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Map<String, Object>> export() {
+        Map<String, Object> document = userDataExportService.export(currentUser.id());
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + UserDataExportService.FILE_NAME + "\"")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(document);
     }
 }

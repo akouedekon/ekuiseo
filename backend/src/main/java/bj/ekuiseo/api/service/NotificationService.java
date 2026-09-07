@@ -10,6 +10,8 @@ import bj.ekuiseo.api.mapper.NotificationMapper;
 import bj.ekuiseo.api.repository.NotificationRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -111,6 +113,18 @@ public class NotificationService {
     public List<NotificationResponse> listForUser(UUID userId) {
         return notificationRepository.findByUserIdOrderByCreatedAtDesc(userId).stream()
                 .map(notificationMapper::toResponse).toList();
+    }
+
+    /** GET /api/v1/notifications?page&size : page Spring, les plus recentes d abord. */
+    @Transactional(readOnly = true)
+    public Page<NotificationResponse> listForUser(UUID userId, Pageable pageable) {
+        return notificationRepository.findByUserIdOrderByCreatedAtDesc(userId, pageable).map(notificationMapper::toResponse);
+    }
+
+    /** GET /api/v1/notifications/unread-count : compteur du badge, une requete count. */
+    @Transactional(readOnly = true)
+    public long unreadCount(UUID userId) {
+        return notificationRepository.countByUserIdAndReadAtIsNull(userId);
     }
 
     /** POST /api/v1/notifications/{id}/read. Idempotent (une notification deja lue n'est pas re-marquee). */

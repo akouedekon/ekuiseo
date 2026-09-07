@@ -35,15 +35,20 @@ import java.util.UUID;
 @Service
 public class PaymentAccountService {
 
+    /** Plafond de comptes par utilisateur (constat F606) : au-dela, 409. */
+    static final int MAX_ACCOUNTS = 3;
+
     private final PaymentAccountRepository paymentAccountRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
+    private final MobileMoneyPrefixes prefixes;
 
     public PaymentAccountService(PaymentAccountRepository paymentAccountRepository, UserRepository userRepository,
-                                 AuditService auditService) {
+                                 AuditService auditService, MobileMoneyPrefixes prefixes) {
         this.paymentAccountRepository = paymentAccountRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
+        this.prefixes = prefixes;
     }
 
     @Transactional(readOnly = true)
@@ -51,16 +56,26 @@ public class PaymentAccountService {
         return paymentAccountRepository.findByUserIdOrderByCreatedAtAsc(userId).stream().map(this::toResponse).toList();
     }
 
+    /**
+     * Ajout d un compte (constats F606/F607) : numero normalise en E.164, coherence avec
+     * l operateur declare (400), doublon (operateur, numero) refuse (409, double par l index
+     * unique V16), au plus {@link #MAX_ACCOUNTS} comptes (409).
+     */
     @Transactional
     public PaymentMethodResponse add(UUID userId, AddPaymentMethodRequest req) {
         User user = userRepository.findById(userId).orElseThrow(() -> new NotFoundException("Utilisateur introuvable"));
         String phone = PhoneNumbers.normalize(req.phone());
-        boolean duplicate = paymentAccountRepository.findByUserIdOrderByCreatedAtAsc(userId).stream()
+        prefixes.assertConsistent(req.provider(), phone);
+        List<PaymentAccount> existing = paymentAccountRepository.findByUserIdOrderByCreatedAtAsc(userId);
+        boolean duplicate = existing.stream()
                 .anyMatch(a -> a.getPhone().equals(phone) && a.getProvider() == req.provider());
         if (duplicate) {
             throw new ConflictException("Ce compte est deja enregistre");
         }
-        boolean makeDefault = paymentAccountRepository.countByUserId(userId) == 0;
+        if (existing.size() >= MAX_ACCOUNTS) {
+            throw new ConflictException("Vous avez deja " + MAX_ACCOUNTS + " comptes mobile money : supprimez-en un avant d en ajouter un autre");
+        }
+        boolean makeDefault = existing.isEmpty();
         PaymentAccount account = PaymentAccount.builder()
                 .user(user)
                 .provider(req.provider())
