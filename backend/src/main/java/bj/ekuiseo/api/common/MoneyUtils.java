@@ -1,38 +1,25 @@
 package bj.ekuiseo.api.common;
 
 /**
- * Utilitaires monetaires. Les montants sont exprimes en FCFA (XOF), toujours
+ * Arithmetique monetaire pure. Les montants sont exprimes en FCFA (XOF), toujours
  * en entiers (le franc CFA n'a pas de sous-unite usuelle et aucune piece
- * inferieure a 5 FCFA n'existe).
+ * inferieure a 5 FCFA n'existe). Aucun parametre commercial ici (constat F015) :
+ * le taux de commission et le palier d'arrondi vivent dans {@link FeePolicy}, seule
+ * source des regles metier n.2 et n.3.
  */
 public final class MoneyUtils {
-
-    /** Taux de commission de la plateforme : 8 %. */
-    public static final int SERVICE_FEE_RATE_NUMERATOR = 8;
-    public static final int SERVICE_FEE_RATE_DENOMINATOR = 100;
-
-    /** Palier d'arrondi : les FCFA n'existent pas en dessous de 5. */
-    public static final long ROUNDING_STEP = 5L;
 
     private MoneyUtils() {
     }
 
     /**
-     * Calcule les frais de service de la plateforme (regle metier n.4) :
-     * 8 % du montant, arrondis aux 5 FCFA superieurs.
+     * Frais de service pour un montant, un taux (numerateur/denominateur) et un palier
+     * d'arrondi donnes : {@code montant x taux}, arrondi au palier superieur.
      *
-     * <p>Exemple : 1 234 FCFA -&gt; 8 % = 98,72 FCFA -&gt; arrondi a 100 FCFA.</p>
+     * <p>Exemple : 1 234 FCFA a 8/100 et palier 5 -&gt; 98,72 FCFA -&gt; 100 FCFA.</p>
      *
      * @param amountFcfa montant de la reservation, en FCFA (doit etre &gt;= 0)
-     * @return les frais de service, en FCFA, toujours multiples de 5
-     */
-    public static long computeServiceFee(long amountFcfa) {
-        return computeServiceFee(amountFcfa, SERVICE_FEE_RATE_NUMERATOR, SERVICE_FEE_RATE_DENOMINATOR, ROUNDING_STEP);
-    }
-
-    /**
-     * Variante generique (taux et palier d'arrondi parametrables) utilisee pour
-     * les tests et une eventuelle evolution tarifaire.
+     * @return les frais, en FCFA, toujours multiples du palier
      */
     public static long computeServiceFee(long amountFcfa, long rateNumerator, long rateDenominator, long roundingStep) {
         if (amountFcfa < 0) {
@@ -58,14 +45,9 @@ public final class MoneyUtils {
         return (a + b - 1) / b;
     }
 
-    /** Montant net revenant au conducteur = montant total - frais de service. */
-    public static long netDriverAmount(long amountFcfa) {
-        return amountFcfa - computeServiceFee(amountFcfa);
-    }
-
     /**
      * Arrondit {@code amountFcfa} au palier {@code step} superieur (utilise par
-     * FeePolicy#computeDepositAmount, regle metier n.21). Un montant negatif ou
+     * FeePolicy#computeDepositAmount, regle metier n.3). Un montant negatif ou
      * nul est arrondi a 0.
      */
     public static long roundUpToStep(long amountFcfa, long step) {

@@ -42,6 +42,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -108,12 +109,17 @@ public class AdminUserService {
      * Recherche libre (nom/prenom/telephone/e-mail), a plat et plafonnee (voir
      * SEARCH_LIMIT) plutot que paginee : le front (useAdminUsers) attend un
      * tableau simple, pas une Page. Une chaine vide renvoie les utilisateurs les
-     * plus recents (voir UserRepository#search, tri par createdAt desc).
+     * plus recents (voir UserRepository#search, tri par createdAt desc). Chaque
+     * consultation est journalisee (ADMIN_USERS_SEARCHED : terme et nombre de
+     * resultats, constat F520) : une liste de donnees personnelles a un lecteur.
      */
     @Transactional(readOnly = true)
-    public List<AdminUserResponse> search(String q) {
-        Page<User> page = userRepository.search(q == null ? "" : q.trim(), PageRequest.of(0, SEARCH_LIMIT));
+    public List<AdminUserResponse> search(UUID adminId, String q) {
+        String term = q == null ? "" : q.trim();
+        Page<User> page = userRepository.search(term, PageRequest.of(0, SEARCH_LIMIT));
         List<User> users = page.getContent();
+        auditService.log(adminId, "ADMIN_USERS_SEARCHED", "user", null,
+                Map.of("q", term, "resultCount", users.size()));
         if (users.isEmpty()) {
             return List.of();
         }
@@ -151,7 +157,8 @@ public class AdminUserService {
                 identity, u.isIdentityVerified(),
                 vehicleRepository.findByOwnerId(userId).stream().map(vehicleMapper::toResponse).toList(),
                 accounts, tripRepository.countByDriverId(userId), bookingRepository.countByPassengerId(userId),
-                u.getRatingAvg(), u.getLateCancellationsCount(), u.getDeletedAt());
+                u.getRatingAvg(), u.getLateCancellationsCount(), u.getDeletedAt(),
+                u.isEmailVerified(), u.getLastLoginAt());
     }
 
     /** Reservations du compte en tant que passager, paginees (GET /api/v1/admin/users/{id}/bookings). */
@@ -275,7 +282,7 @@ public class AdminUserService {
     @Transactional
     public AdminUserResponse updateContact(UUID adminId, UUID userId, String email, String phone, String reason) {
         User user = findUser(userId);
-        Map<String, Object> details = new java.util.LinkedHashMap<>();
+        Map<String, Object> details = new LinkedHashMap<>();
         details.put("reason", reason);
         boolean changed = false;
         if (email != null && !email.isBlank() && !email.trim().equalsIgnoreCase(user.getEmail())) {
@@ -323,7 +330,7 @@ public class AdminUserService {
         boolean hadBadge = user.isIdentityVerified();
         user.setIdentityVerified(false);
         user = userRepository.save(user);
-        Map<String, Object> details = new java.util.LinkedHashMap<>();
+        Map<String, Object> details = new LinkedHashMap<>();
         details.put("reason", reason);
         details.put("hadBadge", hadBadge);
         IdentityVerification verification = identityVerificationRepository.findByUserId(userId).orElse(null);
@@ -371,7 +378,8 @@ public class AdminUserService {
 
     private AdminUserResponse toResponse(User u, long tripsPublished, long bookingsMade) {
         return new AdminUserResponse(u.getId(), u.getFirstName(), u.getLastName(), u.getPhone(), u.getEmail(),
-                u.getCreatedAt(), u.isIdentityVerified(), u.isPhoneVerified(), u.getStatus() == UserStatus.SUSPENDED,
-                tripsPublished, bookingsMade, u.getRatingAvg(), u.getDeletedAt(), u.getRole() == null ? Role.USER : u.getRole());
+                u.getCreatedAt(), u.isIdentityVerified(), u.isPhoneVerified(), u.isEmailVerified(),
+                u.getStatus() == UserStatus.SUSPENDED, tripsPublished, bookingsMade, u.getRatingAvg(), u.getDeletedAt(),
+                u.getRole() == null ? Role.USER : u.getRole(), u.getLastLoginAt());
     }
 }

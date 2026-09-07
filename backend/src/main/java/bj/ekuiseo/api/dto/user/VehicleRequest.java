@@ -5,9 +5,14 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Null;
 import jakarta.validation.constraints.Size;
 
-/** Bornes alignees sur les colonnes de {@code vehicles} (V1) : un depassement donne un 400 explicite, plus un 409 generique. */
+/**
+ * Bornes alignees sur les colonnes de {@code vehicles} (V1) : un depassement donne un 400
+ * explicite, plus un 409 generique. {@code photoUrl} est refuse tant qu aucun stockage de
+ * fichiers maitrise n existe (constat F401), comme sur UpdateMeRequest.
+ */
 public record VehicleRequest(
         @NotBlank @Size(max = 100) String brand,
         @NotBlank @Size(max = 100) String model,
@@ -15,6 +20,6 @@ public record VehicleRequest(
         @NotBlank @Size(max = 20) String plate,
         @Min(1) @Max(8) int seats,
         @NotNull ComfortLevel comfortLevel,
-        @Size(max = 500) String photoUrl
+        @Null(message = "La photo du vehicule ne peut pas encore etre renseignee : le televersement n est pas disponible") String photoUrl
 ) {
 }

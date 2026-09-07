@@ -48,6 +48,13 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  data:
+    web:
+      pageable:
+        # Forme JSON des Page figee (content, totalElements, totalPages, number, size...) :
+        # Spring Data avertit que la serialisation directe de PageImpl peut changer ; "direct"
+        # fige explicitement celle que le front lit (types.ts Page<T>), constat F505.
+        serialization-mode: direct
   jackson:
     default-property-inclusion: non_null
     serialization:

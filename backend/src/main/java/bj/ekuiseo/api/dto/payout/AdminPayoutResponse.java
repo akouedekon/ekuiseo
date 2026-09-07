@@ -1,6 +1,7 @@
 package bj.ekuiseo.api.dto.payout;
 
 import bj.ekuiseo.api.domain.enums.MobileMoneyOperator;
+import bj.ekuiseo.api.domain.enums.PayoutStatus;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -15,7 +16,7 @@ import java.util.UUID;
  * @param tripCount nombre de reservations incluses dans ce lot.
  * @param reversedCount reservations remboursees apres inclusion dans un lot deja traite ;
  *                      {@code reversedAmount} est a deduire du prochain virement.
- * @param status PENDING/PROCESSING/PAID/FAILED (PAID = SETTLED interne).
+ * @param status PENDING/PROCESSING/SETTLED/FAILED, meme vocabulaire que PayoutResponse (constat F455 : plus de PAID).
  * @param paidAt date de reglement (alias historique de {@code settledAt}).
  * @param externalReference reference du virement saisie au reglement (V16).
  * @param settledAmount montant effectivement vire (V16), null tant que le lot n est pas regle.
@@ -32,7 +33,7 @@ public record AdminPayoutResponse(
         long tripCount,
         Instant periodStart,
         Instant periodEnd,
-        String status,
+        PayoutStatus status,
         Instant paidAt,
         long reversedCount,
         long reversedAmount,

@@ -25,6 +25,11 @@ import java.util.UUID;
  * Une approbation positionne le badge {@code users.identity_verified} ; un rejet le
  * retire (constat F601). Les deux exigent un dossier PENDING (409 sinon) et previennent
  * l utilisateur (constat F212 : IDENTITY_APPROVED / IDENTITY_REJECTED avec motif).
+ *
+ * <p>Phase 3 : la consultation de la file est journalisee (ADMIN_VERIFICATIONS_LISTED,
+ * constat F520) et, une fois le dossier decide, le numero de piece est reduit a ses quatre
+ * derniers caracteres (constat F515) : le moderateur n en a plus besoin, la relecture d un
+ * historique se fait sur ce suffixe.</p>
  */
 @Service
 public class AdminVerificationService {
@@ -49,18 +54,14 @@ public class AdminVerificationService {
      * a la plus ancienne. NOT_SUBMITTED n a jamais de ligne : liste vide.
      */
     @Transactional(readOnly = true)
-    public List<AdminVerificationResponse> listByStatus(IdentityVerificationStatus status) {
+    public List<AdminVerificationResponse> listByStatus(UUID adminId, IdentityVerificationStatus status) {
         IdentityVerificationStatus effective = status == null ? IdentityVerificationStatus.PENDING : status;
         List<IdentityVerification> rows = effective == IdentityVerificationStatus.PENDING
                 ? identityVerificationRepository.findByStatusOrderBySubmittedAtAsc(effective)
                 : identityVerificationRepository.findByStatusOrderByReviewedAtDesc(effective);
+        auditService.log(adminId, "ADMIN_VERIFICATIONS_LISTED", "identity_verification", null,
+                Map.of("status", effective.name(), "resultCount", rows.size()));
         return rows.stream().map(this::toResponse).toList();
-    }
-
-    /** Alias historique de {@code listByStatus(PENDING)}. */
-    @Transactional(readOnly = true)
-    public List<AdminVerificationResponse> listPending() {
-        return listByStatus(IdentityVerificationStatus.PENDING);
     }
 
     @Transactional
@@ -70,6 +71,7 @@ public class AdminVerificationService {
         verification.setReviewedAt(Instant.now());
         verification.setReviewedBy(userRepository.findById(adminId).orElse(null));
         verification.setRejectionReason(null);
+        verification.setDocumentNumber(truncateDocumentNumber(verification.getDocumentNumber()));
         identityVerificationRepository.save(verification);
 
         User user = verification.getUser();
@@ -89,6 +91,7 @@ public class AdminVerificationService {
         verification.setReviewedAt(Instant.now());
         verification.setReviewedBy(userRepository.findById(adminId).orElse(null));
         verification.setRejectionReason(reason);
+        verification.setDocumentNumber(truncateDocumentNumber(verification.getDocumentNumber()));
         identityVerificationRepository.save(verification);
 
         // Un dossier refuse retire le badge, quel que soit son origine (constat F601).
@@ -102,6 +105,22 @@ public class AdminVerificationService {
                 Map.of("verificationId", verification.getId().toString(), "reason", reason == null ? "" : reason));
     }
 
+    /**
+     * Numero de piece reduit a « **** » suivi de ses quatre derniers caracteres une fois le
+     * dossier decide (constat F515) ; un numero deja tronque, vide ou trop court est
+     * renvoye tel quel. Meme regle que la migration V17 sur l existant.
+     */
+    static String truncateDocumentNumber(String documentNumber) {
+        if (documentNumber == null || documentNumber.isBlank()) {
+            return documentNumber;
+        }
+        String n = documentNumber.trim();
+        if (n.startsWith("****") || n.length() <= 4) {
+            return n;
+        }
+        return "****" + n.substring(n.length() - 4);
+    }
+
     private IdentityVerification findPending(UUID id) {
         IdentityVerification verification = identityVerificationRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Verification introuvable"));
@@ -113,11 +132,14 @@ public class AdminVerificationService {
 
     /**
      * Vue back-office, avec les autres comptes ayant declare la meme piece (constat F604) :
-     * une requete indexee par dossier, la file etant courte par construction.
+     * une requete indexee par dossier, la file etant courte par construction. Un numero
+     * deja tronque ne sert plus a la recherche des doublons.
      */
     private AdminVerificationResponse toResponse(IdentityVerification v) {
         User u = v.getUser();
-        List<UUID> duplicates = v.getDocumentType() == null || v.getDocumentNumber() == null || v.getDocumentNumber().isBlank()
+        boolean searchable = v.getDocumentType() != null && v.getDocumentNumber() != null
+                && !v.getDocumentNumber().isBlank() && !v.getDocumentNumber().startsWith("****");
+        List<UUID> duplicates = !searchable
                 ? List.of()
                 : identityVerificationRepository.findOtherUserIdsWithDocument(v.getDocumentType(), v.getDocumentNumber(), u.getId());
         return new AdminVerificationResponse(v.getId(), u.getId(), u.getFirstName(), u.getLastName(), u.getPhone(),

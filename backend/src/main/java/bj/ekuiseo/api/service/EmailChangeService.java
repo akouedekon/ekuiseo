@@ -67,7 +67,7 @@ public class EmailChangeService {
                 "Bonjour " + user.getFirstName() + ",\n\nPour utiliser cette adresse comme adresse de connexion Ekuiseo, "
                         + "saisissez le code : " + code + "\n\nIl expire dans 5 minutes. Si vous n etes pas a l origine "
                         + "de cette demande, ignorez ce message : rien ne changera.\n\nEkuiseo - covoiturage au Benin");
-        return new OtpRequestResponse("EMAIL", Masking.email(email));
+        return new OtpRequestResponse(bj.ekuiseo.api.dto.auth.OtpChannel.EMAIL, Masking.email(email));
     }
 
     /** Etape 2 : le code recu sur la nouvelle adresse bascule le compte et previent l ancienne. */

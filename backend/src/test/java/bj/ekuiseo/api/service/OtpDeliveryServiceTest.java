@@ -2,6 +2,7 @@ package bj.ekuiseo.api.service;
 
 import bj.ekuiseo.api.common.exception.BadRequestException;
 import bj.ekuiseo.api.common.exception.TooManyRequestsException;
+import bj.ekuiseo.api.dto.auth.OtpChannel;
 import bj.ekuiseo.api.dto.auth.OtpRequestResponse;
 import bj.ekuiseo.api.service.mail.MailGateway;
 import bj.ekuiseo.api.service.sms.SmsGateway;
@@ -30,7 +31,7 @@ class OtpDeliveryServiceTest {
     void envoieParEmailQuandLeCompteAUneAdresse() {
         OtpRequestResponse res = service("email", false).deliver("+22997000321", "afi.testeur@example.com", "123456");
 
-        assertThat(res.channel()).isEqualTo("EMAIL");
+        assertThat(res.channel()).isEqualTo(OtpChannel.EMAIL);
         assertThat(res.destination()).isEqualTo("a***@e***.com");
         assertThat(mails).hasSize(1);
         assertThat(mails.get(0)[0]).isEqualTo("afi.testeur@example.com");
@@ -52,7 +53,7 @@ class OtpDeliveryServiceTest {
     void retombeSurLeSmsQuandLeCompteSansEmailEtRepliActif() {
         OtpRequestResponse res = service("email", true).deliver("+22997000321", "  ", "123456");
 
-        assertThat(res.channel()).isEqualTo("SMS");
+        assertThat(res.channel()).isEqualTo(OtpChannel.SMS);
         assertThat(res.destination()).isEqualTo("**********21");
         assertThat(sms).hasSize(1);
         assertThat(sms.get(0)[1]).contains("123456");
@@ -63,7 +64,7 @@ class OtpDeliveryServiceTest {
     void canalSmsForceIgnoreLAdresseEmail() {
         OtpRequestResponse res = service("sms", false).deliver("+22997000321", "afi.testeur@example.com", "123456");
 
-        assertThat(res.channel()).isEqualTo("SMS");
+        assertThat(res.channel()).isEqualTo(OtpChannel.SMS);
         assertThat(sms).hasSize(1);
         assertThat(mails).isEmpty();
     }

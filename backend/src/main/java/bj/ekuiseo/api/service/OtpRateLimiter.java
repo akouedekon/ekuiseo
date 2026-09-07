@@ -18,6 +18,12 @@ import java.util.concurrent.ConcurrentMap;
  * et freine le brute-force. Par defaut 3 demandes / 10 minutes / numero
  * ({@code ekuiseo.sms.otp.rate-limit.*}, nom conserve pour compatibilite).
  * Le 429 porte le delai restant de la fenetre ({@code Retry-After}, constat F542).
+ *
+ * <p><b>Mono-instance</b> (constats F009/F543) : ce compteur vit en memoire de la JVM,
+ * repart de zero a chaque redeploiement et n est pas partage entre replicas. Il ne sert
+ * plus que de premier filtre, sans acces base : la limite qui fait foi est comptee sur la
+ * table otp_codes par {@link OtpCodeService#issue} (durable, exacte). Le backend doit
+ * rester deploye en une seule instance tant qu aucun compteur partage n existe.</p>
  */
 @Component
 public class OtpRateLimiter {

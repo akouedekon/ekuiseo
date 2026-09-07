@@ -20,7 +20,11 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 import java.util.UUID;
 
-/** Declenchement et suivi des lots de reversement conducteurs (regle metier n.12). Reserve a ROLE_ADMIN. */
+/**
+ * Declenchement et suivi des lots de reversement conducteurs (regle metier n.12). Reserve a
+ * ROLE_ADMIN. L alias historique {@code POST /{id}/pay}, jamais appele par le front, a ete
+ * retire (constat F015) : le reglement passe par {@code /settle}, avec ou sans corps.
+ */
 @Tag(name = "Admin - Reversements", description = "Reserve au back-office (ROLE_ADMIN)")
 @RestController
 @RequestMapping("/api/v1/admin/payouts")
@@ -51,12 +55,6 @@ public class AdminPayoutController {
     public PayoutResponse settle(@PathVariable UUID id, @Valid @RequestBody(required = false) SettlePayoutRequest req) {
         return payoutService.settle(currentUser.id(), id,
                 req == null ? null : req.externalReference(), req == null ? null : req.settledAmountFcfa());
-    }
-
-    @Operation(summary = "Marquer un reversement comme regle (alias historique)", description = "Equivalent de POST .../settle sans corps, conserve pour l ancien front.")
-    @PostMapping("/{id}/pay")
-    public PayoutResponse pay(@PathVariable UUID id) {
-        return payoutService.settle(currentUser.id(), id);
     }
 
     @Operation(summary = "Marquer un virement en echec", description = "Le lot passe FAILED avec le motif ; il pourra etre regle plus tard (« Relancer » = settle depuis FAILED). Exige un lot PENDING ou PROCESSING (409 sinon). Le conducteur est prevenu (PAYOUT_FAILED).")

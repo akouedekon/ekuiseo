@@ -31,21 +31,21 @@ public class AdminVerificationController {
         this.currentUser = currentUser;
     }
 
-    @Operation(summary = "Verifications par statut", description = "PENDING (defaut) : file a traiter, du plus ancien au plus recent. APPROVED / REJECTED : historique, decision la plus recente en tete.")
+    @Operation(summary = "Verifications par statut", description = "PENDING (defaut) : file a traiter, du plus ancien au plus recent. APPROVED / REJECTED : historique, decision la plus recente en tete. Consultation journalisee (ADMIN_VERIFICATIONS_LISTED).")
     @GetMapping
     public List<AdminVerificationResponse> list(@RequestParam(defaultValue = "PENDING") IdentityVerificationStatus status) {
-        return adminVerificationService.listByStatus(status);
+        return adminVerificationService.listByStatus(currentUser.id(), status);
     }
 
-    @Operation(summary = "Approuver une verification d'identite", description = "409 si le dossier n est plus PENDING. L utilisateur est prevenu (IDENTITY_APPROVED).")
+    @Operation(summary = "Approuver une verification d'identite", description = "409 si le dossier n est plus PENDING. L utilisateur est prevenu (IDENTITY_APPROVED) ; le numero de piece est reduit a ses 4 derniers caracteres.")
     @PostMapping("/{id}/approve")
     public void approve(@PathVariable UUID id) {
         adminVerificationService.approve(currentUser.id(), id);
     }
 
-    @Operation(summary = "Rejeter une verification d'identite", description = "409 si le dossier n est plus PENDING. Retire le badge et previent l utilisateur avec le motif (IDENTITY_REJECTED).")
+    @Operation(summary = "Rejeter une verification d'identite", description = "Motif obligatoire (400 sinon). 409 si le dossier n est plus PENDING. Retire le badge et previent l utilisateur avec le motif (IDENTITY_REJECTED) ; le numero de piece est reduit a ses 4 derniers caracteres.")
     @PostMapping("/{id}/reject")
-    public void reject(@PathVariable UUID id, @Valid @RequestBody(required = false) RejectVerificationRequest req) {
-        adminVerificationService.reject(currentUser.id(), id, req != null ? req.reason() : null);
+    public void reject(@PathVariable UUID id, @Valid @RequestBody RejectVerificationRequest req) {
+        adminVerificationService.reject(currentUser.id(), id, req.reason().trim());
     }
 }

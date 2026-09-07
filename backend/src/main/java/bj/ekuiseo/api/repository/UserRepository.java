@@ -27,6 +27,24 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     Page<User> findByStatus(UserStatus status, Pageable pageable);
     long countByCreatedAtBetween(Instant from, Instant to);
 
+    /** Annulation tardive comptee en base, sans lecture-modification-ecriture (constat F147). */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update User u set u.lateCancellationsCount = u.lateCancellationsCount + 1 where u.id = :id")
+    int incrementLateCancellations(@Param("id") UUID id);
+
+    /**
+     * Note moyenne (2 decimales) et nombre d avis recalcules par la base a partir de la table
+     * reviews (constat F147) : deux avis simultanes ne s ecrasent plus mutuellement.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+            update users u
+            set rating_avg = coalesce((select round(avg(r.rating), 2) from reviews r where r.target_id = u.id), 0),
+                rating_count = (select count(*) from reviews r where r.target_id = u.id)
+            where u.id = :id
+            """, nativeQuery = true)
+    int recomputeRating(@Param("id") UUID id);
+
     /**
      * Recherche libre pour le back-office (GET /api/v1/admin/users?q=...) : nom,
      * prenom, telephone ou e-mail contenant le terme recherche (insensible a la

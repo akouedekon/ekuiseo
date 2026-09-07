@@ -22,6 +22,31 @@ class FeePolicyTest {
         assertThat(policy.computeServiceFee(amount)).isEqualTo(expectedFee);
     }
 
+    /** Regle metier n.2 : 8 % arrondis aux 5 FCFA superieurs (cas historiques de MoneyUtilsTest). */
+    @ParameterizedTest(name = "8 % de {0} -> {1}")
+    @CsvSource({
+            "0, 0",
+            "50, 5",
+            "100, 10",
+            "625, 50",
+            "1234, 100",
+            "1000, 80",
+            "1, 5",
+            "3000, 240"
+    })
+    void defaultRate_isEightPercentRoundedUpToFive(long amount, long expectedFee) {
+        FeePolicy policy = new FeePolicy(0.08, 5, 1000);
+        assertThat(policy.computeServiceFee(amount)).isEqualTo(expectedFee);
+        assertThat(policy.computeServiceFee(amount) % 5).isZero();
+        assertThat(policy.netDriverAmount(amount, false)).isEqualTo(amount - expectedFee);
+    }
+
+    @Test
+    void computeServiceFee_rejectsNegativeAmount() {
+        assertThatThrownBy(() -> new FeePolicy(0.08, 5, 1000).computeServiceFee(-1))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     @Test
     void computeServiceFee_isZero_whenCommissionWaived() {
         // Regle metier n.11 : conducteur abonne -> commission ramenee a 0%, quel que soit le montant.

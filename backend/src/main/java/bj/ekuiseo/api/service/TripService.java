@@ -194,7 +194,12 @@ public class TripService {
                 && (requesterId == null || !trip.getDriver().getId().equals(requesterId))) {
             throw new NotFoundException("Trajet introuvable");
         }
-        return tripMapper.toResponse(trip);
+        return forRequester(tripMapper.toResponse(trip), requesterId);
+    }
+
+    /** Un appelant anonyme ne voit que l initiale du nom du conducteur (constat F519). */
+    static TripResponse forRequester(TripResponse response, UUID requesterId) {
+        return requesterId == null ? response.withAnonymizedDriver() : response;
     }
 
     /**
@@ -325,6 +330,10 @@ public class TripService {
         }
         if (trip.getStatus() == TripStatus.TEMPLATE) {
             propagateTemplateUpdate(trip, departureChanged);
+        } else if ((departureChanged || routeChange) && trip.getStatus() == TripStatus.PUBLISHED) {
+            // Un trajet deplace ou reroute peut desormais correspondre a d autres alertes (constat
+            // F535) : le matching est rejoue apres commit, dedoublonne par (alerte, trajet).
+            eventPublisher.publishEvent(new TripPublishedEvent(trip.getId()));
         }
         return tripMapper.toResponse(trip);
     }
@@ -406,6 +415,9 @@ public class TripService {
             }
             occurrence.setStatus(TripStatus.PUBLISHED);
             tripRepository.save(occurrence);
+            // Occurrence modifiee : les alertes sont rejouees, sans doublon (search_alert_matches
+            // est cle par modele de navette, constats F533/F535).
+            eventPublisher.publishEvent(new TripPublishedEvent(occurrence.getId()));
         }
     }
 
@@ -492,7 +504,8 @@ public class TripService {
                             destLabel, destLat, destLng, date, seats, effectiveRadiusKm, tripType),
                     page.getTotalElements());
         }
-        List<TripResponse> content = enrichSegments(page.getContent(), originLat, originLng, destLat, destLng, effectiveRadiusKm);
+        List<TripResponse> content = enrichSegments(page.getContent(), originLat, originLng, destLat, destLng, effectiveRadiusKm)
+                .stream().map(t -> forRequester(t, requesterId)).toList();
         return new PageImpl<>(content, pageable, page.getTotalElements());
     }
 

@@ -28,10 +28,12 @@ import java.util.regex.Pattern;
  *
  * <p><b>Limites assumees et documentees</b> (voir README "Limitation de debit") :
  * <ul>
- *   <li>L'etat est local a l'instance JVM : avec plusieurs replicas derriere un
- *       load-balancer, chaque instance applique sa propre limite (la limite
- *       effective globale est donc multipliee par le nombre de replicas). Pour
- *       une limite strictement globale, il faudrait un compteur partage (Redis).</li>
+ *   <li><b>Mono-instance</b> (constat F009) : l'etat est local a l'instance JVM et repart de
+ *       zero a chaque redeploiement. Avec plusieurs replicas derriere un load-balancer,
+ *       chaque instance appliquerait sa propre limite (la limite effective globale serait
+ *       multipliee par le nombre de replicas). Le backend doit donc rester deploye en une
+ *       seule instance ; pour une limite strictement globale, il faudrait un compteur
+ *       partage (Redis).</li>
  *   <li>Pour les quotas par IP, la cle est l'adresse du client (X-Real-IP, sinon
  *       dernier element de X-Forwarded-For, sinon adresse socket) : un NAT partage
  *       (plusieurs utilisateurs derriere la meme box/proxy) partage donc le meme quota.</li>
@@ -45,8 +47,8 @@ import java.util.regex.Pattern;
  *   <li>{@code auth:} /api/v1/auth/** : 20 requetes / 60 s / IP (bourrage d'identifiants, spam).</li>
  *   <li>{@code otp:} /otp/request et /otp/register : 10 / 10 min / IP, en plus du quota auth.</li>
  *   <li>{@code webhook:} /api/v1/payments/kkiapay/webhook : 120 / 60 s / IP (Kkiapay peut retenter).</li>
- *   <li>{@code search:} GET /api/v1/trips/search et /api/v1/geo/search : 60 / 60 s / IP
- *       (endpoints publics, une requete PostGIS chacun - constats F025/F416).</li>
+ *   <li>{@code search:} GET /api/v1/trips/search, /api/v1/geo/search et /api/v1/geo/places :
+ *       60 / 60 s / IP (endpoints publics, une requete PostGIS chacun - constats F025/F416).</li>
  *   <li>{@code msg:} POST /api/v1/bookings/{id}/messages : 30 / 10 min / utilisateur (constat F547).</li>
  *   <li>{@code alert:} POST /api/v1/trip-alerts : 10 / 10 min / utilisateur (constat F524).</li>
  * </ul>
@@ -61,7 +63,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     private static final String AUTH_PREFIX = "/api/v1/auth/";
     /** Demandes de code : envoi reel d e-mails, enumeration de numeros -> quota propre, plus strict. */
     private static final Set<String> OTP_PATHS = Set.of("/api/v1/auth/otp/request", "/api/v1/auth/otp/register");
-    private static final Set<String> SEARCH_PATHS = Set.of("/api/v1/trips/search", "/api/v1/geo/search");
+    private static final Set<String> SEARCH_PATHS = Set.of("/api/v1/trips/search", "/api/v1/geo/search", "/api/v1/geo/places");
     private static final Pattern MESSAGES_PATH = Pattern.compile("^/api/v1/bookings/[^/]+/messages$");
     private static final String ALERTS_PATH = "/api/v1/trip-alerts";
     private static final long IDLE_ENTRY_TTL_MILLIS = 3_600_000L; // 1h : purge des cles inactives

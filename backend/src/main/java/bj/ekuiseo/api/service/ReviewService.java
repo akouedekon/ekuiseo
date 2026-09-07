@@ -21,8 +21,6 @@ import bj.ekuiseo.api.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -113,8 +111,11 @@ public class ReviewService {
                 .comment(req.comment())
                 .build();
         review = reviewRepository.save(review);
+        reviewRepository.flush();
 
-        recomputeRating(target);
+        // Note moyenne et nombre d avis recalcules par la base (constat F147) : jamais de
+        // lecture-modification-ecriture en memoire, deux avis simultanes restent comptes.
+        userRepository.recomputeRating(target.getId());
         notificationService.notify(target, NotificationType.NEW_REVIEW,
                 Map.of("tripId", tripId.toString(), "rating", String.valueOf(req.rating())));
 
@@ -125,17 +126,5 @@ public class ReviewService {
     public List<ReviewResponse> reviewsForUser(UUID userId) {
         return reviewRepository.findByTargetIdOrderByCreatedAtDesc(userId).stream()
                 .map(reviewMapper::toResponse).toList();
-    }
-
-    /** Recalcule la note moyenne et le nombre d'avis d'un utilisateur (moyenne simple). */
-    private void recomputeRating(User target) {
-        List<Review> reviews = reviewRepository.findByTargetIdOrderByCreatedAtDesc(target.getId());
-        int count = reviews.size();
-        BigDecimal avg = count == 0 ? BigDecimal.ZERO : BigDecimal.valueOf(
-                        reviews.stream().mapToInt(Review::getRating).sum())
-                .divide(BigDecimal.valueOf(count), 2, RoundingMode.HALF_UP);
-        target.setRatingAvg(avg);
-        target.setRatingCount(count);
-        userRepository.save(target);
     }
 }

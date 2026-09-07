@@ -8,6 +8,7 @@ import bj.ekuiseo.api.domain.enums.PayoutStatus;
 import bj.ekuiseo.api.dto.payout.AdminPayoutResponse;
 import bj.ekuiseo.api.dto.payout.PayoutBatchResultResponse;
 import bj.ekuiseo.api.dto.payout.PayoutResponse;
+import bj.ekuiseo.api.dto.payout.SettlePayoutRequest;
 import bj.ekuiseo.api.service.PayoutService;
 import bj.ekuiseo.api.web.controller.admin.AdminPayoutController;
 import org.junit.jupiter.api.Test;
@@ -21,6 +22,8 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -33,6 +36,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * {@code /api/v1/admin/payouts/**} (regle metier n.4, constat F434) : reserve a ROLE_ADMIN,
  * l'administrateur qui declenche ou regle un lot est le sujet du jeton (journal d'audit).
+ * L alias {@code /pay} a ete retire (constat F015) : le reglement passe par {@code /settle},
+ * avec ou sans corps, et le statut renvoye est SETTLED partout (constat F455).
  */
 @WebMvcTest(controllers = AdminPayoutController.class)
 class AdminPayoutControllerWebMvcTest extends AbstractWebMvcTest {
@@ -54,11 +59,18 @@ class AdminPayoutControllerWebMvcTest extends AbstractWebMvcTest {
                 .andExpect(status().isForbidden())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.type").value("https://ekuiseo.bj/problems/forbidden"));
-        mockMvc.perform(authed(post(PATH + "/" + payoutId + "/pay"), userBearer)).andExpect(status().isForbidden());
+        mockMvc.perform(authed(post(PATH + "/" + payoutId + "/settle"), userBearer)).andExpect(status().isForbidden());
 
         verify(payoutService, never()).listAllForAdmin();
         verify(payoutService, never()).runWeeklyBatch(any());
-        verify(payoutService, never()).settle(any(), any());
+        verify(payoutService, never()).settle(any(), any(), any(), any());
+    }
+
+    @Test
+    void legacyPayAlias_isGone() throws Exception {
+        mockMvc.perform(authed(post(PATH + "/" + UUID.randomUUID() + "/pay"), bearerFor(activeAdmin())))
+                .andExpect(status().isNotFound());
+        verify(payoutService, never()).settle(any(), any(), any(), any());
     }
 
     @Test
@@ -69,7 +81,7 @@ class AdminPayoutControllerWebMvcTest extends AbstractWebMvcTest {
         Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
         when(payoutService.listAllForAdmin()).thenReturn(List.of(new AdminPayoutResponse(
                 payoutId, driverId, "Awa Test", MobileMoneyOperator.MTN_MOMO, "+2290197000322",
-                4600, 2, now.minus(7, ChronoUnit.DAYS), now, "PENDING", null, 0, 0, null, null, null, null)));
+                4600, 2, now.minus(7, ChronoUnit.DAYS), now, PayoutStatus.PENDING, null, 0, 0, null, null, null, null)));
 
         mockMvc.perform(authed(get(PATH), bearerFor(admin)))
                 .andExpect(status().isOk())
@@ -105,25 +117,38 @@ class AdminPayoutControllerWebMvcTest extends AbstractWebMvcTest {
     }
 
     @Test
-    void pay_asAdmin_settlesWithAdminAndPayoutIds() throws Exception {
+    void settle_withoutBody_settlesWithAdminAndPayoutIds() throws Exception {
         User admin = activeAdmin();
         UUID payoutId = UUID.randomUUID();
-        when(payoutService.settle(admin.getId(), payoutId))
+        when(payoutService.settle(admin.getId(), payoutId, null, null))
                 .thenReturn(payout(payoutId, UUID.randomUUID(), 2600, PayoutStatus.SETTLED));
 
-        mockMvc.perform(authed(post(PATH + "/" + payoutId + "/pay"), bearerFor(admin)))
+        mockMvc.perform(authed(post(PATH + "/" + payoutId + "/settle"), bearerFor(admin)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(payoutId.toString()))
                 .andExpect(jsonPath("$.status").value("SETTLED"))
                 .andExpect(jsonPath("$.settledAt").exists());
-        verify(payoutService).settle(admin.getId(), payoutId);
+        verify(payoutService).settle(admin.getId(), payoutId, null, null);
     }
 
     @Test
-    void pay_unknownPayout_is404() throws Exception {
-        when(payoutService.settle(any(), any())).thenThrow(new NotFoundException("Reversement introuvable"));
+    void settle_withBody_passesReferenceAndAmount() throws Exception {
+        User admin = activeAdmin();
+        UUID payoutId = UUID.randomUUID();
+        when(payoutService.settle(eq(admin.getId()), eq(payoutId), eq("MP240907"), eq(2600L)))
+                .thenReturn(payout(payoutId, UUID.randomUUID(), 2600, PayoutStatus.SETTLED));
 
-        mockMvc.perform(authed(post(PATH + "/" + UUID.randomUUID() + "/pay"), bearerFor(activeAdmin())))
+        mockMvc.perform(authed(json(post(PATH + "/" + payoutId + "/settle"), new SettlePayoutRequest("MP240907", 2600L)), bearerFor(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SETTLED"));
+        verify(payoutService).settle(admin.getId(), payoutId, "MP240907", 2600L);
+    }
+
+    @Test
+    void settle_unknownPayout_is404() throws Exception {
+        when(payoutService.settle(any(), any(), isNull(), isNull())).thenThrow(new NotFoundException("Reversement introuvable"));
+
+        mockMvc.perform(authed(post(PATH + "/" + UUID.randomUUID() + "/settle"), bearerFor(activeAdmin())))
                 .andExpect(status().isNotFound())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.type").value("https://ekuiseo.bj/problems/not-found"))
@@ -131,10 +156,10 @@ class AdminPayoutControllerWebMvcTest extends AbstractWebMvcTest {
     }
 
     @Test
-    void pay_alreadySettled_is409() throws Exception {
-        when(payoutService.settle(any(), any())).thenThrow(new ConflictException("Reversement deja regle"));
+    void settle_alreadySettled_is409() throws Exception {
+        when(payoutService.settle(any(), any(), isNull(), isNull())).thenThrow(new ConflictException("Reversement deja regle"));
 
-        mockMvc.perform(authed(post(PATH + "/" + UUID.randomUUID() + "/pay"), bearerFor(activeAdmin())))
+        mockMvc.perform(authed(post(PATH + "/" + UUID.randomUUID() + "/settle"), bearerFor(activeAdmin())))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.type").value("https://ekuiseo.bj/problems/conflict"))
                 .andExpect(jsonPath("$.status").value(409));

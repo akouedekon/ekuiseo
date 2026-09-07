@@ -1,14 +1,11 @@
 package bj.ekuiseo.api.web;
 
 import bj.ekuiseo.api.common.exception.ConflictException;
-import bj.ekuiseo.api.common.exception.NotFoundException;
-import bj.ekuiseo.api.domain.User;
-import bj.ekuiseo.api.dto.payment.InitiatePaymentRequest;
-import bj.ekuiseo.api.dto.payment.InitiatePaymentResponse;
 import bj.ekuiseo.api.dto.payment.KkiapayWebhookPayload;
 import bj.ekuiseo.api.service.PaymentService;
-import bj.ekuiseo.api.service.kkiapay.KkiapayUnavailableException;
+import bj.ekuiseo.api.service.kkiapay.KkiapayWebhookParser;
 import bj.ekuiseo.api.web.controller.PaymentController;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -20,7 +17,6 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -30,103 +26,48 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * {@code /api/v1/payments/kkiapay/**} (constat F434) : l'initiation est authentifiee et
- * validee, le webhook est public mais n'atteint le service qu'avec la bonne signature
- * ({@code X-Kkiapay-Secret}), et le payload Kkiapay est desserialise tel que documente
- * ({@code isPaymentSucces}, {@code stateData} objet ou chaine).
+ * {@code /api/v1/payments/kkiapay/webhook} (constat F434) : public mais n'atteint le service
+ * qu'avec la bonne signature ({@code X-Kkiapay-Secret}, 401 sinon - constat F149), et le
+ * payload Kkiapay est desserialise tel que documente ({@code isPaymentSucces}, {@code stateData}
+ * objet ou chaine). L'ancien alias {@code /initiate} n'existe plus (constat F015) : l initiation
+ * passe par {@code POST /api/v1/bookings/{id}/payments/deposit}.
  */
 @WebMvcTest(controllers = PaymentController.class)
 class PaymentControllerWebMvcTest extends AbstractWebMvcTest {
 
     private static final String WEBHOOK = "/api/v1/payments/kkiapay/webhook";
-    private static final String INITIATE = "/api/v1/payments/kkiapay/initiate";
+    private static final String LEGACY_INITIATE = "/api/v1/payments/kkiapay/initiate";
+    private static final KkiapayWebhookParser PARSER = new KkiapayWebhookParser(new ObjectMapper());
 
     @MockitoBean
     private PaymentService paymentService;
 
     @Test
-    void initiate_anonymous_is401() throws Exception {
-        mockMvc.perform(fromNewIp(json(post(INITIATE), new InitiatePaymentRequest(UUID.randomUUID()))))
-                .andExpect(status().isUnauthorized())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
+    void legacyInitiateAlias_isGone() throws Exception {
+        mockMvc.perform(authed(json(post(LEGACY_INITIATE), Map.of("bookingId", UUID.randomUUID().toString())), bearerFor(activeUser())))
+                .andExpect(status().isNotFound());
         verify(paymentService, never()).initiate(any(), any());
     }
 
     @Test
-    void initiate_validBody_passesTokenSubjectAndBookingId() throws Exception {
-        User passenger = activeUser();
-        UUID bookingId = UUID.randomUUID();
-        UUID paymentId = UUID.randomUUID();
-        when(paymentService.initiate(passenger.getId(), new InitiatePaymentRequest(bookingId))).thenReturn(
-                new InitiatePaymentResponse(paymentId, "EKU-REF-2", 1000, "pk_test", true, Map.of("bookingId", bookingId.toString())));
-
-        mockMvc.perform(authed(json(post(INITIATE), new InitiatePaymentRequest(bookingId)), bearerFor(passenger)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.paymentId").value(paymentId.toString()))
-                .andExpect(jsonPath("$.amount").value(1000))
-                .andExpect(jsonPath("$.kkiapayPublicKey").value("pk_test"));
-        verify(paymentService).initiate(passenger.getId(), new InitiatePaymentRequest(bookingId));
-    }
-
-    @Test
-    void initiate_missingBookingId_is400ValidationProblem() throws Exception {
-        mockMvc.perform(authed(json(post(INITIATE), Map.of()), bearerFor(activeUser())))
-                .andExpect(status().isBadRequest())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.type").value("https://ekuiseo.bj/problems/validation-error"))
-                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("bookingId")));
-        verify(paymentService, never()).initiate(any(), any());
-    }
-
-    @Test
-    void initiate_unknownBooking_is404_andAlreadyPaidIs409() throws Exception {
-        User passenger = activeUser();
-        String bearer = bearerFor(passenger);
-        when(paymentService.initiate(eq(passenger.getId()), any()))
-                .thenThrow(new NotFoundException("Reservation introuvable"))
-                .thenThrow(new ConflictException("Reservation deja payee"));
-
-        mockMvc.perform(authed(json(post(INITIATE), new InitiatePaymentRequest(UUID.randomUUID())), bearer))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.type").value("https://ekuiseo.bj/problems/not-found"));
-        mockMvc.perform(authed(json(post(INITIATE), new InitiatePaymentRequest(UUID.randomUUID())), bearer))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.type").value("https://ekuiseo.bj/problems/conflict"))
-                .andExpect(jsonPath("$.detail").value("Reservation deja payee"));
-    }
-
-    @Test
-    void initiate_whenKkiapayIsDown_is503WithoutLeakingCause() throws Exception {
-        User passenger = activeUser();
-        when(paymentService.initiate(eq(passenger.getId()), any()))
-                .thenThrow(new KkiapayUnavailableException("timeout vers api.kkiapay.me", new RuntimeException("socket")));
-
-        mockMvc.perform(authed(json(post(INITIATE), new InitiatePaymentRequest(UUID.randomUUID())), bearerFor(passenger)))
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.type").value("https://ekuiseo.bj/problems/upstream-unavailable"))
-                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("kkiapay.me"))));
-    }
-
-    @Test
-    void webhook_withoutSecretHeader_is400_andNeverReachesHandleWebhook() throws Exception {
+    void webhook_withoutSecretHeader_is401_andNeverReachesHandleWebhook() throws Exception {
         when(paymentService.verifySignature(null)).thenReturn(false);
 
         mockMvc.perform(fromNewIp(json(post(WEBHOOK), webhookBody(UUID.randomUUID()))))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isUnauthorized())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.type").value("https://ekuiseo.bj/problems/bad-request"))
+                .andExpect(jsonPath("$.type").value("https://ekuiseo.bj/problems/unauthorized"))
                 .andExpect(jsonPath("$.detail").value("Signature de webhook invalide"));
         verify(paymentService).verifySignature(null);
         verify(paymentService, never()).handleWebhook(any());
     }
 
     @Test
-    void webhook_withWrongSecret_is400() throws Exception {
+    void webhook_withWrongSecret_is401() throws Exception {
         when(paymentService.verifySignature("mauvais")).thenReturn(false);
 
         mockMvc.perform(fromNewIp(json(post(WEBHOOK), webhookBody(UUID.randomUUID())).header("X-Kkiapay-Secret", "mauvais")))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isUnauthorized());
         verify(paymentService, never()).handleWebhook(any());
     }
 
@@ -146,7 +87,7 @@ class PaymentControllerWebMvcTest extends AbstractWebMvcTest {
         assertThat(payload.paymentSucceeded()).isTrue();
         assertThat(payload.amount()).isEqualTo(1000L);
         assertThat(payload.event()).isEqualTo("transaction.success");
-        assertThat(payload.extractBookingId()).isEqualTo(bookingId);
+        assertThat(PARSER.extractBookingId(payload)).isEqualTo(bookingId);
     }
 
     /** Certaines versions du widget renvoient stateData comme chaine JSON : bookingId doit etre retrouve. */
@@ -163,7 +104,7 @@ class PaymentControllerWebMvcTest extends AbstractWebMvcTest {
 
         ArgumentCaptor<KkiapayWebhookPayload> captor = ArgumentCaptor.forClass(KkiapayWebhookPayload.class);
         verify(paymentService).handleWebhook(captor.capture());
-        assertThat(captor.getValue().extractBookingId()).isEqualTo(bookingId);
+        assertThat(PARSER.extractBookingId(captor.getValue())).isEqualTo(bookingId);
     }
 
     /** Un webhook rejoue pour une reservation deja traitee ne doit pas sortir en 500 : le service leve un conflit propre. */

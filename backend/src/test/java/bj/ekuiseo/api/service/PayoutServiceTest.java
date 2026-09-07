@@ -214,12 +214,12 @@ class PayoutServiceTest {
         DriverPayout settled = DriverPayout.builder().id(UUID.randomUUID()).driver(driver).amount(100)
                 .status(PayoutStatus.SETTLED).destinationMsisdn("+2290155000001").build();
         when(driverPayoutRepository.findById(settled.getId())).thenReturn(Optional.of(settled));
-        assertThatThrownBy(() -> service.settle(UUID.randomUUID(), settled.getId())).isInstanceOf(ConflictException.class);
+        assertThatThrownBy(() -> service.settle(UUID.randomUUID(), settled.getId(), null, null)).isInstanceOf(ConflictException.class);
 
         DriverPayout noDestination = DriverPayout.builder().id(UUID.randomUUID()).driver(driver).amount(100)
                 .status(PayoutStatus.PENDING).build();
         when(driverPayoutRepository.findById(noDestination.getId())).thenReturn(Optional.of(noDestination));
-        assertThatThrownBy(() -> service.settle(UUID.randomUUID(), noDestination.getId())).isInstanceOf(ConflictException.class);
+        assertThatThrownBy(() -> service.settle(UUID.randomUUID(), noDestination.getId(), null, null)).isInstanceOf(ConflictException.class);
     }
 
     /** Constats F133/F458/F302 : settle depuis PENDING ou FAILED seulement, corps consigne, conducteur prevenu. */
@@ -246,7 +246,7 @@ class PayoutServiceTest {
         DriverPayout pending = DriverPayout.builder().id(UUID.randomUUID()).driver(driver).amount(3000)
                 .status(PayoutStatus.PENDING).destinationMsisdn("+2290155000001").build();
         when(driverPayoutRepository.findById(pending.getId())).thenReturn(Optional.of(pending));
-        service.settle(adminId, pending.getId());
+        service.settle(adminId, pending.getId(), null, null);
         assertThat(pending.getSettledAmount()).isEqualTo(3000L);
         assertThat(pending.getExternalReference()).isNull();
     }

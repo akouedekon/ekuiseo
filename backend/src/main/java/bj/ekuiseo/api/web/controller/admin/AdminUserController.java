@@ -45,13 +45,13 @@ public class AdminUserController {
         this.currentUser = currentUser;
     }
 
-    @Operation(summary = "Rechercher des utilisateurs", description = "Recherche libre sur nom/prenom/telephone/e-mail ; liste a plat, plafonnee a 100 resultats (pas de pagination, voir AdminUserService).")
+    @Operation(summary = "Rechercher des utilisateurs", description = "Recherche libre sur nom/prenom/telephone/e-mail ; liste a plat, plafonnee a 100 resultats (pas de pagination, voir AdminUserService). Consultation journalisee (ADMIN_USERS_SEARCHED).")
     @GetMapping
     public List<AdminUserResponse> search(@RequestParam(defaultValue = "") String q) {
-        return adminUserService.search(q);
+        return adminUserService.search(currentUser.id(), q);
     }
 
-    @Operation(summary = "Fiche d un utilisateur", description = "Identite (statut, type, 4 derniers caracteres de la piece), vehicules, comptes mobile money, compteurs, motif de suspension. Les reservations, trajets et paiements sont pagines sous /bookings, /trips, /payments.")
+    @Operation(summary = "Fiche d un utilisateur", description = "Identite (statut, type, 4 derniers caracteres de la piece), vehicules, comptes mobile money, compteurs, motif de suspension, e-mail verifie et derniere connexion. Les reservations, trajets et paiements sont pagines sous /bookings, /trips, /payments.")
     @GetMapping("/{id}")
     public AdminUserDetailResponse detail(@PathVariable UUID id) {
         return adminUserService.getDetail(id);

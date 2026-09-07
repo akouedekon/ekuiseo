@@ -17,7 +17,9 @@ import java.util.UUID;
  * d'endpoint (meme chemin, contrat de requete et de reponse tous deux differents
  * du front, contrairement aux renommages simples comme /activate -> /reinstate).
  * {@code role} (phase 2, constat F304) permet au front de masquer la suspension d un
- * administrateur ; la fiche complete est servie par GET /api/v1/admin/users/{id}.</p>
+ * administrateur ; la fiche complete est servie par GET /api/v1/admin/users/{id}.
+ * {@code emailVerified} et {@code lastLoginAt} (phase 3, constat F544) permettent au
+ * support de diagnostiquer un compte injoignable.</p>
  */
 public record AdminUserResponse(
         UUID id,
@@ -28,12 +30,15 @@ public record AdminUserResponse(
         Instant createdAt,
         boolean identityVerified,
         boolean phoneVerified,
+        boolean emailVerified,
         boolean suspended,
         long tripsPublished,
         long bookingsMade,
         BigDecimal ratingAvg,
         /** Date d anonymisation (statut DELETED, V14) ; null pour un compte vivant. */
         Instant anonymizedAt,
-        Role role
+        Role role,
+        /** Derniere verification de code reussie (V17) ; null si jamais connecte depuis. */
+        Instant lastLoginAt
 ) {
 }

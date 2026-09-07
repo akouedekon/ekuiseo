@@ -18,6 +18,8 @@ import bj.ekuiseo.api.repository.BookingRepository;
 import bj.ekuiseo.api.repository.ConversationRepository;
 import bj.ekuiseo.api.repository.MessageRepository;
 import bj.ekuiseo.api.repository.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,6 +40,8 @@ import java.util.UUID;
  */
 @Service
 public class MessageService {
+
+    private static final Logger log = LoggerFactory.getLogger(MessageService.class);
 
     /** Fenetre d ecriture apres le depart d un trajet effectue (J+7). */
     static final Duration POST_TRIP_WINDOW = Duration.ofDays(7);
@@ -76,6 +80,10 @@ public class MessageService {
                 .body(req.body())
                 .build();
         message = messageRepository.save(message);
+        // Trace applicative structuree (constat F555) : qui ecrit, sur quelle reservation, combien
+        // - jamais le contenu. Sert a l analyse d un abus a posteriori dans les journaux Docker.
+        log.info("Message envoye : messageId={} senderId={} bookingId={} longueur={}",
+                message.getId(), senderId, bookingId, req.body() == null ? 0 : req.body().length());
 
         User recipient = booking.getPassenger().getId().equals(senderId)
                 ? booking.getTrip().getDriver() : booking.getPassenger();

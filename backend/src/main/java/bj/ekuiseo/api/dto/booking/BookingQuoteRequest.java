@@ -14,17 +14,13 @@ import java.util.UUID;
  * factorisation BookingService#computeAmounts - jamais une formule dupliquee).
  *
  * <p>Meme nom de champ {@code paymentMode} que CreateBookingRequest, nullable
- * avec le meme defaut {@code MOMO_DEPOSIT} (regle metier n.21).</p>
- *
- * <p>Pas de {@code pickupStopId} : comme {@code createBooking} (limitation
- * connue, voir sa javadoc), le prix est aujourd'hui toujours
- * {@code pricePerSeat * seats}, jamais un tarif par troncon -
- * {@code dropoffStopId} n'a donc aucun effet sur le montant, ici comme a la
- * reservation reelle ; il n'est repris ici que pour permettre au front de
- * transmettre le meme contexte qu'a la reservation.</p>
+ * avec le meme defaut {@code MOMO_DEPOSIT} (regle metier n.21). Memes
+ * {@code pickupStopId} / {@code dropoffStopId} (tarif par troncon, constat F122) :
+ * le devis et la reservation resolvent les arrets et le prix de la meme facon.</p>
  */
 public record BookingQuoteRequest(
         @Min(1) @Max(8) int seats,
+        UUID pickupStopId,
         UUID dropoffStopId,
         PaymentMethod paymentMode
 ) {

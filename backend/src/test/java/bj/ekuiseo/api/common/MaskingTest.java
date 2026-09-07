@@ -21,6 +21,15 @@ class MaskingTest {
         assertThat(Masking.phone("12")).isEqualTo("***");
     }
 
+    /** Constat F519 : initiale du nom pour les appelants anonymes. */
+    @Test
+    void reducesLastNamesToTheirInitial() {
+        assertThat(Masking.lastNameInitial("Aholou")).isEqualTo("A.");
+        assertThat(Masking.lastNameInitial("  de Souza ")).isEqualTo("D.");
+        assertThat(Masking.lastNameInitial("")).isEqualTo("");
+        assertThat(Masking.lastNameInitial(null)).isNull();
+    }
+
     @Test
     void masksCodesInsideText() {
         assertThat(Masking.codes("Votre code Ekuiseo : 483920")).isEqualTo("Votre code Ekuiseo : ******");

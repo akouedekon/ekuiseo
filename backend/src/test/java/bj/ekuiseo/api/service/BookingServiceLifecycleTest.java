@@ -77,16 +77,16 @@ class BookingServiceLifecycleTest {
     @Test
     void quote_refusesDepartedTrip_template_andSuspendedDriver() {
         Trip departed = trip(TripStatus.PUBLISHED, Instant.now().minus(5, ChronoUnit.MINUTES));
-        assertThatThrownBy(() -> service.quote(departed.getId(), passenger.getId(), new BookingQuoteRequest(1, null, null)))
+        assertThatThrownBy(() -> service.quote(departed.getId(), passenger.getId(), new BookingQuoteRequest(1, null, null, null)))
                 .isInstanceOf(ConflictException.class).hasMessageContaining("deja parti");
 
         Trip template = trip(TripStatus.TEMPLATE, Instant.now().plus(1, ChronoUnit.DAYS));
-        assertThatThrownBy(() -> service.quote(template.getId(), passenger.getId(), new BookingQuoteRequest(1, null, null)))
+        assertThatThrownBy(() -> service.quote(template.getId(), passenger.getId(), new BookingQuoteRequest(1, null, null, null)))
                 .isInstanceOf(ConflictException.class).hasMessageContaining("plus de reservations");
 
         Trip suspendedDriverTrip = trip(TripStatus.PUBLISHED, Instant.now().plus(1, ChronoUnit.DAYS));
         driver.setStatus(UserStatus.SUSPENDED);
-        assertThatThrownBy(() -> service.quote(suspendedDriverTrip.getId(), passenger.getId(), new BookingQuoteRequest(1, null, null)))
+        assertThatThrownBy(() -> service.quote(suspendedDriverTrip.getId(), passenger.getId(), new BookingQuoteRequest(1, null, null, null)))
                 .isInstanceOf(ConflictException.class).hasMessageContaining("plus disponible");
     }
 

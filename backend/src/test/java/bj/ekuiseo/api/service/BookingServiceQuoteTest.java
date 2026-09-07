@@ -48,7 +48,7 @@ class BookingServiceQuoteTest {
     }
 
     private Trip publishedTrip(UUID driverId, long pricePerSeat, int seatsAvailable) {
-        User driver = User.builder().id(driverId).build();
+        User driver = User.builder().id(driverId).status(bj.ekuiseo.api.domain.enums.UserStatus.ACTIVE).build();
         return Trip.builder().id(UUID.randomUUID()).driver(driver).status(TripStatus.PUBLISHED)
                 .pricePerSeat(pricePerSeat).seatsAvailable(seatsAvailable)
                 .departureAt(Instant.now().plus(3, ChronoUnit.DAYS)).build();
@@ -63,7 +63,7 @@ class BookingServiceQuoteTest {
         when(tripRepository.findById(trip.getId())).thenReturn(Optional.of(trip));
 
         BookingService service = newService(tripRepository, driverSubscriptionRepository);
-        BookingQuoteRequest req = new BookingQuoteRequest(1, null, PaymentMethod.MOMO_DEPOSIT);
+        BookingQuoteRequest req = new BookingQuoteRequest(1, null, null, PaymentMethod.MOMO_DEPOSIT);
 
         assertThatThrownBy(() -> service.quote(trip.getId(), UUID.randomUUID(), req))
                 .isInstanceOf(ConflictException.class);
@@ -78,7 +78,7 @@ class BookingServiceQuoteTest {
         when(tripRepository.findById(trip.getId())).thenReturn(Optional.of(trip));
 
         BookingService service = newService(tripRepository, driverSubscriptionRepository);
-        BookingQuoteRequest req = new BookingQuoteRequest(1, null, PaymentMethod.MOMO_DEPOSIT);
+        BookingQuoteRequest req = new BookingQuoteRequest(1, null, null, PaymentMethod.MOMO_DEPOSIT);
 
         assertThatThrownBy(() -> service.quote(trip.getId(), driverId, req))
                 .isInstanceOf(ForbiddenException.class);
@@ -92,7 +92,7 @@ class BookingServiceQuoteTest {
         when(tripRepository.findById(trip.getId())).thenReturn(Optional.of(trip));
 
         BookingService service = newService(tripRepository, driverSubscriptionRepository);
-        BookingQuoteRequest req = new BookingQuoteRequest(2, null, PaymentMethod.MOMO_DEPOSIT); // en demande 2
+        BookingQuoteRequest req = new BookingQuoteRequest(2, null, null, PaymentMethod.MOMO_DEPOSIT); // en demande 2
 
         assertThatThrownBy(() -> service.quote(trip.getId(), UUID.randomUUID(), req))
                 .isInstanceOf(ConflictException.class);
@@ -107,7 +107,7 @@ class BookingServiceQuoteTest {
         when(driverSubscriptionRepository.hasActiveSubscription(any(), any())).thenReturn(false);
 
         BookingService service = newService(tripRepository, driverSubscriptionRepository);
-        BookingQuoteRequest req = new BookingQuoteRequest(3, null, PaymentMethod.MOMO_DEPOSIT);
+        BookingQuoteRequest req = new BookingQuoteRequest(3, null, null, PaymentMethod.MOMO_DEPOSIT);
 
         PaymentPlanResponse plan = service.quote(trip.getId(), UUID.randomUUID(), req);
 
@@ -131,7 +131,7 @@ class BookingServiceQuoteTest {
         when(driverSubscriptionRepository.hasActiveSubscription(any(), any())).thenReturn(false);
 
         BookingService service = newService(tripRepository, driverSubscriptionRepository);
-        BookingQuoteRequest req = new BookingQuoteRequest(1, null, null); // paymentMode absent
+        BookingQuoteRequest req = new BookingQuoteRequest(1, null, null, null); // paymentMode absent
 
         PaymentPlanResponse plan = service.quote(trip.getId(), UUID.randomUUID(), req);
 
@@ -141,16 +141,39 @@ class BookingServiceQuoteTest {
         assertThat(plan.balanceAmount()).isZero();
     }
 
+    /** Point n.13 de l audit : le mode CASH est reserve aux conducteurs a identite verifiee (400 sinon). */
+    @Test
+    void quote_cash_requiresAnIdentityVerifiedDriver() {
+        TripRepository tripRepository = mock(TripRepository.class);
+        DriverSubscriptionRepository driverSubscriptionRepository = mock(DriverSubscriptionRepository.class);
+        Trip trip = publishedTrip(UUID.randomUUID(), 2000, 5); // conducteur non verifie
+        when(tripRepository.findById(trip.getId())).thenReturn(Optional.of(trip));
+
+        BookingService service = newService(tripRepository, driverSubscriptionRepository);
+
+        assertThatThrownBy(() -> service.quote(trip.getId(), UUID.randomUUID(), new BookingQuoteRequest(1, null, null, PaymentMethod.CASH)))
+                .isInstanceOf(bj.ekuiseo.api.common.exception.BadRequestException.class)
+                .hasMessage(BookingService.CASH_REQUIRES_VERIFIED_DRIVER);
+        assertThatThrownBy(() -> service.createBooking(trip.getId(), UUID.randomUUID(),
+                new bj.ekuiseo.api.dto.booking.CreateBookingRequest(1, null, null, PaymentMethod.CASH)))
+                .isInstanceOf(bj.ekuiseo.api.common.exception.BadRequestException.class)
+                .hasMessage(BookingService.CASH_REQUIRES_VERIFIED_DRIVER);
+        // Le mobile money reste ouvert avec le meme conducteur.
+        assertThat(service.quote(trip.getId(), UUID.randomUUID(), new BookingQuoteRequest(1, null, null, PaymentMethod.MOMO_DEPOSIT)))
+                .isNotNull();
+    }
+
     @Test
     void quote_cash_hasNoDepositAndNoDueDate() {
         TripRepository tripRepository = mock(TripRepository.class);
         DriverSubscriptionRepository driverSubscriptionRepository = mock(DriverSubscriptionRepository.class);
         Trip trip = publishedTrip(UUID.randomUUID(), 2000, 5);
+        trip.getDriver().setIdentityVerified(true);
         when(tripRepository.findById(trip.getId())).thenReturn(Optional.of(trip));
         when(driverSubscriptionRepository.hasActiveSubscription(any(), any())).thenReturn(false);
 
         BookingService service = newService(tripRepository, driverSubscriptionRepository);
-        BookingQuoteRequest req = new BookingQuoteRequest(1, null, PaymentMethod.CASH);
+        BookingQuoteRequest req = new BookingQuoteRequest(1, null, null, PaymentMethod.CASH);
 
         PaymentPlanResponse plan = service.quote(trip.getId(), UUID.randomUUID(), req);
 
@@ -169,7 +192,7 @@ class BookingServiceQuoteTest {
         when(driverSubscriptionRepository.hasActiveSubscription(any(), any())).thenReturn(false);
 
         BookingService service = newService(tripRepository, driverSubscriptionRepository);
-        BookingQuoteRequest req = new BookingQuoteRequest(1, null, PaymentMethod.MOMO_FULL);
+        BookingQuoteRequest req = new BookingQuoteRequest(1, null, null, PaymentMethod.MOMO_FULL);
 
         PaymentPlanResponse plan = service.quote(trip.getId(), UUID.randomUUID(), req);
 

@@ -11,6 +11,7 @@ import java.util.UUID;
  *
  * @param reason  {@code Report.reasonCode} (texte libre) mappe vers l'enum front ;
  *                retombe sur OTHER si aucune correspondance exacte (voir ReportService).
+ * @param detail  description libre du signalant ; jamais null (chaine vide a defaut, constat F503)
  * @param target  la personne visee : l'utilisateur signale s'il y en a un, sinon le
  *                conducteur du trajet signale (un signalement porte toujours sur un
  *                utilisateur OU un trajet, jamais aucun des deux - voir Report).

@@ -31,8 +31,12 @@ public class SearchEventService {
 
     private static final Logger log = LoggerFactory.getLogger(SearchEventService.class);
 
-    /** Au-dela de cette distance, aucune ville du referentiel n'est rattachee (lieu inconnu, frontiere...). */
-    static final double PLACE_MATCH_RADIUS_METERS = 30_000;
+    /**
+     * Au-dela de cette distance, aucune ville du referentiel n'est rattachee (lieu inconnu,
+     * frontiere...). Ramene de 30 a 15 km avec le referentiel complete en V17 (constat F413) :
+     * Seme-Kpodji n est plus fondue dans Porto-Novo, Allada n est plus rattachee a Calavi.
+     */
+    static final double PLACE_MATCH_RADIUS_METERS = 15_000;
     private static final int LABEL_MAX_LENGTH = 255;
 
     /** Ce que le passager a demande, tel que recu par GET /api/v1/trips/search. */
