@@ -2,8 +2,8 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { authStore } from '@/api/client'
-import { createTestQueryClient, installFakeApi } from '@/test/api'
+import { authStore, restoreSession } from '@/api/client'
+import { createTestQueryClient, installFakeApi, jsonResponse } from '@/test/api'
 import { RequireAdmin, RequireAuth } from './RequireAuth'
 
 function LocationProbe() {
@@ -38,7 +38,7 @@ describe('RequireAuth', () => {
   })
 
   it('rend les enfants quand un jeton existe, puis redirige a l expiration de session', async () => {
-    authStore.setTokens('access', 'refresh')
+    authStore.setAccessToken('access')
     renderAt('/me', <RequireAuth><p>Prive</p></RequireAuth>)
     expect(screen.getByText('Prive')).toBeInTheDocument()
 
@@ -47,10 +47,46 @@ describe('RequireAuth', () => {
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/login?next=%2Fme'))
     expect(screen.queryByText('Prive')).not.toBeInTheDocument()
   })
+
+  /** Restauration de session au chargement : chargement, pas de redirection, puis les enfants une fois le cookie echange. */
+  it('attend la fin de la restauration de session avant de trancher, puis rend les enfants', async () => {
+    let resolveRefresh: (res: Response) => void = () => undefined
+    const fetchMock = vi.fn<typeof fetch>(() => new Promise<Response>((resolve) => (resolveRefresh = resolve)))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const pending = restoreSession()
+    renderAt('/me', <RequireAuth><p>Prive</p></RequireAuth>)
+    expect(screen.getByRole('status')).toHaveTextContent("Chargement d'Ekuiseo")
+    expect(screen.queryByTestId('location')).not.toBeInTheDocument()
+    expect(screen.queryByText('Prive')).not.toBeInTheDocument()
+
+    await act(async () => {
+      resolveRefresh(jsonResponse(200, { accessToken: 'restored', user: { id: 'u1' } }))
+      await pending
+    })
+    expect(screen.getByText('Prive')).toBeInTheDocument()
+    expect(screen.queryByTestId('location')).not.toBeInTheDocument()
+  })
+
+  it('redirige vers /login seulement une fois la restauration refusee (401)', async () => {
+    let resolveRefresh: (res: Response) => void = () => undefined
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(() => new Promise<Response>((resolve) => (resolveRefresh = resolve))))
+
+    const pending = restoreSession()
+    renderAt('/bookings', <RequireAuth><p>Prive</p></RequireAuth>)
+    expect(screen.getByRole('status')).toBeInTheDocument()
+
+    await act(async () => {
+      resolveRefresh(jsonResponse(401, { status: 401 }))
+      await pending
+    })
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/login?next=%2Fbookings'))
+    expect(screen.queryByText('Prive')).not.toBeInTheDocument()
+  })
 })
 
 describe('RequireAdmin', () => {
-  beforeEach(() => authStore.setTokens('access', 'refresh'))
+  beforeEach(() => authStore.setAccessToken('access'))
   afterEach(() => {
     authStore.clear('logout')
     vi.unstubAllGlobals()

@@ -156,7 +156,12 @@ enregistrés avec rotation, détection de réutilisation, révocation à la déc
 et à la correction de contact, durée absolue 90 jours (V11) ; compte créé `PENDING_VERIFICATION`
 et activé au premier code, purgé après 24 h sinon ; changement d e-mail en deux temps ; correction
 de contact par l administration (journalisée) ; quota par IP dédié aux demandes de code ; alias
-admin morts retirés. Le seed et les comptes de test sont au format `+229 01 …`.
+admin morts retirés. Le seed et les comptes de test sont au format `+229 01 …`. **Complément du
+2026-09-07 (F355/F405)** : le refresh token voyage dans le cookie `HttpOnly` `ekuiseo_refresh`
+(`Secure`, `SameSite=Strict`, `Path=/api/v1/auth`, `RefreshCookies`), `/auth/refresh` et
+`/auth/logout` exigent `X-Requested-With: XMLHttpRequest` quand le jeton vient du cookie, le corps
+`{ refreshToken }` reste accepté en transition ; côté front l access token ne vit qu en mémoire et
+`restoreSession()` (main.tsx) rouvre la session au chargement — plus rien dans localStorage.
 
 **Phase 1, lot 1.2 (argent) livré le 2026-09-05** : remboursements en deux temps (`RefundService` :
 décision et statut `REFUND_PENDING` dans la transaction d annulation, appel Kkiapay après validation,
@@ -356,6 +361,9 @@ s'interprète pas.
   (accept/decline) reste à concevoir si la commission contournée devient un problème.
 - Actions hors dépôt attendues du fondateur : voir `docs/AUDIT-SUIVI.md` (sauvegardes hors site,
   sonde externe, clé MapTiler, rotation des secrets, juriste).
+- La vitrine GitHub Pages (origine tierce) ne peut plus ouvrir ni rafraîchir une session : le
+  cookie de rafraîchissement est `SameSite=Strict` et CORS reste sans credentials (front et API
+  sur le même domaine via Caddy). Elle se limite aux routes publiques (recherche, fiches).
 
 ## Marque
 

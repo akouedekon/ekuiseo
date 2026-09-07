@@ -207,7 +207,10 @@ droit du numérique et droit des transports avant tout lancement commercial à g
 ## 8. Mesures de sécurité (résumé pour le dossier APDP)
 
 Authentification par code à usage unique envoyé à l'e-mail vérifié, sans mot de passe ;
-sessions à jetons courts avec rafraîchissement enregistré, rotation et révocation ;
+sessions à jetons courts avec rafraîchissement enregistré, rotation et révocation ; le jeton
+de rafraîchissement n'est jamais lisible par un script de la page (cookie `HttpOnly`, `Secure`,
+`SameSite=Strict`, limité aux routes d'authentification, avec en-tête anti-CSRF obligatoire) et
+le jeton d'accès ne vit qu'en mémoire du navigateur, jamais dans son stockage ;
 limitation de débit par adresse IP réelle et par numéro ; TLS de bout en bout (nginx de
 l'hôte, HSTS) ; en-têtes de sécurité et politique de contenu ; base de données
 accessible uniquement depuis le réseau interne Docker ; masquage des codes, e-mails,

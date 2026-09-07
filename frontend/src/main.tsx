@@ -19,6 +19,7 @@ import '@fontsource/inter/latin-700.css'
 import { queryClient, createPersister, createPersistOptions } from '@/lib/queryClient'
 import { installGlobalErrorHandlers } from '@/lib/monitoring'
 import { applyTheme, readStoredTheme } from '@/lib/theme'
+import { restoreSession } from '@/hooks/useAuth'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { ServiceWorkerUpdate } from '@/components/layout/ServiceWorkerUpdate'
 import './index.css'
@@ -29,6 +30,10 @@ installGlobalErrorHandlers()
 
 // Le theme est applique avant le premier rendu pour eviter tout clignotement.
 applyTheme(readStoredTheme())
+
+// Session rouverte depuis le cookie HttpOnly (POST /auth/refresh) : lancee avant le
+// premier rendu pour que la garde de route voie « restauration en cours » et non « deconnecte ».
+void restoreSession()
 
 const persister = createPersister()
 

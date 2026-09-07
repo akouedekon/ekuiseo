@@ -172,6 +172,10 @@ ekuiseo:
   auth:
     # Comptes crees a l inscription et jamais verifies : purges apres ce delai, le numero redevient libre.
     pending-account-ttl-hours: ${PENDING_ACCOUNT_TTL_HOURS:24}
+    # Attribut Secure du cookie HttpOnly ekuiseo_refresh (RefreshCookies). Vrai par defaut :
+    # les navigateurs acceptent un cookie Secure sur http://localhost, seul un hote HTTP
+    # autre que localhost (recette sans TLS) justifie AUTH_COOKIE_SECURE=false.
+    cookie-secure: ${AUTH_COOKIE_SECURE:true}
   mail:
     # "log" (par defaut) : journalise l e-mail au lieu de l envoyer (dev/tests, code lisible
     # dans les logs sous [MAIL-STUB]). "smtp" : envoi reel via spring.mail.* ci-dessus.

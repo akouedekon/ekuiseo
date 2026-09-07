@@ -13,11 +13,14 @@ import bj.ekuiseo.api.dto.auth.OtpRequestResponse;
 import bj.ekuiseo.api.dto.auth.OtpVerifyRequest;
 import bj.ekuiseo.api.dto.auth.RefreshRequest;
 import bj.ekuiseo.api.dto.user.UserResponse;
+import bj.ekuiseo.api.security.RefreshCookies;
 import bj.ekuiseo.api.service.AuthService;
 import bj.ekuiseo.api.service.mail.MailDeliveryException;
 import bj.ekuiseo.api.web.controller.AuthController;
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
@@ -30,6 +33,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -37,11 +41,26 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * {@code /api/v1/auth/**} (constat F434) : routes publiques, validation des corps en 400
  * RFC 7807, erreurs metier traduites (404, 401, 409, 429, 503), service appele avec les
  * bons arguments, et quota de demandes de code du {@code RateLimitingFilter}.
+ *
+ * <p>Constats F355/F405 : le refresh token est pose dans le cookie HttpOnly
+ * {@code ekuiseo_refresh} (Secure, SameSite=Strict, Path=/api/v1/auth, Max-Age = 30 jours)
+ * et absent du JSON ; {@code /refresh} et {@code /logout} le lisent depuis le cookie avec
+ * l en-tete anti-CSRF (403 sans lui), ou depuis le corps pendant la transition ;
+ * {@code /logout} supprime le cookie.</p>
  */
 @WebMvcTest(controllers = AuthController.class)
+@Import(RefreshCookies.class)
 class AuthControllerWebMvcTest extends AbstractWebMvcTest {
 
     private static final String PHONE = "+2290197000321";
+    private static final String COOKIE = RefreshCookies.COOKIE_NAME;
+    private static final int THIRTY_DAYS_SECONDS = 30 * 24 * 3600;
+
+    private static AuthResponse session(User user, String access, String refresh) {
+        return new AuthResponse(access, refresh,
+                new UserResponse(user.getId(), PHONE, "jean@example.test", "Jean", "Dossou", null, null,
+                        BigDecimal.ZERO, 0, true, true, false, user.getRole(), false));
+    }
 
     @MockitoBean
     private AuthService authService;
@@ -168,19 +187,24 @@ class AuthControllerWebMvcTest extends AbstractWebMvcTest {
         verify(authService, org.mockito.Mockito.times(3)).requestOtp(any());
     }
 
+    /** Le jeton d acces est dans le JSON ; le refresh token uniquement dans le cookie HttpOnly. */
     @Test
-    void verifyOtp_opensSession() throws Exception {
+    void verifyOtp_opensSession_withRefreshTokenInHttpOnlyCookieOnly() throws Exception {
         OtpVerifyRequest request = new OtpVerifyRequest(PHONE, "123456");
         User user = activeUser();
-        when(authService.verifyOtp(request)).thenReturn(new AuthResponse("access.jwt", "refresh.jwt",
-                new UserResponse(user.getId(), PHONE, "jean@example.test", "Jean", "Dossou", null, null,
-                        BigDecimal.ZERO, 0, true, true, false, user.getRole(), false)));
+        when(authService.verifyOtp(request)).thenReturn(session(user, "access.jwt", "refresh.jwt"));
 
         mockMvc.perform(fromNewIp(json(post("/api/v1/auth/otp/verify"), request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accessToken").value("access.jwt"))
-                .andExpect(jsonPath("$.refreshToken").value("refresh.jwt"))
-                .andExpect(jsonPath("$.user.id").value(user.getId().toString()));
+                .andExpect(jsonPath("$.refreshToken").doesNotExist())
+                .andExpect(jsonPath("$.user.id").value(user.getId().toString()))
+                .andExpect(cookie().value(COOKIE, "refresh.jwt"))
+                .andExpect(cookie().httpOnly(COOKIE, true))
+                .andExpect(cookie().secure(COOKIE, true))
+                .andExpect(cookie().sameSite(COOKIE, "Strict"))
+                .andExpect(cookie().path(COOKIE, "/api/v1/auth"))
+                .andExpect(cookie().maxAge(COOKIE, THIRTY_DAYS_SECONDS));
     }
 
     @Test
@@ -200,6 +224,83 @@ class AuthControllerWebMvcTest extends AbstractWebMvcTest {
                 .andExpect(jsonPath("$.type").value("https://ekuiseo.bj/problems/validation-error"))
                 .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("code")));
         verify(authService, never()).verifyOtp(any());
+    }
+
+    /** Chemin nominal du nouveau client : cookie + en-tete X-Requested-With, sans corps. */
+    @Test
+    void refresh_fromCookieWithClientHeader_rotates_andSetsNewCookie() throws Exception {
+        User user = activeUser();
+        when(authService.refresh(new RefreshRequest("cookie.jwt"))).thenReturn(session(user, "access.2", "refresh.2"));
+
+        mockMvc.perform(fromNewIp(post("/api/v1/auth/refresh"))
+                        .cookie(new Cookie(COOKIE, "cookie.jwt"))
+                        .header(RefreshCookies.REQUESTED_WITH_HEADER, RefreshCookies.REQUESTED_WITH_VALUE))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").value("access.2"))
+                .andExpect(jsonPath("$.refreshToken").doesNotExist())
+                .andExpect(cookie().value(COOKIE, "refresh.2"))
+                .andExpect(cookie().httpOnly(COOKIE, true))
+                .andExpect(cookie().sameSite(COOKIE, "Strict"))
+                .andExpect(cookie().path(COOKIE, "/api/v1/auth"));
+        verify(authService).refresh(new RefreshRequest("cookie.jwt"));
+    }
+
+    /** L en-tete X-Ekuiseo-Client: web est accepte comme equivalent. */
+    @Test
+    void refresh_fromCookieWithEkuiseoClientHeader_isAccepted() throws Exception {
+        when(authService.refresh(any())).thenReturn(session(activeUser(), "access.2", "refresh.2"));
+
+        mockMvc.perform(fromNewIp(post("/api/v1/auth/refresh"))
+                        .cookie(new Cookie(COOKIE, "cookie.jwt"))
+                        .header(RefreshCookies.CLIENT_HEADER, RefreshCookies.CLIENT_HEADER_VALUE))
+                .andExpect(status().isOk());
+    }
+
+    /** Anti-CSRF : un cookie sans l en-tete (navigation ou formulaire cross-site) est refuse avant le service. */
+    @Test
+    void refresh_fromCookieWithoutClientHeader_is403_andServiceNotCalled() throws Exception {
+        mockMvc.perform(fromNewIp(post("/api/v1/auth/refresh")).cookie(new Cookie(COOKIE, "cookie.jwt")))
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.type").value("https://ekuiseo.bj/problems/forbidden"))
+                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("X-Requested-With")));
+        verify(authService, never()).refresh(any());
+    }
+
+    /** Le cookie prime sur le corps quand les deux sont presents. */
+    @Test
+    void refresh_cookieTakesPrecedenceOverBody() throws Exception {
+        when(authService.refresh(new RefreshRequest("cookie.jwt"))).thenReturn(session(activeUser(), "access.2", "refresh.2"));
+
+        mockMvc.perform(fromNewIp(json(post("/api/v1/auth/refresh"), new RefreshRequest("corps.jwt")))
+                        .cookie(new Cookie(COOKIE, "cookie.jwt"))
+                        .header(RefreshCookies.REQUESTED_WITH_HEADER, RefreshCookies.REQUESTED_WITH_VALUE))
+                .andExpect(status().isOk());
+        verify(authService).refresh(new RefreshRequest("cookie.jwt"));
+        verify(authService, never()).refresh(new RefreshRequest("corps.jwt"));
+    }
+
+    /** Transition : un jeton encore dans localStorage est accepte dans le corps, et la reponse pose le cookie. */
+    @Test
+    void refresh_legacyBody_isAccepted_andMigratesToCookie() throws Exception {
+        when(authService.refresh(new RefreshRequest("ancien.jwt"))).thenReturn(session(activeUser(), "access.2", "refresh.2"));
+
+        mockMvc.perform(fromNewIp(json(post("/api/v1/auth/refresh"), new RefreshRequest("ancien.jwt"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").value("access.2"))
+                .andExpect(jsonPath("$.refreshToken").doesNotExist())
+                .andExpect(cookie().value(COOKIE, "refresh.2"))
+                .andExpect(cookie().httpOnly(COOKIE, true));
+    }
+
+    @Test
+    void refresh_withoutCookieNorBody_is400() throws Exception {
+        mockMvc.perform(fromNewIp(post("/api/v1/auth/refresh"))
+                        .header(RefreshCookies.REQUESTED_WITH_HEADER, RefreshCookies.REQUESTED_WITH_VALUE))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("refreshToken")));
+        verify(authService, never()).refresh(any());
     }
 
     @Test
@@ -223,14 +324,41 @@ class AuthControllerWebMvcTest extends AbstractWebMvcTest {
     @Test
     void logout_withoutBody_is204_andRevokesNothingSpecific() throws Exception {
         mockMvc.perform(fromNewIp(post("/api/v1/auth/logout")))
-                .andExpect(status().isNoContent());
+                .andExpect(status().isNoContent())
+                .andExpect(cookie().maxAge(COOKIE, 0));
         verify(authService).logout(null);
     }
 
     @Test
     void logout_withRefreshToken_is204_andPassesIt() throws Exception {
         mockMvc.perform(fromNewIp(json(post("/api/v1/auth/logout"), new RefreshRequest("refresh.jwt"))))
-                .andExpect(status().isNoContent());
+                .andExpect(status().isNoContent())
+                .andExpect(cookie().maxAge(COOKIE, 0));
         verify(authService).logout("refresh.jwt");
+    }
+
+    /** Deconnexion du nouveau client : le cookie est lu, revoque, puis supprime (Max-Age=0, memes attributs). */
+    @Test
+    void logout_fromCookieWithClientHeader_revokesIt_andClearsTheCookie() throws Exception {
+        mockMvc.perform(fromNewIp(post("/api/v1/auth/logout"))
+                        .cookie(new Cookie(COOKIE, "cookie.jwt"))
+                        .header(RefreshCookies.REQUESTED_WITH_HEADER, RefreshCookies.REQUESTED_WITH_VALUE))
+                .andExpect(status().isNoContent())
+                .andExpect(cookie().value(COOKIE, ""))
+                .andExpect(cookie().maxAge(COOKIE, 0))
+                .andExpect(cookie().httpOnly(COOKIE, true))
+                .andExpect(cookie().secure(COOKIE, true))
+                .andExpect(cookie().sameSite(COOKIE, "Strict"))
+                .andExpect(cookie().path(COOKIE, "/api/v1/auth"));
+        verify(authService).logout("cookie.jwt");
+    }
+
+    /** Une deconnexion forcee depuis un autre site (cookie sans en-tete) est refusee, le cookie reste. */
+    @Test
+    void logout_fromCookieWithoutClientHeader_is403() throws Exception {
+        mockMvc.perform(fromNewIp(post("/api/v1/auth/logout")).cookie(new Cookie(COOKIE, "cookie.jwt")))
+                .andExpect(status().isForbidden())
+                .andExpect(cookie().doesNotExist(COOKIE));
+        verify(authService, never()).logout(any());
     }
 }

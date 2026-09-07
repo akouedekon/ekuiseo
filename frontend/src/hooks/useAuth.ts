@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useSyncExternalStore } from 'react'
-import { apiClient, authStore, type AuthChangeReason } from '@/api/client'
+import { apiClient, authStore, restoreSession as restoreSessionFromCookie, type AuthChangeReason } from '@/api/client'
 import { TERMS_VERSION } from '@/lib/legal'
 import { clearApiCache, clearPersistedCache, queryClient, readCacheOwner, writeCacheOwner } from '@/lib/queryClient'
 import { toE164 } from '@/lib/validation'
@@ -36,20 +36,46 @@ export function resetSession(reason: AuthChangeReason = 'logout'): void {
 }
 
 /**
- * Ouverture de session. Si le cache appartenait a un autre compte (session
- * precedente non fermee proprement), il est purge avant d'ecrire le nouveau
- * profil : aucune donnee de l'ancien compte ne s'affiche en attendant le refetch.
+ * Adoption du cache par le compte qui vient d'ouvrir (ou de rouvrir) sa session.
+ * Si le cache appartenait a un autre compte (session precedente non fermee
+ * proprement), il est purge avant d'ecrire le nouveau profil : aucune donnee de
+ * l'ancien compte ne s'affiche en attendant le refetch.
  */
-function persistAuth(data: AuthResponse) {
+function adoptCache(user: UserResponse) {
   const previousOwner = readCacheOwner()
-  if (previousOwner !== null && previousOwner !== data.user.id) {
+  if (previousOwner !== null && previousOwner !== user.id) {
     queryClient.clear()
     clearPersistedCache()
     void clearApiCache()
   }
-  authStore.setTokens(data.accessToken, data.refreshToken, 'login')
-  writeCacheOwner(data.user.id)
-  queryClient.setQueryData<UserResponse>(['me'], data.user)
+  writeCacheOwner(user.id)
+  queryClient.setQueryData<UserResponse>(['me'], user)
+}
+
+/**
+ * Ouverture de session apres verification du code : seul le jeton d'acces est
+ * garde, en memoire. Le refresh token n'est pas dans la reponse (`refreshToken`
+ * nul) : l'API l'a pose dans le cookie HttpOnly `ekuiseo_refresh`, que le
+ * navigateur seul manipule. Rien n'est ecrit dans localStorage.
+ */
+function persistAuth(data: AuthResponse) {
+  adoptCache(data.user)
+  authStore.setAccessToken(data.accessToken, 'login')
+}
+
+/**
+ * Restauration de la session au chargement de la page (a appeler une fois, avant
+ * le premier rendu, voir main.tsx) : POST /auth/refresh depuis le cookie HttpOnly.
+ * Le jeton d'acces est pose par le client HTTP ; ici on adopte le cache pour le
+ * compte retrouve et on garnit `['me']` avec le profil renvoye, comme a la
+ * connexion. Silencieux : sans cookie valable, l'utilisateur n'est simplement pas
+ * connecte et la garde de route reprend son comportement habituel.
+ */
+export async function restoreSession(): Promise<boolean> {
+  const data = await restoreSessionFromCookie()
+  if (!data) return false
+  adoptCache(data.user)
+  return true
 }
 
 /** Etat de session reactif : change des qu'un jeton est pose, retire ou expire. */
@@ -57,6 +83,19 @@ export function useIsAuthenticated(): boolean {
   return useSyncExternalStore(
     (onChange) => authStore.subscribe(() => onChange()),
     () => authStore.isAuthenticated(),
+    () => false,
+  )
+}
+
+/**
+ * Vrai tant que la restauration de session au chargement n'a pas conclu : la
+ * garde de route affiche un ecran de chargement plutot que de renvoyer vers la
+ * connexion un utilisateur dont le cookie est peut-etre encore valable.
+ */
+export function useIsRestoringSession(): boolean {
+  return useSyncExternalStore(
+    (onChange) => authStore.subscribe(() => onChange()),
+    () => authStore.isRestoring(),
     () => false,
   )
 }
@@ -134,17 +173,14 @@ export function useVerifyOtp() {
 }
 
 /**
- * Deconnexion : le refresh token est revoque cote serveur (POST /auth/logout, toute sa
- * chaine de rotation), puis la session locale est videe (resetSession). La revocation
- * est lancee sans attendre : hors ligne, la session locale disparait quand meme et le
- * jeton expirera seul.
+ * Deconnexion : le refresh token est revoque cote serveur (POST /auth/logout lit le
+ * cookie HttpOnly, revoque toute sa chaine de rotation et supprime le cookie), puis la
+ * session locale est videe (resetSession). La revocation est lancee sans attendre :
+ * hors ligne, la session locale disparait quand meme et le jeton expirera seul.
  */
 export function useLogout() {
   return () => {
-    const refreshToken = authStore.getRefreshToken()
-    if (refreshToken) {
-      void apiClient.post<void>('/api/v1/auth/logout', { refreshToken }, { auth: false }).catch(() => undefined)
-    }
+    void apiClient.post<void>('/api/v1/auth/logout', undefined, { auth: false }).catch(() => undefined)
     resetSession('logout')
   }
 }

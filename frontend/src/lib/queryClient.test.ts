@@ -165,7 +165,7 @@ describe('resetSession', () => {
   })
 
   it('vide jetons, cache memoire, cache persiste, proprietaire et cache du service worker', async () => {
-    authStore.setTokens('access', 'refresh')
+    authStore.setAccessToken('access')
     writeCacheOwner('user-a')
     storage.setItem('ekuiseo-query-cache', '{"buster":"v3:user-a"}')
     queryClient.setQueryData(['me'], { id: 'user-a' })
@@ -188,7 +188,7 @@ describe('resetSession', () => {
 
   it('tolere un navigateur sans Cache Storage', () => {
     vi.stubGlobal('caches', undefined)
-    authStore.setTokens('access', 'refresh')
+    authStore.setAccessToken('access')
     expect(() => resetSession('logout')).not.toThrow()
     expect(authStore.isAuthenticated()).toBe(false)
   })

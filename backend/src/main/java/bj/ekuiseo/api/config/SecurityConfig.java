@@ -95,6 +95,18 @@ public class SecurityConfig {
      * Origines autorisees : liste separee par des virgules (CORS_ALLOWED_ORIGINS),
      * "*" par defaut pour le developpement. En production, restreindre au domaine
      * public (et a la vitrine GitHub Pages si elle est conservee).
+     *
+     * <p>Cookie de session (constats F355/F405) : le refresh token voyage dans le cookie
+     * HttpOnly {@code ekuiseo_refresh} (SameSite=Strict, Path=/api/v1/auth, voir
+     * {@code RefreshCookies}). {@code allowCredentials} reste a false : front et API sont
+     * servis par le meme domaine (ekuiseo.com via Caddy), le cookie part donc en
+     * same-origin sans CORS. Consequence assumee : une origine tierce, dont la vitrine
+     * GitHub Pages, ne peut plus ouvrir ni rafraichir une session (le navigateur n envoie
+     * ni ne stocke le cookie sans credentials, et SameSite=Strict l interdirait de toute
+     * facon) ; elle reste limitee aux routes publiques (recherche, fiches). Le
+     * {@code csrf.disable()} ci-dessus est conserve (API sans session serveur) : la
+     * protection CSRF du cookie tient a SameSite=Strict et a l en-tete
+     * {@code X-Requested-With} exige par {@code AuthController} sur /refresh et /logout.</p>
      */
     private CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
@@ -103,9 +115,10 @@ public class SecurityConfig {
         config.setAllowedOriginPatterns(origins.isEmpty() ? List.of("*") : origins);
         config.setAllowedMethods(List.of("GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
-        // Pas de cookies : le jeton voyage en en-tete Authorization. Sans credentials, une
-        // origine "*" reste sans danger, et une origine reflechie avec credentials
-        // (constat L2 de l audit) devient impossible par construction.
+        // Le jeton d acces voyage en en-tete Authorization et le cookie de rafraichissement
+        // n est utile qu en same-origin : sans credentials, une origine "*" reste sans
+        // danger, et une origine reflechie avec credentials (constat L2 de l audit)
+        // devient impossible par construction.
         config.setAllowCredentials(false);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);

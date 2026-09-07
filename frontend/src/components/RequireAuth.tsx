@@ -1,12 +1,19 @@
 import type { ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router'
-import { useIsAuthenticated, useMe } from '@/hooks/useAuth'
+import { useIsAuthenticated, useIsRestoringSession, useMe } from '@/hooks/useAuth'
 import { AccessDeniedPage, AppLoadingScreen } from '@/pages/SystemPages'
 
-/** Garde de route : renvoie vers la connexion en memorisant la destination. Reactif a l'expiration de session. */
+/**
+ * Garde de route : renvoie vers la connexion en memorisant la destination. Reactif a
+ * l'expiration de session. Au chargement, tant que la session se restaure depuis le
+ * cookie HttpOnly (POST /auth/refresh en cours), l'ecran de chargement s'affiche : on
+ * ne renvoie pas vers /login un utilisateur encore connecte.
+ */
 export function RequireAuth({ children }: { children: ReactNode }) {
   const location = useLocation()
   const authenticated = useIsAuthenticated()
+  const restoring = useIsRestoringSession()
+  if (!authenticated && restoring) return <AppLoadingScreen />
   if (!authenticated) {
     const next = encodeURIComponent(location.pathname + location.search)
     return <Navigate to={`/login?next=${next}`} replace />

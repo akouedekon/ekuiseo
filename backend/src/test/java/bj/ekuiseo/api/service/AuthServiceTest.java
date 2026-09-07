@@ -241,6 +241,26 @@ class AuthServiceTest {
         verify(auditService, never()).log(eq(suspendedId), any(), any(), any(), any());
     }
 
+    /**
+     * Constats F355/F405 : le service remet la paire complete (le controleur deplace le refresh
+     * token dans le cookie HttpOnly) ; la forme exposee au client n en garde que l acces et le profil.
+     */
+    @Test
+    void refresh_andVerify_returnFullPair_whoseClientFormDropsTheRefreshToken() {
+        UUID id = UUID.randomUUID();
+        when(refreshTokens.rotate("old")).thenReturn(new RefreshTokenService.Rotation(id, "new"));
+        when(userRepository.findById(id)).thenReturn(Optional.of(
+                User.builder().id(id).phone("+2290197000322").status(UserStatus.ACTIVE).build()));
+
+        AuthResponse full = service.refresh(new RefreshRequest("old"));
+        AuthResponse exposed = full.withoutRefreshToken();
+
+        assertThat(full.refreshToken()).isEqualTo("new");
+        assertThat(exposed.refreshToken()).isNull();
+        assertThat(exposed.accessToken()).isEqualTo(full.accessToken());
+        assertThat(exposed.user()).isSameAs(full.user());
+    }
+
     @Test
     void logout_revokesOnlyWhenATokenIsGiven() {
         service.logout(null);

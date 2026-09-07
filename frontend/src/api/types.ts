@@ -94,7 +94,11 @@ export interface OtpRequestResponse {
 
 export interface AuthResponse {
   accessToken: string
-  refreshToken: string
+  /**
+   * Toujours absent (nul) : le refresh token est pose par l'API dans le cookie HttpOnly
+   * `ekuiseo_refresh`, hors de portee du script. Champ conserve pour le contrat.
+   */
+  refreshToken?: string | null
   user: UserResponse
 }
 

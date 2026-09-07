@@ -100,7 +100,7 @@ function renderBooking(path: string) {
 }
 
 describe('BookingPage', () => {
-  beforeEach(() => authStore.setTokens('access', 'refresh'))
+  beforeEach(() => authStore.setAccessToken('access'))
   afterEach(() => {
     authStore.clear('logout')
     vi.unstubAllGlobals()
