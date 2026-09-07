@@ -111,11 +111,19 @@ public class AdminVerificationService {
         return verification;
     }
 
+    /**
+     * Vue back-office, avec les autres comptes ayant declare la meme piece (constat F604) :
+     * une requete indexee par dossier, la file etant courte par construction.
+     */
     private AdminVerificationResponse toResponse(IdentityVerification v) {
         User u = v.getUser();
+        List<UUID> duplicates = v.getDocumentType() == null || v.getDocumentNumber() == null || v.getDocumentNumber().isBlank()
+                ? List.of()
+                : identityVerificationRepository.findOtherUserIdsWithDocument(v.getDocumentType(), v.getDocumentNumber(), u.getId());
         return new AdminVerificationResponse(v.getId(), u.getId(), u.getFirstName(), u.getLastName(), u.getPhone(),
                 v.getDocumentType(), v.getDocumentNumber(), v.getSubmittedAt(), v.getStatus(),
                 v.getReviewedAt(), v.getRejectionReason(),
-                v.getReviewedBy() != null ? v.getReviewedBy().getId() : null);
+                v.getReviewedBy() != null ? v.getReviewedBy().getId() : null,
+                duplicates);
     }
 }

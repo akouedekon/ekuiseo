@@ -20,10 +20,12 @@ public record TripAlertRequest(
         @NotBlank @Size(max = 255) String destLabel,
         @DecimalMin("-90") @DecimalMax("90") double destLat,
         @DecimalMin("-180") @DecimalMax("180") double destLng,
-        /** Date ciblee (jour unique) ; null = toute date. Stockee comme une fenetre
-         * d'un seul jour (dateFrom = dateTo = date), voir TripAlertService. */
+        /** Date ciblee (jour unique) ; null = toute date pendant 30 jours. Stockee comme une
+         * fenetre d'un seul jour (dateFrom = dateTo = date), voir TripAlertService. */
         @FutureOrPresent LocalDate date,
         @Min(1) @Max(8) int seats,
-        @NotNull TripType tripType
+        @NotNull TripType tripType,
+        /** Rayon de correspondance (km), celui de la recherche d origine ; 15 km par defaut (V16, constat F530). */
+        @DecimalMin("1.0") @DecimalMax("50.0") Double radiusKm
 ) {
 }

@@ -27,6 +27,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class TripSearchIT extends AbstractPostgisIT {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private bj.ekuiseo.api.repository.TripStopRepository tripStopRepository;
+
     private User driver;
     private Vehicle vehicle;
 
@@ -48,7 +51,7 @@ class TripSearchIT extends AbstractPostgisIT {
 
         Page<Trip> results = tripRepository.search(
                 COTONOU_LAT, COTONOU_LNG, PORTO_NOVO_LAT, PORTO_NOVO_LNG,
-                20_000, 1, null, null, null, Instant.now(), PageRequest.of(0, 10));
+                20_000, 1, null, null, null, Instant.now(), null, null, null, false, PageRequest.of(0, 10));
 
         assertThat(results.getContent()).extracting(Trip::getId).containsExactly(matching.getId());
         assertThat(results.getTotalElements()).isEqualTo(1);
@@ -71,10 +74,10 @@ class TripSearchIT extends AbstractPostgisIT {
 
         Page<Trip> cotonouToCalavi = tripRepository.search(
                 COTONOU_LAT, COTONOU_LNG, CALAVI_LAT, CALAVI_LNG,
-                15_000, 1, null, null, null, Instant.now(), PageRequest.of(0, 10));
+                15_000, 1, null, null, null, Instant.now(), null, null, null, false, PageRequest.of(0, 10));
         Page<Trip> calaviToCotonou = tripRepository.search(
                 CALAVI_LAT, CALAVI_LNG, COTONOU_LAT, COTONOU_LNG,
-                15_000, 1, null, null, null, Instant.now(), PageRequest.of(0, 10));
+                15_000, 1, null, null, null, Instant.now(), null, null, null, false, PageRequest.of(0, 10));
 
         assertThat(cotonouToCalavi.getContent()).extracting(Trip::getId).containsExactly(toCalavi.getId());
         assertThat(calaviToCotonou.getContent()).extracting(Trip::getId).containsExactly(toCotonou.getId());
@@ -99,15 +102,15 @@ class TripSearchIT extends AbstractPostgisIT {
         Page<Trip> sameBeninDay = tripRepository.search(
                 COTONOU_LAT, COTONOU_LNG, BOHICON_LAT, BOHICON_LNG, 15_000, 1, null,
                 day.atStartOfDay(Tz.BENIN).toInstant(), day.plusDays(1).atStartOfDay(Tz.BENIN).toInstant(),
-                Instant.now(), PageRequest.of(0, 10));
+                Instant.now(), null, null, null, false, PageRequest.of(0, 10));
         Page<Trip> previousBeninDay = tripRepository.search(
                 COTONOU_LAT, COTONOU_LNG, BOHICON_LAT, BOHICON_LNG, 15_000, 1, null,
                 day.minusDays(1).atStartOfDay(Tz.BENIN).toInstant(), day.atStartOfDay(Tz.BENIN).toInstant(),
-                Instant.now(), PageRequest.of(0, 10));
+                Instant.now(), null, null, null, false, PageRequest.of(0, 10));
         Page<Trip> naiveUtcDay = tripRepository.search(
                 COTONOU_LAT, COTONOU_LNG, BOHICON_LAT, BOHICON_LNG, 15_000, 1, null,
                 day.atStartOfDay(ZoneOffset.UTC).toInstant(), day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant(),
-                Instant.now(), PageRequest.of(0, 10));
+                Instant.now(), null, null, null, false, PageRequest.of(0, 10));
 
         assertThat(sameBeninDay.getContent()).extracting(Trip::getId).containsExactly(earlyBird.getId());
         assertThat(previousBeninDay.getContent()).isEmpty();
@@ -127,11 +130,11 @@ class TripSearchIT extends AbstractPostgisIT {
                 Instant.now().plus(3, ChronoUnit.HOURS), 4, 2500);
 
         Page<Trip> all = tripRepository.search(COTONOU_LAT, COTONOU_LNG, BOHICON_LAT, BOHICON_LNG,
-                15_000, 1, null, null, null, Instant.now(), PageRequest.of(0, 10));
+                15_000, 1, null, null, null, Instant.now(), null, null, null, false, PageRequest.of(0, 10));
         Page<Trip> dailyOnly = tripRepository.search(COTONOU_LAT, COTONOU_LNG, BOHICON_LAT, BOHICON_LNG,
-                15_000, 1, TripType.QUOTIDIEN.name(), null, null, Instant.now(), PageRequest.of(0, 10));
+                15_000, 1, TripType.QUOTIDIEN.name(), null, null, Instant.now(), null, null, null, false, PageRequest.of(0, 10));
         Page<Trip> threeSeats = tripRepository.search(COTONOU_LAT, COTONOU_LNG, BOHICON_LAT, BOHICON_LNG,
-                15_000, 3, null, null, null, Instant.now(), PageRequest.of(0, 10));
+                15_000, 3, null, null, null, Instant.now(), null, null, null, false, PageRequest.of(0, 10));
 
         assertThat(all.getContent()).extracting(Trip::getId)
                 .containsExactlyInAnyOrder(upcomingDaily.getId(), upcomingInterurban.getId());
@@ -148,8 +151,33 @@ class TripSearchIT extends AbstractPostgisIT {
                 Instant.now().plus(1, ChronoUnit.DAYS), 4, 1500);
 
         Page<Trip> results = tripRepository.search(COTONOU_LAT, COTONOU_LNG, PORTO_NOVO_LAT, PORTO_NOVO_LNG,
-                20_000, 1, null, null, null, Instant.now(), PageRequest.of(0, 10));
+                20_000, 1, null, null, null, Instant.now(), null, null, null, false, PageRequest.of(0, 10));
 
         assertThat(results.getContent()).isEmpty();
+    }
+    /**
+     * Constats F115/F409 : un trajet Cotonou -> Parakou qui marque l arret a Bohicon doit
+     * repondre a une recherche Bohicon -> Parakou (montee a l arret, descente a la
+     * destination) mais pas a une recherche Parakou -> Bohicon (sens) ni Bohicon -> Cotonou
+     * (descente avant la montee).
+     */
+    @Test
+    void search_matchesIntermediateStopAsPickup() {
+        Trip viaBohicon = newTrip(driver, vehicle, TripType.INTERURBAIN,
+                "Cotonou", COTONOU_LAT, COTONOU_LNG, "Parakou", PARAKOU_LAT, PARAKOU_LNG,
+                Instant.now().plus(1, ChronoUnit.DAYS), 4, 6000);
+        tripStopRepository.save(bj.ekuiseo.api.domain.TripStop.builder().trip(viaBohicon).position(1).label("Bohicon")
+                .lat(BOHICON_LAT).lng(BOHICON_LNG).priceFromOrigin(2500L).build());
+
+        Page<Trip> bohiconToParakou = tripRepository.search(BOHICON_LAT, BOHICON_LNG, PARAKOU_LAT, PARAKOU_LNG,
+                15_000, 1, null, null, null, Instant.now(), null, null, null, false, PageRequest.of(0, 10));
+        Page<Trip> parakouToBohicon = tripRepository.search(PARAKOU_LAT, PARAKOU_LNG, BOHICON_LAT, BOHICON_LNG,
+                15_000, 1, null, null, null, Instant.now(), null, null, null, false, PageRequest.of(0, 10));
+        Page<Trip> bohiconToCotonou = tripRepository.search(BOHICON_LAT, BOHICON_LNG, COTONOU_LAT, COTONOU_LNG,
+                15_000, 1, null, null, null, Instant.now(), null, null, null, false, PageRequest.of(0, 10));
+
+        assertThat(bohiconToParakou.getContent()).extracting(Trip::getId).containsExactly(viaBohicon.getId());
+        assertThat(parakouToBohicon.getContent()).isEmpty();
+        assertThat(bohiconToCotonou.getContent()).isEmpty();
     }
 }

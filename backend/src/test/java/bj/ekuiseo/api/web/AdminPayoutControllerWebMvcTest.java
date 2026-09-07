@@ -69,7 +69,7 @@ class AdminPayoutControllerWebMvcTest extends AbstractWebMvcTest {
         Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
         when(payoutService.listAllForAdmin()).thenReturn(List.of(new AdminPayoutResponse(
                 payoutId, driverId, "Awa Test", MobileMoneyOperator.MTN_MOMO, "+2290197000322",
-                4600, 2, now.minus(7, ChronoUnit.DAYS), now, "PENDING", null, 0, 0)));
+                4600, 2, now.minus(7, ChronoUnit.DAYS), now, "PENDING", null, 0, 0, null, null, null, null)));
 
         mockMvc.perform(authed(get(PATH), bearerFor(admin)))
                 .andExpect(status().isOk())

@@ -9,4 +9,7 @@ import java.util.UUID;
 public interface ReviewRepository extends JpaRepository<Review, UUID> {
     List<Review> findByTargetIdOrderByCreatedAtDesc(UUID targetId);
     boolean existsByTripIdAndAuthorIdAndTargetId(UUID tripId, UUID authorId, UUID targetId);
+
+    /** Avis ecrits par un utilisateur (export de ses donnees, UserDataExportService). */
+    List<Review> findByAuthorIdOrderByCreatedAtDesc(UUID authorId);
 }

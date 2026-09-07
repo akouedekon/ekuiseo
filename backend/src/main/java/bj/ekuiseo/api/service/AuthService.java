@@ -21,6 +21,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -42,10 +43,14 @@ public class AuthService {
     private final RefreshTokenService refreshTokens;
     private final OtpDeliveryService otpDelivery;
     private final UserMapper userMapper;
+    private final TermsPolicy termsPolicy;
+
+    /** Message unique pour un numero OU un e-mail deja pris (constat F512 : pas d enumeration des comptes). */
+    static final String ALREADY_USED = "Ce numero ou cet e-mail est deja utilise";
 
     public AuthService(UserRepository userRepository, OtpCodeService otpCodes, PasswordEncoder passwordEncoder,
                        JwtService jwtService, RefreshTokenService refreshTokens, OtpDeliveryService otpDelivery,
-                       UserMapper userMapper) {
+                       UserMapper userMapper, TermsPolicy termsPolicy) {
         this.userRepository = userRepository;
         this.otpCodes = otpCodes;
         this.passwordEncoder = passwordEncoder;
@@ -53,37 +58,47 @@ public class AuthService {
         this.refreshTokens = refreshTokens;
         this.otpDelivery = otpDelivery;
         this.userMapper = userMapper;
+        this.termsPolicy = termsPolicy;
     }
 
     /**
      * Inscription : cree le compte en attente de verification (mot de passe aleatoire
      * inutilisable, aucun jeton remis) et envoie le code a l adresse e-mail obligatoire.
-     * Un numero deja verifie renvoie 409 ; un numero jamais verifie est repris avec les
-     * nouvelles informations (anti-squat, constat F023).
+     * Un numero deja verifie ou un e-mail deja pris renvoie 409 avec un seul et meme message
+     * (constat F512) ; un numero jamais verifie est repris avec les nouvelles informations
+     * (anti-squat, constat F023). L acceptation des CGU est horodatee avec sa version
+     * (constat F509), qui doit etre celle en vigueur.
      */
     @Transactional
     public OtpRequestResponse registerWithOtp(OtpRegisterRequest req) {
         String phone = PhoneNumbers.normalize(req.phone());
         String email = req.email().trim();
+        if (!req.acceptTerms()) {
+            throw new BadRequestException("Vous devez accepter les conditions d utilisation pour creer un compte");
+        }
+        termsPolicy.assertCurrent(req.termsVersion());
+        Instant acceptedAt = Instant.now();
         Optional<User> existing = userRepository.findByPhone(phone);
         if (existing.isPresent()) {
             User pending = existing.get();
             if (pending.getStatus() != UserStatus.PENDING_VERIFICATION
                     && (pending.isEmailVerified() || pending.isPhoneVerified())) {
-                throw new ConflictException("Un compte existe deja avec ce numero de telephone");
+                throw new ConflictException(ALREADY_USED);
             }
             assertNotSuspended(pending);
             if (userRepository.existsByEmailIgnoreCaseAndIdNot(email, pending.getId())) {
-                throw new ConflictException("Un compte existe deja avec cette adresse e-mail");
+                throw new ConflictException(ALREADY_USED);
             }
             pending.setFirstName(req.firstName().trim());
             pending.setLastName(req.lastName().trim());
             pending.setEmail(email);
+            pending.setTermsVersion(termsPolicy.currentVersion());
+            pending.setTermsAcceptedAt(acceptedAt);
             userRepository.save(pending);
             return sendCode(pending);
         }
         if (userRepository.existsByEmailIgnoreCase(email)) {
-            throw new ConflictException("Un compte existe deja avec cette adresse e-mail");
+            throw new ConflictException(ALREADY_USED);
         }
         User user = User.builder()
                 .phone(phone)
@@ -92,6 +107,8 @@ public class AuthService {
                 .email(email)
                 .passwordHash(passwordEncoder.encode("otp-only-" + UUID.randomUUID()))
                 .status(UserStatus.PENDING_VERIFICATION)
+                .termsVersion(termsPolicy.currentVersion())
+                .termsAcceptedAt(acceptedAt)
                 .build();
         userRepository.save(user);
         return sendCode(user);

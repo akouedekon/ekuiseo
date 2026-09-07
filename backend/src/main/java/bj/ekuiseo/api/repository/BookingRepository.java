@@ -15,6 +15,10 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
 
     List<Booking> findByPassengerIdOrderByCreatedAtDesc(UUID passengerId);
 
+    /** Reservations d un passager, paginees (fiche utilisateur du back-office, GET /api/v1/admin/users/{id}/bookings). */
+    org.springframework.data.domain.Page<Booking> findByPassengerIdOrderByCreatedAtDesc(UUID passengerId,
+            org.springframework.data.domain.Pageable pageable);
+
     /**
      * Variante avec chargement anticipe du trajet, de son conducteur et de son
      * vehicule (JOIN FETCH sur des associations @ManyToOne, donc sans risque de

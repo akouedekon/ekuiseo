@@ -33,6 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -63,6 +64,7 @@ class PayoutServiceTest {
     void setUp() {
         service = new PayoutService(bookingRepository, driverPayoutRepository, driverPayoutItemRepository,
                 userRepository, paymentAccountRepository, payoutMapper, auditService, notificationService, 2000, 24);
+        when(driverPayoutRepository.tryLockBatch(anyLong())).thenReturn(true);
         when(driverPayoutRepository.save(any(DriverPayout.class))).thenAnswer(inv -> {
             DriverPayout p = inv.getArgument(0);
             if (p.getId() == null) p.setId(UUID.randomUUID());
@@ -218,6 +220,89 @@ class PayoutServiceTest {
                 .status(PayoutStatus.PENDING).build();
         when(driverPayoutRepository.findById(noDestination.getId())).thenReturn(Optional.of(noDestination));
         assertThatThrownBy(() -> service.settle(UUID.randomUUID(), noDestination.getId())).isInstanceOf(ConflictException.class);
+    }
+
+    /** Constats F133/F458/F302 : settle depuis PENDING ou FAILED seulement, corps consigne, conducteur prevenu. */
+    @Test
+    void settle_acceptsPendingOrFailed_recordsReferenceAndAmount_andNotifies() {
+        User driver = User.builder().id(UUID.randomUUID()).firstName("Koffi").lastName("A").build();
+        DriverPayout failed = DriverPayout.builder().id(UUID.randomUUID()).driver(driver).amount(5000)
+                .status(PayoutStatus.FAILED).failureReason("Compte inactif").destinationMsisdn("+2290155000001").build();
+        when(driverPayoutRepository.findById(failed.getId())).thenReturn(Optional.of(failed));
+        UUID adminId = UUID.randomUUID();
+
+        PayoutResponse res = service.settle(adminId, failed.getId(), " MP-2026-001 ", 4800L);
+
+        assertThat(res.status()).isEqualTo(PayoutStatus.SETTLED);
+        assertThat(failed.getExternalReference()).isEqualTo("MP-2026-001");
+        assertThat(failed.getSettledAmount()).isEqualTo(4800L);
+        assertThat(failed.getSettledBy()).isEqualTo(adminId);
+        assertThat(failed.getFailureReason()).isNull();
+        assertThat(failed.getSettledAt()).isNotNull();
+        verify(notificationService).notify(eq(driver), eq(NotificationType.PAYOUT_SETTLED), any());
+        verify(auditService).log(eq(adminId), eq("PAYOUT_SETTLED"), eq("driver_payout"), eq(failed.getId()), any());
+
+        // Sans corps : montant regle = montant du lot.
+        DriverPayout pending = DriverPayout.builder().id(UUID.randomUUID()).driver(driver).amount(3000)
+                .status(PayoutStatus.PENDING).destinationMsisdn("+2290155000001").build();
+        when(driverPayoutRepository.findById(pending.getId())).thenReturn(Optional.of(pending));
+        service.settle(adminId, pending.getId());
+        assertThat(pending.getSettledAmount()).isEqualTo(3000L);
+        assertThat(pending.getExternalReference()).isNull();
+    }
+
+    @Test
+    void settle_refusesProcessingLots_andAmountsAboveTheLot() {
+        User driver = User.builder().id(UUID.randomUUID()).build();
+        DriverPayout processing = DriverPayout.builder().id(UUID.randomUUID()).driver(driver).amount(100)
+                .status(PayoutStatus.PROCESSING).destinationMsisdn("+2290155000001").build();
+        when(driverPayoutRepository.findById(processing.getId())).thenReturn(Optional.of(processing));
+        assertThatThrownBy(() -> service.settle(UUID.randomUUID(), processing.getId(), null, null))
+                .isInstanceOf(ConflictException.class);
+
+        DriverPayout pending = DriverPayout.builder().id(UUID.randomUUID()).driver(driver).amount(100)
+                .status(PayoutStatus.PENDING).destinationMsisdn("+2290155000001").build();
+        when(driverPayoutRepository.findById(pending.getId())).thenReturn(Optional.of(pending));
+        assertThatThrownBy(() -> service.settle(UUID.randomUUID(), pending.getId(), null, 150L))
+                .isInstanceOf(bj.ekuiseo.api.common.exception.BadRequestException.class);
+        assertThat(pending.getStatus()).isEqualTo(PayoutStatus.PENDING);
+        verify(notificationService, never()).notify(any(), eq(NotificationType.PAYOUT_SETTLED), any());
+    }
+
+    @Test
+    void fail_marksTheLotFailed_withReason_andNotifies() {
+        User driver = User.builder().id(UUID.randomUUID()).build();
+        DriverPayout pending = DriverPayout.builder().id(UUID.randomUUID()).driver(driver).amount(2600)
+                .status(PayoutStatus.PENDING).destinationMsisdn("+2290155000001").build();
+        when(driverPayoutRepository.findById(pending.getId())).thenReturn(Optional.of(pending));
+        UUID adminId = UUID.randomUUID();
+
+        PayoutResponse res = service.fail(adminId, pending.getId(), "Numero non enregistre chez l operateur");
+
+        assertThat(res.status()).isEqualTo(PayoutStatus.FAILED);
+        assertThat(pending.getFailureReason()).isEqualTo("Numero non enregistre chez l operateur");
+        verify(notificationService).notify(eq(driver), eq(NotificationType.PAYOUT_FAILED), any());
+        verify(auditService).log(eq(adminId), eq("PAYOUT_FAILED"), eq("driver_payout"), eq(pending.getId()), any());
+
+        // Un lot regle ne passe pas en echec ; un motif vide est refuse.
+        DriverPayout settled = DriverPayout.builder().id(UUID.randomUUID()).driver(driver).amount(100)
+                .status(PayoutStatus.SETTLED).build();
+        when(driverPayoutRepository.findById(settled.getId())).thenReturn(Optional.of(settled));
+        assertThatThrownBy(() -> service.fail(adminId, settled.getId(), "x")).isInstanceOf(ConflictException.class);
+        DriverPayout other = DriverPayout.builder().id(UUID.randomUUID()).driver(driver).amount(100)
+                .status(PayoutStatus.PENDING).build();
+        when(driverPayoutRepository.findById(other.getId())).thenReturn(Optional.of(other));
+        assertThatThrownBy(() -> service.fail(adminId, other.getId(), " "))
+                .isInstanceOf(bj.ekuiseo.api.common.exception.BadRequestException.class);
+    }
+
+    /** Constat F303 : deux lancements simultanes ne constituent jamais deux lots. */
+    @Test
+    void runWeeklyBatch_refusesWhenAnotherBatchHoldsTheLock() {
+        when(driverPayoutRepository.tryLockBatch(anyLong())).thenReturn(false);
+
+        assertThatThrownBy(() -> service.runWeeklyBatch(UUID.randomUUID())).isInstanceOf(ConflictException.class);
+        verify(bookingRepository, never()).findDriverIdsWithPayableBookings(any(), any(), any());
     }
 
     @Test

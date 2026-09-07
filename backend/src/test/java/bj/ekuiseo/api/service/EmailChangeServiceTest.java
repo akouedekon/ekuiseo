@@ -55,7 +55,7 @@ class EmailChangeServiceTest {
 
         OtpRequestResponse res = service.request(userId, " nouvelle@example.com ");
 
-        assertThat(res.destination()).isEqualTo("no***@example.com");
+        assertThat(res.destination()).isEqualTo("n***@e***.com");
         assertThat(user.getPendingEmail()).isEqualTo("nouvelle@example.com");
         assertThat(user.getEmail()).isEqualTo("ancienne@example.com");
         assertThat(user.isEmailVerified()).isTrue();
@@ -86,7 +86,7 @@ class EmailChangeServiceTest {
         assertThat(user.isEmailVerified()).isTrue();
         assertThat(mails).hasSize(1);
         assertThat(mails.get(0)[0]).isEqualTo("ancienne@example.com");
-        assertThat(mails.get(0)[2]).contains("no***@example.com");
+        assertThat(mails.get(0)[2]).contains("n***@e***.com");
         verify(auditService).log(eq(userId), eq("USER_EMAIL_CHANGED"), eq("user"), eq(userId), any());
     }
 

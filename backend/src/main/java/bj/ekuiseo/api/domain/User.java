@@ -109,6 +109,17 @@ public class User {
     @Column(name = "deleted_at")
     private Instant deletedAt;
 
+    /** Version des CGU acceptee (V16, constat F509) ; comparee a ekuiseo.terms.version par TermsPolicy. */
+    @Column(name = "terms_version", length = 20)
+    private String termsVersion;
+
+    @Column(name = "terms_accepted_at")
+    private Instant termsAcceptedAt;
+
+    /** Dernier export des donnees personnelles (V16, constat F508) : un par 24 h. */
+    @Column(name = "last_export_at")
+    private Instant lastExportAt;
+
     /**
      * Abonnement Web Push du navigateur (endpoint + cles), au format standard
      * PushSubscriptionJSON. Colonne preparee pour une future implementation Web

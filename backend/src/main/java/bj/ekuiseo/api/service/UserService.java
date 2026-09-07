@@ -64,6 +64,7 @@ public class UserService {
     private final AuditService auditService;
     private final UserMapper userMapper;
     private final VehicleMapper vehicleMapper;
+    private final TermsPolicy termsPolicy;
 
     public UserService(UserRepository userRepository, VehicleRepository vehicleRepository, TripRepository tripRepository,
                         BookingRepository bookingRepository, MessageRepository messageRepository,
@@ -72,7 +73,9 @@ public class UserService {
                         NotificationRepository notificationRepository,
                         IdentityVerificationRepository identityVerificationRepository,
                         DriverPayoutRepository driverPayoutRepository, RefreshTokenService refreshTokenService,
-                        AuditService auditService, UserMapper userMapper, VehicleMapper vehicleMapper) {
+                        AuditService auditService, UserMapper userMapper, VehicleMapper vehicleMapper,
+                        TermsPolicy termsPolicy) {
+        this.termsPolicy = termsPolicy;
         this.userRepository = userRepository;
         this.vehicleRepository = vehicleRepository;
         this.tripRepository = tripRepository;
@@ -294,6 +297,22 @@ public class UserService {
     @Transactional(readOnly = true)
     public UserResponse getMe(UUID userId) {
         return userMapper.toResponse(findUser(userId));
+    }
+
+    /**
+     * Acceptation de la version en vigueur des conditions d utilisation (PATCH /api/v1/me/terms,
+     * constat F509) : 400 si la version transmise n est pas la courante ; horodatee et journalisee.
+     */
+    @Transactional
+    public void acceptTerms(UUID userId, String termsVersion) {
+        termsPolicy.assertCurrent(termsVersion);
+        User user = findUser(userId);
+        String previous = user.getTermsVersion();
+        user.setTermsVersion(termsPolicy.currentVersion());
+        user.setTermsAcceptedAt(Instant.now());
+        userRepository.save(user);
+        auditService.log(userId, "TERMS_ACCEPTED", "user", userId,
+                Map.of("termsVersion", termsPolicy.currentVersion(), "previousVersion", previous == null ? "" : previous));
     }
 
     @Transactional

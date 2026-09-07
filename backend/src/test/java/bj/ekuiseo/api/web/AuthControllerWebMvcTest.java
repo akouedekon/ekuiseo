@@ -48,7 +48,7 @@ class AuthControllerWebMvcTest extends AbstractWebMvcTest {
 
     @Test
     void register_validBody_is202_andServiceReceivesTheRequest() throws Exception {
-        OtpRegisterRequest request = new OtpRegisterRequest(PHONE, "Jean", "Dossou", "jean@example.test");
+        OtpRegisterRequest request = new OtpRegisterRequest(PHONE, "Jean", "Dossou", "jean@example.test", true, "2026-09");
         when(authService.registerWithOtp(request)).thenReturn(new OtpRequestResponse("EMAIL", "je***@example.test"));
 
         mockMvc.perform(fromNewIp(json(post("/api/v1/auth/otp/register"), request)))
@@ -73,7 +73,7 @@ class AuthControllerWebMvcTest extends AbstractWebMvcTest {
     @Test
     void register_withMalformedEmail_is400() throws Exception {
         mockMvc.perform(fromNewIp(json(post("/api/v1/auth/otp/register"),
-                        new OtpRegisterRequest(PHONE, "Jean", "Dossou", "pas-un-email"))))
+                        new OtpRegisterRequest(PHONE, "Jean", "Dossou", "pas-un-email", true, "2026-09"))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("email")));
         verify(authService, never()).registerWithOtp(any());
@@ -81,7 +81,7 @@ class AuthControllerWebMvcTest extends AbstractWebMvcTest {
 
     @Test
     void register_alreadyRegistered_is409() throws Exception {
-        OtpRegisterRequest request = new OtpRegisterRequest(PHONE, "Jean", "Dossou", "jean@example.test");
+        OtpRegisterRequest request = new OtpRegisterRequest(PHONE, "Jean", "Dossou", "jean@example.test", true, "2026-09");
         when(authService.registerWithOtp(request)).thenThrow(new ConflictException("Ce numero est deja inscrit"));
 
         mockMvc.perform(fromNewIp(json(post("/api/v1/auth/otp/register"), request)))
@@ -174,7 +174,7 @@ class AuthControllerWebMvcTest extends AbstractWebMvcTest {
         User user = activeUser();
         when(authService.verifyOtp(request)).thenReturn(new AuthResponse("access.jwt", "refresh.jwt",
                 new UserResponse(user.getId(), PHONE, "jean@example.test", "Jean", "Dossou", null, null,
-                        BigDecimal.ZERO, 0, true, true, false, user.getRole())));
+                        BigDecimal.ZERO, 0, true, true, false, user.getRole(), false)));
 
         mockMvc.perform(fromNewIp(json(post("/api/v1/auth/otp/verify"), request)))
                 .andExpect(status().isOk())

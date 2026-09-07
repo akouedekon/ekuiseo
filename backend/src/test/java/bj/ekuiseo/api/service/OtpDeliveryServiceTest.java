@@ -31,11 +31,11 @@ class OtpDeliveryServiceTest {
         OtpRequestResponse res = service("email", false).deliver("+22997000321", "afi.testeur@example.com", "123456");
 
         assertThat(res.channel()).isEqualTo("EMAIL");
-        assertThat(res.destination()).isEqualTo("af***@example.com");
+        assertThat(res.destination()).isEqualTo("a***@e***.com");
         assertThat(mails).hasSize(1);
         assertThat(mails.get(0)[0]).isEqualTo("afi.testeur@example.com");
         assertThat(mails.get(0)[1]).contains("123456");
-        assertThat(mails.get(0)[2]).contains("123456").contains("5 minutes");
+        assertThat(mails.get(0)[2]).contains("123456").contains("5 minutes").contains("remplace tout code precedent");
         assertThat(sms).isEmpty();
     }
 
@@ -85,8 +85,8 @@ class OtpDeliveryServiceTest {
 
     @Test
     void masqueLesDestinations() {
-        assertThat(OtpDeliveryService.maskEmail("a@gmail.com")).isEqualTo("a***@gmail.com");
-        assertThat(OtpDeliveryService.maskEmail("lakouedekon@gmail.com")).isEqualTo("la***@gmail.com");
+        assertThat(OtpDeliveryService.maskEmail("a@gmail.com")).isEqualTo("a***@g***.com");
+        assertThat(OtpDeliveryService.maskEmail("lakouedekon@gmail.com")).isEqualTo("l***@g***.com");
         assertThat(OtpDeliveryService.maskEmail("sans-arobase")).isEqualTo("***");
         assertThat(OtpDeliveryService.maskPhone("+2290196870371")).isEqualTo("************71");
         assertThat(OtpDeliveryService.maskPhone(null)).isEqualTo("***");

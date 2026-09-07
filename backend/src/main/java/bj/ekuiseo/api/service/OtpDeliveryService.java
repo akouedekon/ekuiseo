@@ -65,10 +65,14 @@ public class OtpDeliveryService {
         Channel channel = resolveChannel(email);
         rateLimiter.assertNotRateLimited(phone);
         if (channel == Channel.EMAIL) {
+            // Constats F540/F512 : un seul code valable a la fois, et une voie pour signaler un
+            // envoi non sollicite.
             mailGateway.send(email.trim(), subject,
                     "Bonjour,\n\n" + intro + "\n\n"
-                            + "Il expire dans 5 minutes. Ne le partagez avec personne : l'equipe Ekuiseo ne vous "
-                            + "le demandera jamais.\n\nSi vous n'etes pas a l'origine de cette demande, ignorez ce message.\n\n"
+                            + "Il expire dans 5 minutes et remplace tout code precedent, qui n'est plus valable. "
+                            + "Ne le partagez avec personne : l'equipe Ekuiseo ne vous le demandera jamais.\n\n"
+                            + "Si vous n'etes pas a l'origine de cette demande, ignorez ce message ; si ces envois se "
+                            + "repetent, signalez-le en repondant a ce courriel.\n\n"
                             + "Ekuiseo - covoiturage au Benin");
             return new OtpRequestResponse("EMAIL", maskEmail(email.trim()));
         }

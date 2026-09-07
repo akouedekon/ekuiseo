@@ -8,6 +8,7 @@ import bj.ekuiseo.api.repository.TripRepository;
 import bj.ekuiseo.api.repository.TripStopRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -50,14 +51,14 @@ public class RecurrenceService {
 
     private final TripRepository tripRepository;
     private final TripStopRepository tripStopRepository;
-    private final SearchAlertMatchService searchAlertMatchService;
+    private final ApplicationEventPublisher eventPublisher;
     private final TransactionTemplate transaction;
 
     public RecurrenceService(TripRepository tripRepository, TripStopRepository tripStopRepository,
-                             SearchAlertMatchService searchAlertMatchService, PlatformTransactionManager transactionManager) {
+                             ApplicationEventPublisher eventPublisher, PlatformTransactionManager transactionManager) {
         this.tripRepository = tripRepository;
         this.tripStopRepository = tripStopRepository;
-        this.searchAlertMatchService = searchAlertMatchService;
+        this.eventPublisher = eventPublisher;
         this.transaction = new TransactionTemplate(transactionManager);
     }
 
@@ -163,7 +164,8 @@ public class RecurrenceService {
                         .priceFromOrigin(stop.getPriceFromOrigin())
                         .build());
             }
-            searchAlertMatchService.notifyMatchingAlerts(occurrence);
+            // Matching des alertes apres commit, hors de cette transaction (constat F527).
+            eventPublisher.publishEvent(new TripPublishedEvent(occurrence.getId()));
             created++;
         }
         return created;

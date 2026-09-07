@@ -19,6 +19,9 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
 
     List<Trip> findByDriverIdOrderByDepartureAtDesc(UUID driverId);
 
+    /** Trajets d un conducteur, pagines (fiche utilisateur du back-office, GET /api/v1/admin/users/{id}/trips). */
+    Page<Trip> findByDriverIdOrderByDepartureAtDesc(UUID driverId, Pageable pageable);
+
     long countByDriverIdAndStatus(UUID driverId, bj.ekuiseo.api.domain.enums.TripStatus status);
 
     long countByDriverId(UUID driverId);
@@ -151,21 +154,36 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
     List<IdCount> countByDriverIds(@Param("ids") List<UUID> ids);
 
     /**
-     * Trajets PUBLISHED correspondant a une alerte de recherche (regle metier n.13) :
-     * origine ET destination a moins de radiusMeters de l'alerte, dans le bon sens (meme
-     * contrainte que {@link #search}, constat F408), et date de depart dans la fenetre de
-     * l'alerte (bornes optionnelles). Utilisee par SearchAlertMatchService juste apres la
-     * publication d'un trajet.
+     * Trajet PUBLISHED correspondant a une alerte de recherche (regle metier n.13) : meme
+     * logique de montee/descente que {@link #search} (constats F115/F409) - les points
+     * candidats sont l origine (position 0), les arrets intermediaires et la destination
+     * (position 1 000 000) ; il faut un point de montee dans le rayon de l origine de
+     * l alerte ET un point de descente de position strictement superieure dans le rayon de
+     * sa destination, chacun plus proche de l extremite qu il sert que de l autre (sens,
+     * constat F408). Conservee pour les verifications ponctuelles ; le matching de masse
+     * passe par SearchAlertRepository#findMatching (une requete pour toutes les alertes).
      */
     @Query(value = """
+            with pts as (
+                select t.origin_point as point, 0 as position from trips t where t.id = :tripId
+                union all
+                select s.point, s.position from trip_stops s where s.trip_id = :tripId
+                union all
+                select t.dest_point, 1000000 from trips t where t.id = :tripId
+            )
             select t.* from trips t
             where t.id = :tripId
-              and ST_DWithin(t.origin_point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography, :radiusMeters)
-              and ST_DWithin(t.dest_point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography, :radiusMeters)
-              and ST_Distance(t.origin_point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography)
-                < ST_Distance(t.origin_point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography)
-              and ST_Distance(t.dest_point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography)
-                < ST_Distance(t.dest_point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography)
+              and exists (
+                  select 1
+                  from pts p1
+                  join pts p2 on p2.position > p1.position
+                  where ST_DWithin(p1.point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography, :radiusMeters)
+                    and ST_DWithin(p2.point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography, :radiusMeters)
+                    and ST_Distance(p1.point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography)
+                      < ST_Distance(p1.point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography)
+                    and ST_Distance(p2.point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography)
+                      < ST_Distance(p2.point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography)
+              )
             """, nativeQuery = true)
     List<Trip> matchesAlertGeography(@Param("tripId") UUID tripId,
                                       @Param("originLat") double originLat, @Param("originLng") double originLng,
@@ -173,53 +191,111 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
                                       @Param("radiusMeters") double radiusMeters);
 
     /**
-     * Recherche geospatiale : trajets dont l'origine ET la destination sont a moins de
-     * radiusMeters des points recherches (ST_DWithin sur les colonnes geography gerees
-     * par trigger), tries par pertinence = distance cumulee + ecart horaire - bonus note
-     * conducteur. Filtre optionnel sur la date (jour civil UTC) et le type de trajet.
-     * Contrainte de sens (constat F408) : l origine du trajet doit etre plus proche de
-     * l origine cherchee que de la destination cherchee, et reciproquement, sans quoi un
-     * trajet Calavi -> Cotonou repondrait a une recherche Cotonou -> Calavi (axe de 10 km,
-     * rayon de 15 km cote front).
+     * Recherche geospatiale (constats F115/F409/F137/F408).
+     *
+     * <p>Points candidats de chaque trajet : son origine (position 0), ses arrets
+     * intermediaires ({@code trip_stops.point}, position i) et sa destination (position
+     * 1 000 000). Un trajet correspond s il existe un point de montee a moins de
+     * {@code radiusMeters} de l origine cherchee ET un point de descente de position
+     * strictement superieure a moins de {@code radiusMeters} de la destination cherchee,
+     * chacun plus proche de l extremite qu il sert que de l autre (sens : un trajet
+     * Calavi -> Cotonou ne repond pas a une recherche Cotonou -> Calavi). Le troncon
+     * apparie (montee, descente, prix) est calcule apres coup par TripService.</p>
+     *
+     * <p>{@code cand} preselectionne, par les index GIST, les trajets a venir dont un point
+     * est proche de l origine cherchee ; {@code pts}/{@code matched} n enumerent que leurs
+     * points. Filtres : type, jour civil, prix maximal (trajet), note minimale et identite
+     * verifiee du conducteur. Tri : {@code sort} vaut DEPARTURE, PRICE ou RATING (constante
+     * liee, jamais concatenee), puis pertinence (distance cumulee - bonus note) et depart.</p>
      */
     @Query(value = """
+            with cand as (
+                select t.id
+                from trips t
+                where t.status = 'PUBLISHED'
+                  and t.departure_at >= :now
+                  and t.seats_available >= :seats
+                  and (cast(:tripType as varchar) is null or t.trip_type = cast(:tripType as varchar))
+                  and (cast(:dateFrom as timestamptz) is null or t.departure_at >= cast(:dateFrom as timestamptz))
+                  and (cast(:dateTo as timestamptz) is null or t.departure_at < cast(:dateTo as timestamptz))
+                  and (cast(:maxPrice as bigint) is null or t.price_per_seat <= cast(:maxPrice as bigint))
+                  and (ST_DWithin(t.origin_point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography, :radiusMeters)
+                       or exists (select 1 from trip_stops s where s.trip_id = t.id
+                                  and ST_DWithin(s.point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography, :radiusMeters)))
+            ),
+            pts as (
+                select t.id as trip_id, t.origin_point as point, 0 as position from trips t join cand c on c.id = t.id
+                union all
+                select s.trip_id, s.point, s.position from trip_stops s join cand c on c.id = s.trip_id
+                union all
+                select t.id, t.dest_point, 1000000 from trips t join cand c on c.id = t.id
+            ),
+            matched as (
+                select distinct p1.trip_id
+                from pts p1
+                join pts p2 on p2.trip_id = p1.trip_id and p2.position > p1.position
+                where ST_DWithin(p1.point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography, :radiusMeters)
+                  and ST_DWithin(p2.point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography, :radiusMeters)
+                  and ST_Distance(p1.point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography)
+                    < ST_Distance(p1.point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography)
+                  and ST_Distance(p2.point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography)
+                    < ST_Distance(p2.point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography)
+            )
             select t.* from trips t
             join users d on d.id = t.driver_id
-            where t.status = 'PUBLISHED'
-              and d.status = 'ACTIVE'
-              and t.departure_at >= :now
-              and t.seats_available >= :seats
-              and (cast(:tripType as varchar) is null or t.trip_type = cast(:tripType as varchar))
-              and (cast(:dateFrom as timestamptz) is null or t.departure_at >= cast(:dateFrom as timestamptz))
-              and (cast(:dateTo as timestamptz) is null or t.departure_at < cast(:dateTo as timestamptz))
-              and ST_DWithin(t.origin_point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography, :radiusMeters)
-              and ST_DWithin(t.dest_point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography, :radiusMeters)
-              and ST_Distance(t.origin_point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography)
-                < ST_Distance(t.origin_point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography)
-              and ST_Distance(t.dest_point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography)
-                < ST_Distance(t.dest_point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography)
+            join matched m on m.trip_id = t.id
+            where d.status = 'ACTIVE'
+              and (cast(:minRating as numeric) is null or d.rating_avg >= cast(:minRating as numeric))
+              and (cast(:verifiedOnly as boolean) = false or d.identity_verified = true)
             order by
+              case when cast(:sort as varchar) = 'PRICE' then t.price_per_seat end asc,
+              case when cast(:sort as varchar) = 'RATING' then coalesce(d.rating_avg, 0) end desc,
+              case when cast(:sort as varchar) = 'DEPARTURE' then t.departure_at end asc,
               (ST_Distance(t.origin_point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography)
                + ST_Distance(t.dest_point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography))
-              - (coalesce(d.rating_avg, 0) * 500)
-              asc
+              - (coalesce(d.rating_avg, 0) * 500) asc,
+              t.departure_at asc
             """,
             countQuery = """
+            with cand as (
+                select t.id
+                from trips t
+                where t.status = 'PUBLISHED'
+                  and t.departure_at >= :now
+                  and t.seats_available >= :seats
+                  and (cast(:tripType as varchar) is null or t.trip_type = cast(:tripType as varchar))
+                  and (cast(:dateFrom as timestamptz) is null or t.departure_at >= cast(:dateFrom as timestamptz))
+                  and (cast(:dateTo as timestamptz) is null or t.departure_at < cast(:dateTo as timestamptz))
+                  and (cast(:maxPrice as bigint) is null or t.price_per_seat <= cast(:maxPrice as bigint))
+                  and (ST_DWithin(t.origin_point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography, :radiusMeters)
+                       or exists (select 1 from trip_stops s where s.trip_id = t.id
+                                  and ST_DWithin(s.point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography, :radiusMeters)))
+            ),
+            pts as (
+                select t.id as trip_id, t.origin_point as point, 0 as position from trips t join cand c on c.id = t.id
+                union all
+                select s.trip_id, s.point, s.position from trip_stops s join cand c on c.id = s.trip_id
+                union all
+                select t.id, t.dest_point, 1000000 from trips t join cand c on c.id = t.id
+            ),
+            matched as (
+                select distinct p1.trip_id
+                from pts p1
+                join pts p2 on p2.trip_id = p1.trip_id and p2.position > p1.position
+                where ST_DWithin(p1.point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography, :radiusMeters)
+                  and ST_DWithin(p2.point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography, :radiusMeters)
+                  and ST_Distance(p1.point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography)
+                    < ST_Distance(p1.point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography)
+                  and ST_Distance(p2.point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography)
+                    < ST_Distance(p2.point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography)
+            )
             select count(*) from trips t
             join users d on d.id = t.driver_id
-            where t.status = 'PUBLISHED'
-              and d.status = 'ACTIVE'
-              and t.departure_at >= :now
-              and t.seats_available >= :seats
-              and (cast(:tripType as varchar) is null or t.trip_type = cast(:tripType as varchar))
-              and (cast(:dateFrom as timestamptz) is null or t.departure_at >= cast(:dateFrom as timestamptz))
-              and (cast(:dateTo as timestamptz) is null or t.departure_at < cast(:dateTo as timestamptz))
-              and ST_DWithin(t.origin_point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography, :radiusMeters)
-              and ST_DWithin(t.dest_point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography, :radiusMeters)
-              and ST_Distance(t.origin_point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography)
-                < ST_Distance(t.origin_point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography)
-              and ST_Distance(t.dest_point, ST_SetSRID(ST_MakePoint(:destLng, :destLat), 4326)::geography)
-                < ST_Distance(t.dest_point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography)
+            join matched m on m.trip_id = t.id
+            where d.status = 'ACTIVE'
+              and (cast(:minRating as numeric) is null or d.rating_avg >= cast(:minRating as numeric))
+              and (cast(:verifiedOnly as boolean) = false or d.identity_verified = true)
+              and cast(:sort as varchar) is not null
             """,
             nativeQuery = true)
     Page<Trip> search(@Param("originLat") double originLat,
@@ -232,6 +308,10 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
                        @Param("dateFrom") Instant dateFrom,
                        @Param("dateTo") Instant dateTo,
                        @Param("now") Instant now,
+                       @Param("sort") String sort,
+                       @Param("maxPrice") Long maxPrice,
+                       @Param("minRating") Double minRating,
+                       @Param("verifiedOnly") boolean verifiedOnly,
                        Pageable pageable);
 
     /** Axe propose en ce moment, pour {@link #findPopularRoutes}. */

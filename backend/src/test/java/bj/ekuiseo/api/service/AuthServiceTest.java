@@ -45,11 +45,17 @@ class AuthServiceTest {
     private final RefreshTokenService refreshTokens = mock(RefreshTokenService.class);
     private final OtpDeliveryService otpDelivery = mock(OtpDeliveryService.class);
     private final UserMapper userMapper = mock(UserMapper.class);
+    private final TermsPolicy termsPolicy = new TermsPolicy("2026-09");
     private AuthService service;
+
+    private static OtpRegisterRequest register(String phone, String firstName, String lastName, String email) {
+        return new OtpRegisterRequest(phone, firstName, lastName, email, true, "2026-09");
+    }
 
     @BeforeEach
     void setUp() {
-        service = new AuthService(userRepository, otpCodes, passwordEncoder, jwtService, refreshTokens, otpDelivery, userMapper);
+        service = new AuthService(userRepository, otpCodes, passwordEncoder, jwtService, refreshTokens, otpDelivery,
+                userMapper, termsPolicy);
         when(passwordEncoder.encode(anyString())).thenReturn("hash");
         when(otpDelivery.resolveChannel(any())).thenReturn(OtpDeliveryService.Channel.EMAIL);
         when(otpDelivery.deliver(anyString(), any(), anyString())).thenReturn(new OtpRequestResponse("EMAIL", "ko***@example.com"));
@@ -64,7 +70,7 @@ class AuthServiceTest {
         when(userRepository.existsByEmailIgnoreCase("koffi@example.com")).thenReturn(false);
 
         OtpRequestResponse res = service.registerWithOtp(
-                new OtpRegisterRequest("+229 01 96 87 03 71", " Koffi ", "Aholou", "koffi@example.com"));
+                register("+229 01 96 87 03 71", " Koffi ", "Aholou", "koffi@example.com"));
 
         assertThat(res.destination()).isEqualTo("ko***@example.com");
         ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
@@ -72,33 +78,54 @@ class AuthServiceTest {
         assertThat(saved.getValue().getPhone()).isEqualTo("+2290196870371");
         assertThat(saved.getValue().getStatus()).isEqualTo(UserStatus.PENDING_VERIFICATION);
         assertThat(saved.getValue().getFirstName()).isEqualTo("Koffi");
+        // Constat F509 : acceptation des CGU horodatee avec la version en vigueur.
+        assertThat(saved.getValue().getTermsVersion()).isEqualTo("2026-09");
+        assertThat(saved.getValue().getTermsAcceptedAt()).isNotNull();
         verify(otpCodes).issue("+2290196870371", "LOGIN", "EMAIL");
         verify(otpDelivery).deliver("+2290196870371", "koffi@example.com", "123456");
     }
 
     @Test
-    void registerWithOtp_reissuesForPendingNumber_andRefusesVerifiedOne() {
+    void registerWithOtp_reissuesForPendingNumber_andRefusesVerifiedOne_withASingleMessage() {
         User pending = User.builder().id(UUID.randomUUID()).phone("+2290196870371").email("ancien@example.com")
                 .firstName("X").lastName("Y").passwordHash("x").status(UserStatus.PENDING_VERIFICATION).build();
         when(userRepository.findByPhone("+2290196870371")).thenReturn(Optional.of(pending));
         when(userRepository.existsByEmailIgnoreCaseAndIdNot("koffi@example.com", pending.getId())).thenReturn(false);
 
-        service.registerWithOtp(new OtpRegisterRequest("0196870371", "Koffi", "Aholou", "koffi@example.com"));
+        service.registerWithOtp(register("0196870371", "Koffi", "Aholou", "koffi@example.com"));
         assertThat(pending.getEmail()).isEqualTo("koffi@example.com");
         assertThat(pending.getFirstName()).isEqualTo("Koffi");
+        assertThat(pending.getTermsVersion()).isEqualTo("2026-09");
 
         User verified = User.builder().id(UUID.randomUUID()).phone("+2290197000322").email("a@example.com")
                 .emailVerified(true).passwordHash("x").status(UserStatus.ACTIVE).build();
         when(userRepository.findByPhone("+2290197000322")).thenReturn(Optional.of(verified));
+        assertThatThrownBy(() -> service.registerWithOtp(register("+2290197000322", "Koffi", "Aholou", "autre@example.com")))
+                .isInstanceOf(ConflictException.class).hasMessage(AuthService.ALREADY_USED);
+
+        // Un e-mail deja pris produit exactement le meme message (constat F512 : pas d enumeration).
+        when(userRepository.findByPhone("+2290197000323")).thenReturn(Optional.empty());
+        when(userRepository.existsByEmailIgnoreCase("a@example.com")).thenReturn(true);
+        assertThatThrownBy(() -> service.registerWithOtp(register("+2290197000323", "Koffi", "Aholou", "a@example.com")))
+                .isInstanceOf(ConflictException.class).hasMessage(AuthService.ALREADY_USED);
+    }
+
+    @Test
+    void registerWithOtp_requiresCurrentTermsVersion_andAcceptance() {
+        when(userRepository.findByPhone("+2290196870371")).thenReturn(Optional.empty());
+
         assertThatThrownBy(() -> service.registerWithOtp(
-                new OtpRegisterRequest("+2290197000322", "Koffi", "Aholou", "autre@example.com")))
-                .isInstanceOf(ConflictException.class);
+                new OtpRegisterRequest("+2290196870371", "Koffi", "Aholou", "koffi@example.com", true, "2025-01")))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("2026-09");
+        assertThatThrownBy(() -> service.registerWithOtp(
+                new OtpRegisterRequest("+2290196870371", "Koffi", "Aholou", "koffi@example.com", false, "2026-09")))
+                .isInstanceOf(BadRequestException.class);
+        verify(userRepository, never()).save(any());
     }
 
     @Test
     void registerWithOtp_rejectsLegacyEightDigitNumbers() {
-        assertThatThrownBy(() -> service.registerWithOtp(
-                new OtpRegisterRequest("+22997000322", "Koffi", "Aholou", "koffi@example.com")))
+        assertThatThrownBy(() -> service.registerWithOtp(register("+22997000322", "Koffi", "Aholou", "koffi@example.com")))
                 .isInstanceOf(BadRequestException.class).hasMessageContaining("10 chiffres");
         verify(userRepository, never()).save(any());
     }

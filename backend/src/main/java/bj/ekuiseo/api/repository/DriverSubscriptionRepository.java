@@ -27,4 +27,11 @@ public interface DriverSubscriptionRepository extends JpaRepository<DriverSubscr
 
     /** Abonnements jamais payes (PENDING_PAYMENT) plus anciens que before, a expirer. */
     List<DriverSubscription> findByStatusAndCreatedAtBefore(SubscriptionStatus status, Instant before);
+
+    /** Abonnements ACTIVE dont la periode est echue (SubscriptionLifecycleScheduler). */
+    List<DriverSubscription> findByStatusAndCurrentPeriodEndBefore(SubscriptionStatus status, Instant before);
+
+    /** Abonnements ACTIVE arrivant a echeance dans la fenetre, jamais rappeles (V16). */
+    List<DriverSubscription> findByStatusAndCurrentPeriodEndBetweenAndExpiringNotifiedAtIsNull(
+            SubscriptionStatus status, Instant from, Instant to);
 }

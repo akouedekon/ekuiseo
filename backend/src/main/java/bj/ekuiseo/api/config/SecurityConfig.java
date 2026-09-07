@@ -49,6 +49,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers("/api/v1/payments/kkiapay/webhook").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/trips/search", "/api/v1/trips/*", "/api/v1/trips/*/stops").permitAll()
+                        // Apercu de partage (Open Graph) servi aux robots WhatsApp/Facebook (ShareController, constat F341).
+                        .requestMatchers(HttpMethod.GET, "/share/trips/*").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/users/*", "/api/v1/users/*/reviews").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/geo/search").permitAll()
                         // Actuator : health et info restent publics (sondes de disponibilite standard),

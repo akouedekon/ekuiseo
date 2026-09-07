@@ -24,8 +24,13 @@ public final class NotificationTemplates {
     }
 
     private static final String SIGNATURE = "\n\nEkuiseo - covoiturage au Benin";
+    /** Adresse publique de l application, pour les liens des e-mails (le meme domaine que ShareController). */
+    static final String PUBLIC_BASE_URL = "https://ekuiseo.com";
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter
             .ofPattern("EEEE d MMMM yyyy 'a' HH:mm", Locale.FRENCH).withZone(Tz.BENIN);
+    /** Forme courte pour un objet d e-mail : « sam. 12 sept. 07:30 ». */
+    private static final DateTimeFormatter SHORT_DATE_TIME = DateTimeFormatter
+            .ofPattern("EEE d MMM HH:mm", Locale.FRENCH).withZone(Tz.BENIN);
 
     private NotificationTemplates() {
     }
@@ -75,7 +80,11 @@ public final class NotificationTemplates {
             case BOOKING_CANCELLED: {
                 String by = str(p, "cancelledBy");
                 String body;
-                if ("PASSENGER".equals(by)) {
+                if ("PASSENGER".equals(by) && Boolean.TRUE.equals(p.get("forPassenger"))) {
+                    // Accuse de reception adresse au passager lui-meme, avec le sort de son acompte (constat F037).
+                    body = "Vous avez annule votre reservation" + (tripLine.isEmpty() ? "" : " sur le trajet " + tripLine) + "."
+                            + refundLine(p);
+                } else if ("PASSENGER".equals(by)) {
                     body = "Un passager a annule sa reservation" + (has(p, "seats") ? " (" + number(p, "seats") + " place(s))" : "")
                             + " sur votre trajet" + (tripLine.isEmpty() ? "" : " " + tripLine) + ". Les places sont de nouveau disponibles.";
                 } else if ("DRIVER".equals(by)) {
@@ -123,20 +132,81 @@ public final class NotificationTemplates {
                         "Un membre vient de vous laisser un avis" + (has(p, "rating") ? " (" + number(p, "rating") + "/5)" : "")
                                 + ". Retrouvez-le sur votre profil.",
                         "Ekuiseo : vous avez recu un nouvel avis.");
-            case SEARCH_ALERT_MATCH:
-                return finish("Un trajet correspond a votre alerte",
-                        "Un nouveau trajet" + (tripLine.isEmpty() ? "" : " " + tripLine) + " vient d'etre publie et correspond "
-                                + "a votre alerte de recherche. Les places partent vite : reservez depuis l'application.",
+            case SEARCH_ALERT_MATCH: {
+                // Constat F523 : objet explicite (« Un trajet Cotonou -> Bohicon, sam. 12 sept. 07:30 ») et lien direct.
+                String shortWhen = shortInstant(p, "departureAt");
+                String subject = "Un trajet" + (route.isEmpty() ? " correspond a votre alerte" : " " + route)
+                        + (shortWhen.isEmpty() ? "" : ", " + shortWhen);
+                String link = tripLink(p);
+                String body = "Un nouveau trajet" + (tripLine.isEmpty() ? "" : " " + tripLine) + " vient d'etre publie et correspond "
+                        + "a votre alerte de recherche."
+                        + (has(p, "pricePerSeatFcfa") ? "\nPrix par place : " + money(p, "pricePerSeatFcfa") + "." : "")
+                        + (has(p, "seatsAvailable") ? "\nPlaces disponibles : " + number(p, "seatsAvailable") + "." : "")
+                        + "\n\nLes places partent vite : reservez depuis l'application"
+                        + (link.isEmpty() ? "." : " : " + link);
+                return finish(subject, body,
                         "Ekuiseo : un trajet" + (route.isEmpty() ? "" : " " + route) + " correspond a votre alerte, reservez vite.");
+            }
+            case BOOKING_EXPIRED:
+                return finish("Reservation expiree : acompte non recu",
+                        "Votre reservation" + (tripLine.isEmpty() ? "" : " sur le trajet " + tripLine) + " a expire : l'acompte n'a pas ete "
+                                + "recu dans les " + (has(p, "ttlMinutes") ? number(p, "ttlMinutes") : 20) + " minutes suivant sa creation. "
+                                + "Les places ont ete remises a disposition des autres passagers."
+                                + "\n\nSi le trajet vous interesse toujours, vous pouvez le reserver de nouveau depuis l'application.",
+                        "Ekuiseo : votre reservation a expire (acompte non recu), les places ont ete liberees.");
+            case SUBSCRIPTION_EXPIRING: {
+                String until = instant(p, "currentPeriodEnd");
+                return finish("Votre abonnement conducteur expire bientot",
+                        "Votre abonnement conducteur arrive a echeance" + (until.isEmpty() ? " dans 3 jours." : " le " + until + ".")
+                                + "\n\nRenouvelez-le des maintenant depuis Mon compte > Abonnement : la nouvelle periode demarrera "
+                                + "a la fin de l'actuelle, sans interruption. Sans renouvellement, la commission de service "
+                                + "s'appliquera de nouveau a vos trajets.",
+                        "Ekuiseo : votre abonnement conducteur expire" + (until.isEmpty() ? " bientot" : " le " + until)
+                                + ", renouvelez-le depuis l'application.");
+            }
+            case SUBSCRIPTION_EXPIRED:
+                return finish("Votre abonnement conducteur a expire",
+                        "Votre abonnement conducteur est arrive a echeance. La commission de service s'applique de nouveau "
+                                + "aux reservations de vos trajets."
+                                + "\n\nVous pouvez souscrire un nouvel abonnement a tout moment depuis Mon compte > Abonnement.",
+                        "Ekuiseo : votre abonnement conducteur a expire, la commission s'applique de nouveau.");
+            case PAYOUT_SETTLED: {
+                String destination = str(p, "destination");
+                String reference = str(p, "externalReference");
+                return finish("Reversement effectue",
+                        "Votre reversement" + (has(p, "amountFcfa") ? " de " + money(p, "amountFcfa") : "") + " a ete vire"
+                                + (destination.isEmpty() ? " sur votre compte mobile money." : " sur le compte " + destination + ".")
+                                + (reference.isEmpty() ? "" : "\nReference du virement : " + reference + ".")
+                                + "\n\nRetrouvez le detail dans Mon compte > Revenus.",
+                        "Ekuiseo : reversement" + (has(p, "amountFcfa") ? " de " + money(p, "amountFcfa") : "") + " effectue sur votre compte mobile money.");
+            }
+            case PAYOUT_FAILED:
+                return finish("Reversement en echec",
+                        "Le virement de votre reversement" + (has(p, "amountFcfa") ? " de " + money(p, "amountFcfa") : "")
+                                + " n'a pas abouti." + reasonLine(p)
+                                + "\n\nVerifiez votre compte mobile money dans Mon compte > Mobile money ; notre equipe relancera "
+                                + "le virement des que possible.",
+                        "Ekuiseo : le virement de votre reversement n'a pas abouti, verifiez votre compte mobile money.");
+            case TERMS_UPDATED:
+                return finish("Nos conditions d'utilisation evoluent",
+                        "Les conditions d'utilisation d'Ekuiseo ont ete mises a jour"
+                                + (has(p, "termsVersion") ? " (version " + str(p, "termsVersion") + ")" : "") + ". "
+                                + "Elles vous seront presentees a votre prochaine connexion : leur acceptation est necessaire "
+                                + "pour continuer a utiliser le service.",
+                        "Ekuiseo : nos conditions d'utilisation ont change, elles vous seront presentees a la prochaine connexion.");
             case SUBSCRIPTION_ACTIVATED:
                 return finish("Votre abonnement conducteur est actif",
                         "Votre abonnement conducteur est actif pour 30 jours : aucune commission n'est prelevee sur vos trajets "
                                 + "pendant cette periode.",
                         "Ekuiseo : votre abonnement conducteur est actif, vous ne payez plus de commission ce mois-ci.");
             case REPORT_RECEIVED:
-                return finish("Signalement recu",
-                        "Nous avons bien recu votre signalement. La moderation l'examinera et vous tiendra informe de son issue.",
-                        "Ekuiseo : votre signalement a bien ete recu.");
+                // Adressee a la personne visee (constat F550), sans jamais reveler l identite de l auteur.
+                return finish("Un signalement vous concerne",
+                        "Un membre a adresse un signalement a la moderation" + (has(p, "reason") ? " (motif : " + reasonLabel(str(p, "reason")) + ")" : "")
+                                + " au sujet de l'un de vos trajets ou de votre profil."
+                                + "\n\nLa moderation examine chaque signalement avec les deux parties ; vous n'avez rien a faire "
+                                + "pour l'instant. Si vous souhaitez apporter des precisions, repondez a ce message.",
+                        "Ekuiseo : un signalement vous concerne, la moderation l'examine.");
             case PAYMENT_REFUND_PENDING: {
                 boolean manual = Boolean.TRUE.equals(p.get("manual"));
                 String body = "Un remboursement" + (has(p, "amountFcfa") ? " de " + money(p, "amountFcfa") : "") + " est en cours"
@@ -230,7 +300,34 @@ public final class NotificationTemplates {
         if (has(p, "retainedAmountFcfa") && number(p, "retainedAmountFcfa") > 0) {
             line += " ; " + money(p, "retainedAmountFcfa") + " sont retenus (annulation tardive)";
         }
-        return line + ".";
+        line += ".";
+        // Constat F037 : un remboursement partiel est traite a la main par le back-office (l API
+        // Kkiapay ne fait pas de partiel) ; le passager doit connaitre le delai.
+        if ("MANUAL_REQUIRED".equals(str(p, "refundStatus"))) {
+            line += "\nCe remboursement est traite manuellement par notre equipe : il vous parviendra sous 5 jours ouvres.";
+        } else if ("REQUESTED".equals(str(p, "refundStatus"))) {
+            line += "\nIl est en cours aupres de votre operateur mobile money et apparait generalement sous 48 heures.";
+        }
+        return line;
+    }
+
+    /** Lien direct vers le trajet (constat F523) quand le payload porte tripId ; vide sinon. */
+    private static String tripLink(Map<String, Object> p) {
+        String tripId = str(p, "tripId");
+        return tripId.isEmpty() ? "" : PUBLIC_BASE_URL + "/trips/" + tripId;
+    }
+
+    /** Libelle lisible d un motif de signalement ; le code brut si inconnu. */
+    private static String reasonLabel(String code) {
+        switch (code.toUpperCase()) {
+            case "NO_SHOW": return "absence au depart";
+            case "DANGEROUS_DRIVING": return "conduite dangereuse";
+            case "HARASSMENT": return "comportement inapproprie";
+            case "FRAUD": return "suspicion de fraude";
+            case "VEHICLE_MISMATCH": return "vehicule different de l'annonce";
+            case "OTHER": return "autre";
+            default: return code;
+        }
     }
 
     private static String reasonLine(Map<String, Object> p) {
@@ -276,10 +373,18 @@ public final class NotificationTemplates {
 
     /** Instant ISO du payload formate a l heure du Benin ; la valeur brute si elle n est pas un instant. */
     private static String instant(Map<String, Object> p, String key) {
+        return formatInstant(p, key, DATE_TIME);
+    }
+
+    private static String shortInstant(Map<String, Object> p, String key) {
+        return formatInstant(p, key, SHORT_DATE_TIME);
+    }
+
+    private static String formatInstant(Map<String, Object> p, String key, DateTimeFormatter formatter) {
         String raw = str(p, key);
         if (raw.isEmpty()) return "";
         try {
-            return DATE_TIME.format(Instant.parse(raw));
+            return formatter.format(Instant.parse(raw));
         } catch (DateTimeException | IllegalArgumentException e) {
             return raw;
         }

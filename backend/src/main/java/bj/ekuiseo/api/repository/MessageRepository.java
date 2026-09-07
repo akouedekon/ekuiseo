@@ -16,6 +16,9 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
 
     Optional<Message> findFirstByConversationIdOrderByCreatedAtDesc(UUID conversationId);
 
+    /** Messages envoyes par un utilisateur (export de ses donnees, UserDataExportService). */
+    List<Message> findBySenderIdOrderByCreatedAtAsc(UUID senderId);
+
     /** Anonymisation d un compte (UserService#anonymize) : le contenu des messages envoyes est efface, la ligne reste. */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update Message m set m.body = :body where m.sender.id = :senderId")

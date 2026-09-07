@@ -110,4 +110,19 @@ class IdentityVerificationServiceTest {
         verify(repository, never()).save(any());
         verify(auditService, never()).log(any(), any(), any(), any(), any());
     }
+
+    /** Constat F604 : « b 123 4567 » et « B1234567 » sont la meme piece. */
+    @Test
+    void documentNumber_isNormalizedBeforeSaving() {
+        when(repository.findByUserId(user.getId())).thenReturn(Optional.empty());
+
+        service.submit(user.getId(), new SubmitIdentityRequest(IdentityDocumentType.CNI, " b 123\t4567 "));
+
+        ArgumentCaptor<IdentityVerification> saved = ArgumentCaptor.forClass(IdentityVerification.class);
+        verify(repository).save(saved.capture());
+        assertThat(saved.getValue().getDocumentNumber()).isEqualTo("B1234567");
+        assertThat(IdentityVerificationService.normalizeDocumentNumber(null)).isEmpty();
+        assertThatThrownBy(() -> service.submit(user.getId(), new SubmitIdentityRequest(IdentityDocumentType.CNI, "   ")))
+                .isInstanceOf(bj.ekuiseo.api.common.exception.BadRequestException.class);
+    }
 }

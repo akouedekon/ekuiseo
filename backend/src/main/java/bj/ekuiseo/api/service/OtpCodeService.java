@@ -1,6 +1,7 @@
 package bj.ekuiseo.api.service;
 
 import bj.ekuiseo.api.common.exception.BadRequestException;
+import bj.ekuiseo.api.common.exception.TooManyRequestsException;
 import bj.ekuiseo.api.domain.OtpCode;
 import bj.ekuiseo.api.repository.OtpCodeRepository;
 import org.springframework.beans.factory.annotation.Value;
@@ -9,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 
@@ -17,6 +19,11 @@ import java.time.temporal.ChronoUnit;
  * compteur d essais persistant. Partage par la connexion ({@code LOGIN}) et le
  * changement d e-mail ({@code CHANGE_EMAIL}) et la suppression du compte
  * ({@code DELETE_ACCOUNT}) : un code emis pour un usage ne vaut jamais pour un autre.
+ *
+ * <p>Phase 2 (constats F540/F512) : emettre un code invalide les codes actifs du meme
+ * numero pour le meme usage (un seul code valable a la fois, le dernier), et un numero ne
+ * recoit pas plus de {@code ekuiseo.otp.max-per-day} codes par 24 h, compte en base
+ * (429) - en plus du limiteur glissant en memoire de OtpRateLimiter.</p>
  */
 @Service
 public class OtpCodeService {
@@ -25,29 +32,44 @@ public class OtpCodeService {
     public static final String PURPOSE_CHANGE_EMAIL = "CHANGE_EMAIL";
     /** Confirmation de la suppression du compte (AccountDeletionService, constat F507). */
     public static final String PURPOSE_DELETE_ACCOUNT = "DELETE_ACCOUNT";
+    static final Duration DAILY_WINDOW = Duration.ofHours(24);
 
     private final OtpCodeRepository otpCodeRepository;
     private final PasswordEncoder passwordEncoder;
     private final int maxAttempts;
+    private final int maxPerDay;
     private final SecureRandom random = new SecureRandom();
 
     public OtpCodeService(OtpCodeRepository otpCodeRepository, PasswordEncoder passwordEncoder,
-                          @Value("${ekuiseo.sms.otp.max-attempts:5}") int maxAttempts) {
+                          @Value("${ekuiseo.sms.otp.max-attempts:5}") int maxAttempts,
+                          @Value("${ekuiseo.otp.max-per-day:20}") int maxPerDay) {
         this.otpCodeRepository = otpCodeRepository;
         this.passwordEncoder = passwordEncoder;
         this.maxAttempts = maxAttempts;
+        this.maxPerDay = maxPerDay;
     }
 
-    /** Genere, hache et enregistre un code ; renvoie le code en clair pour l envoi (jamais journalise). */
+    /**
+     * Genere, hache et enregistre un code ; renvoie le code en clair pour l envoi (jamais
+     * journalise). Les codes actifs du meme (numero, usage) sont invalides d abord ; 429 au
+     * dela du plafond quotidien du numero.
+     */
     @Transactional
     public String issue(String phone, String purpose, String channel) {
+        Instant now = Instant.now();
+        long issuedToday = otpCodeRepository.countByPhoneAndCreatedAtAfter(phone, now.minus(DAILY_WINDOW));
+        if (issuedToday >= maxPerDay) {
+            throw new TooManyRequestsException("Trop de codes demandes pour ce numero aujourd hui : reessayez demain "
+                    + "ou contactez le support");
+        }
+        otpCodeRepository.consumeActive(phone, purpose, now);
         String code = String.format("%06d", random.nextInt(1_000_000));
         OtpCode otp = OtpCode.builder()
                 .phone(phone)
                 .codeHash(passwordEncoder.encode(code))
                 .purpose(purpose)
                 .channel(channel)
-                .expiresAt(Instant.now().plus(5, ChronoUnit.MINUTES))
+                .expiresAt(now.plus(5, ChronoUnit.MINUTES))
                 .build();
         otpCodeRepository.save(otp);
         return code;

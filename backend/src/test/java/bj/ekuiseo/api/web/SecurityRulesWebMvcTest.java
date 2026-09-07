@@ -55,6 +55,8 @@ class SecurityRulesWebMvcTest extends AbstractWebMvcTest {
     private AccountDeletionService accountDeletionService;
     @MockitoBean
     private PayoutService payoutService;
+    @MockitoBean
+    private bj.ekuiseo.api.service.UserDataExportService userDataExportService;
 
     @Test
     void anonymous_onProtectedRoute_is401ProblemJson() throws Exception {
@@ -190,6 +192,6 @@ class SecurityRulesWebMvcTest extends AbstractWebMvcTest {
 
     private static UserResponse userResponse(User user) {
         return new UserResponse(user.getId(), user.getPhone(), user.getEmail(), user.getFirstName(), user.getLastName(),
-                null, null, BigDecimal.ZERO, 0, true, true, false, user.getRole());
+                null, null, BigDecimal.ZERO, 0, true, true, false, user.getRole(), false);
     }
 }

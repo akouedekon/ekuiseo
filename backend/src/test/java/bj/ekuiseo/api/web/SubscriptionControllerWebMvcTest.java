@@ -51,7 +51,7 @@ class SubscriptionControllerWebMvcTest extends AbstractWebMvcTest {
         User driver = activeUser();
         Instant end = Instant.now().plus(20, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
         when(subscriptionService.getStatus(driver.getId())).thenReturn(
-                new SubscriptionResponse(UUID.randomUUID(), 2000, SubscriptionStatus.ACTIVE, true, Instant.now(), end));
+                new SubscriptionResponse(UUID.randomUUID(), 2000, SubscriptionStatus.ACTIVE, true, Instant.now(), end, false));
 
         mockMvc.perform(authed(get(PATH), bearerFor(driver)))
                 .andExpect(status().isOk())

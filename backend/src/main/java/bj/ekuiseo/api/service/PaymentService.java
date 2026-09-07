@@ -24,6 +24,7 @@ import bj.ekuiseo.api.repository.BookingRepository;
 import bj.ekuiseo.api.repository.DriverSubscriptionRepository;
 import bj.ekuiseo.api.repository.PaymentRepository;
 import bj.ekuiseo.api.service.kkiapay.KkiapayGateway;
+import bj.ekuiseo.api.service.kkiapay.KkiapayUnavailableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -203,8 +204,10 @@ public class PaymentService {
             throw new BadRequestException("transactionId manquant");
         }
         String txId = transactionId.trim();
-        if (payment.getStatus() == PaymentStatus.SUCCEEDED) {
-            return toStatusResponse(payment); // deja confirme (webhook passe avant nous)
+        if (isTerminal(payment.getStatus())) {
+            // Deja confirme (webhook passe avant nous), rembourse, ou refuse definitivement :
+            // on ne reverifie rien, l etat courant fait foi (constat F130).
+            return toStatusResponse(payment);
         }
 
         // Course avec le webhook : il a pu creer/renseigner un paiement portant deja ce
@@ -223,40 +226,80 @@ public class PaymentService {
         }
 
         KkiapayGateway.VerificationResult verified = kkiapayGateway.verifyTransaction(txId);
-        boolean amountOk = isAmountSufficient(verified, payment.getAmount());
-        boolean succeeded = verified.success() && amountOk;
-        boolean stillPending = !verified.success() && !isFinalFailure(verified);
-
         payment.setProviderTxId(txId);
+        Decision decision = applyVerification(payment, verified, payment.getAmount(), "widget-confirm");
+        paymentRepository.save(payment);
+        applyDecision(payment, verified, decision);
+        return toStatusResponse(payment);
+    }
+
+    /** Issue d une verification Kkiapay (constat F011) : partagee par le widget et le webhook. */
+    enum Decision { SUCCEEDED, FAILED, PENDING }
+
+    /**
+     * Applique le verdict de Kkiapay au paiement, sans decider du sort de la reservation ou de
+     * l abonnement (voir {@link #applyDecision}). Un succes au montant insuffisant est un FAILED
+     * (l argent encaisse sera rembourse) ; un etat non conclusif (transaction en cours, reponse
+     * vide, erreur HTTP transitoire) laisse le paiement INITIATED. Les frais et le detail brut
+     * sont consignes dans tous les cas.
+     */
+    Decision applyVerification(Payment payment, KkiapayGateway.VerificationResult verified, long expectedAmount, String source) {
+        boolean amountOk = isAmountSufficient(verified, expectedAmount);
+        Decision decision;
+        if (verified.success()) {
+            decision = amountOk ? Decision.SUCCEEDED : Decision.FAILED;
+        } else {
+            decision = isFinalFailure(verified) ? Decision.FAILED : Decision.PENDING;
+        }
         payment.setFee(verified.feesFcfa());
         payment.setRawPayload(Map.of(
-                "source", "widget-confirm",
+                "source", source,
                 "verifiedStatus", String.valueOf(verified.rawStatus()),
                 "verifiedAmount", String.valueOf(verified.amountFcfa()),
-                "expectedAmount", String.valueOf(payment.getAmount()),
-                "amountSufficient", String.valueOf(amountOk)));
-        if (succeeded) {
+                "expectedAmount", String.valueOf(expectedAmount),
+                "amountSufficient", String.valueOf(amountOk),
+                "decision", decision.name()));
+        if (decision == Decision.SUCCEEDED) {
             payment.setStatus(PaymentStatus.SUCCEEDED);
-        } else if (!stillPending) {
+        } else if (decision == Decision.FAILED) {
             payment.setStatus(PaymentStatus.FAILED);
         }
-        paymentRepository.save(payment);
+        return decision;
+    }
 
-        if (verified.success() && !amountOk) {
+    /**
+     * Consequences d une decision sur l objet paye : remboursement d un montant insuffisant
+     * (F105), confirmation ou echec de la reservation / de l abonnement. Rien n est fait en
+     * PENDING : le webhook (ou un rejeu du webhook) tranchera.
+     */
+    private void applyDecision(Payment payment, KkiapayGateway.VerificationResult verified, Decision decision) {
+        if (decision == Decision.PENDING) {
+            return;
+        }
+        Booking booking = payment.getBooking();
+        DriverSubscription subscription = payment.getSubscription();
+        if (verified.success() && decision == Decision.FAILED) {
             // L argent a ete encaisse mais ne couvre pas l attendu : il repart au passager (F105).
             log.warn("Paiement Kkiapay {} d un montant insuffisant ({} F verifies pour {} F attendus) : non confirme, remboursement demande.",
-                    txId, verified.amountFcfa(), payment.getAmount());
+                    payment.getProviderTxId(), verified.amountFcfa(), payment.getAmount());
             refundService.requestForOrphanPayment(payment, booking != null ? booking.getPassenger() : null,
                     RefundService.REASON_AMOUNT_INSUFFICIENT, verified.amountFcfa());
         }
-        if (!stillPending) {
-            if (booking != null) {
-                handleBookingPaymentResult(payment, booking, succeeded);
-            } else if (subscription != null) {
-                handleSubscriptionPaymentResult(subscription, succeeded);
-            }
+        boolean succeeded = decision == Decision.SUCCEEDED;
+        if (booking != null) {
+            handleBookingPaymentResult(payment, booking, succeeded);
+        } else if (subscription != null) {
+            handleSubscriptionPaymentResult(subscription, succeeded);
         }
-        return toStatusResponse(payment);
+    }
+
+    /**
+     * Etats qu aucun evenement ulterieur ne doit ecraser (constat F130) : un paiement confirme,
+     * rembourse ou en cours de remboursement, ou refuse definitivement. Un rejeu de webhook sur
+     * l un d eux est ignore et journalise.
+     */
+    static boolean isTerminal(PaymentStatus status) {
+        return status != PaymentStatus.INITIATED;
     }
 
     /**
@@ -294,7 +337,8 @@ public class PaymentService {
     private String mapStatusForClient(Payment payment, Booking booking) {
         return switch (payment.getStatus()) {
             case INITIATED -> booking != null && (booking.getStatus() == BookingStatus.CANCELLED_BY_PASSENGER
-                    || booking.getStatus() == BookingStatus.CANCELLED_BY_DRIVER) ? "EXPIRED" : "PROCESSING";
+                    || booking.getStatus() == BookingStatus.CANCELLED_BY_DRIVER
+                    || booking.getStatus() == BookingStatus.EXPIRED) ? "EXPIRED" : "PROCESSING";
             case SUCCEEDED -> "SUCCEEDED";
             case FAILED -> "FAILED";
             // Argent encaisse mais reservation perdue (ou annulee) : le client doit voir le
@@ -367,14 +411,19 @@ public class PaymentService {
      * effectif de la transaction est reconfirme par un appel serveur a serveur a l'API
      * Kkiapay (regle metier n.3 durcie).
      */
-    @Transactional
+    // noRollbackFor : un etat non conclusif chez Kkiapay est signale en 503 (Kkiapay rejoue le
+    // webhook) SANS perdre l identifiant de transaction inscrit sur le paiement INITIATED.
+    @Transactional(noRollbackFor = KkiapayUnavailableException.class)
     public void handleWebhook(KkiapayWebhookPayload payload) {
         if (payload.transactionId() == null || payload.transactionId().isBlank()) {
             throw new BadRequestException("transactionId manquant dans le webhook Kkiapay");
         }
         var existing = paymentRepository.findByProviderAndProviderTxId(PaymentProvider.KKIAPAY, payload.transactionId());
-        if (existing.isPresent() && existing.get().getStatus() == PaymentStatus.SUCCEEDED) {
-            log.info("Webhook Kkiapay ignore (deja traite) pour transactionId={}", payload.transactionId());
+        if (existing.isPresent() && isTerminal(existing.get().getStatus())) {
+            // Deja confirme, rembourse (ou en cours de remboursement) ou refuse : un rejeu ne doit
+            // jamais ecraser cet etat (constat F130).
+            log.info("Webhook Kkiapay ignore (paiement deja {}) pour transactionId={}",
+                    existing.get().getStatus(), payload.transactionId());
             return;
         }
 
@@ -426,41 +475,24 @@ public class PaymentService {
             return;
         }
 
-        // Meme garde-fou que confirmFromWidget : le montant est fixe par le widget cote
-        // client, donc par l'utilisateur. Un montant verifie inferieur a l'attendu ne
-        // confirme rien (journalise pour remboursement manuel).
-        boolean amountOk = isAmountSufficient(verified, expectedAmount);
-        boolean succeeded = verified.success() && amountOk;
-        boolean insufficient = verified.success() && !amountOk;
-
+        // Meme decision que confirmFromWidget (constat F011) : le montant est fixe par le widget
+        // cote client, donc par l'utilisateur. Un montant verifie inferieur a l'attendu ne
+        // confirme rien ; un etat non conclusif laisse le paiement INITIATED.
         PaymentChannel channel = parseChannel(payload.method());
         if (channel != null) {
             payment.setChannel(channel);
         }
-        payment.setFee(verified.feesFcfa());
-        payment.setRawPayload(Map.of(
-                "source", "webhook",
-                "event", String.valueOf(payload.event()),
-                "webhookClaimedSuccess", String.valueOf(payload.paymentSucceeded()),
-                "verifiedStatus", String.valueOf(verified.rawStatus()),
-                "verifiedAmount", String.valueOf(verified.amountFcfa()),
-                "expectedAmount", String.valueOf(expectedAmount),
-                "amountSufficient", String.valueOf(amountOk)));
-        payment.setStatus(succeeded ? PaymentStatus.SUCCEEDED : PaymentStatus.FAILED);
+        Decision decision = applyVerification(payment, verified, expectedAmount,
+                "webhook:" + payload.event() + ":claimed=" + payload.paymentSucceeded());
         paymentRepository.save(payment);
-        if (insufficient) {
-            log.warn("Webhook Kkiapay {} d un montant insuffisant ({} F verifies pour {} F attendus) : non confirme, remboursement demande.",
-                    payload.transactionId(), verified.amountFcfa(), expectedAmount);
-            refundService.requestForOrphanPayment(payment,
-                    payment.getBooking() != null ? payment.getBooking().getPassenger() : null,
-                    RefundService.REASON_AMOUNT_INSUFFICIENT, verified.amountFcfa());
+        if (decision == Decision.PENDING) {
+            // Ni succes ni echec definitif : on repond 503 pour que Kkiapay rejoue plus tard ;
+            // rien n est notifie, l abonnement n est pas touche.
+            log.warn("Webhook Kkiapay non conclusif ({}) pour transactionId={} : paiement laisse INITIATED, rejeu demande",
+                    verified.rawStatus(), payload.transactionId());
+            throw new KkiapayUnavailableException("Verification Kkiapay non conclusive : " + verified.rawStatus(), null);
         }
-
-        if (payment.getBooking() != null) {
-            handleBookingPaymentResult(payment, payment.getBooking(), succeeded);
-        } else {
-            handleSubscriptionPaymentResult(payment.getSubscription(), succeeded);
-        }
+        applyDecision(payment, verified, decision);
     }
 
     private void handleBookingPaymentResult(Payment payment, Booking booking, boolean success) {
@@ -507,16 +539,42 @@ public class PaymentService {
         }
     }
 
+    /**
+     * Activation d un abonnement paye. Renouvellement anticipe (constats F049/F129) : la
+     * nouvelle periode demarre a {@code max(now, currentPeriodEnd)} de l abonnement encore
+     * actif, qui est clos (EXPIRED) au profit du nouveau - l index unique
+     * uq_driver_subscriptions_active n admet qu un ACTIVE par conducteur, et la couverture reste
+     * continue puisque le nouvel abonnement est ACTIVE des maintenant avec une echeance
+     * posterieure a l ancienne.
+     */
     private void handleSubscriptionPaymentResult(DriverSubscription subscription, boolean success) {
         if (success) {
             Instant now = Instant.now();
+            Instant start = now;
+            Optional<DriverSubscription> current = driverSubscriptionRepository.findActive(subscription.getDriver().getId(), now)
+                    .filter(s -> !s.getId().equals(subscription.getId()));
+            if (current.isPresent()) {
+                DriverSubscription previous = current.get();
+                if (previous.getCurrentPeriodEnd() != null && previous.getCurrentPeriodEnd().isAfter(start)) {
+                    start = previous.getCurrentPeriodEnd();
+                }
+                previous.setStatus(SubscriptionStatus.EXPIRED);
+                driverSubscriptionRepository.save(previous);
+                driverSubscriptionRepository.flush();
+            }
             subscription.setStatus(SubscriptionStatus.ACTIVE);
-            subscription.setStartedAt(now);
-            subscription.setCurrentPeriodEnd(now.plus(30, ChronoUnit.DAYS));
+            subscription.setStartedAt(start);
+            subscription.setCurrentPeriodEnd(start.plus(30, ChronoUnit.DAYS));
             driverSubscriptionRepository.save(subscription);
+            boolean renewal = current.isPresent();
             notificationService.notifyCritical(subscription.getDriver(), NotificationType.SUBSCRIPTION_ACTIVATED,
-                    Map.of("subscriptionId", subscription.getId().toString()),
-                    "Ekuiseo : votre abonnement conducteur est actif, vous ne payez plus de commission ce mois-ci.");
+                    NotificationTemplates.payload("subscriptionId", subscription.getId().toString(),
+                            "startedAt", start.toString(), "currentPeriodEnd", subscription.getCurrentPeriodEnd().toString(),
+                            "renewal", renewal),
+                    renewal
+                            ? "Ekuiseo : votre abonnement conducteur est renouvele jusqu au "
+                                    + BookingService.formatLocal(subscription.getCurrentPeriodEnd()) + "."
+                            : "Ekuiseo : votre abonnement conducteur est actif, vous ne payez plus de commission ce mois-ci.");
         } else {
             subscription.setStatus(SubscriptionStatus.CANCELLED);
             driverSubscriptionRepository.save(subscription);

@@ -49,6 +49,10 @@ public class DriverSubscription {
     @Column(name = "current_period_end")
     private Instant currentPeriodEnd;
 
+    /** Rappel J-3 (SUBSCRIPTION_EXPIRING) deja envoye (V16) : jamais deux fois. */
+    @Column(name = "expiring_notified_at")
+    private Instant expiringNotifiedAt;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;

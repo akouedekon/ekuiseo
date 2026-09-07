@@ -28,6 +28,28 @@ public class AsyncConfig {
     public static final String SEARCH_EVENT_EXECUTOR = "searchEventExecutor";
     public static final String REFUND_EXECUTOR = "refundExecutor";
     public static final String NOTIFICATION_EXECUTOR = "notificationExecutor";
+    public static final String ALERT_EXECUTOR = "alertExecutor";
+
+    /**
+     * Matching des alertes de recherche apres publication d un trajet (SearchAlertMatchService,
+     * constat F527). Distinct de searchEventExecutor, dont la politique de rejet abandonne les
+     * taches : ici une file pleine est journalisee mais reste bornee (une alerte manquee est
+     * regrettable, pas critique ; jamais executee dans le fil de la publication).
+     */
+    @Bean(name = ALERT_EXECUTOR)
+    public Executor alertExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setThreadNamePrefix("alerts-");
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(2);
+        executor.setQueueCapacity(2_000);
+        executor.setRejectedExecutionHandler((runnable, pool) ->
+                log.warn("Matching d alerte abandonne : file pleine ({} en attente)", pool.getQueue().size()));
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(10);
+        executor.initialize();
+        return executor;
+    }
 
     /**
      * Envoi des notifications sortantes (e-mail, SMS) apres validation de la transaction

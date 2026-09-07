@@ -143,10 +143,10 @@ class RequestBoundsTest {
                         "originLat"),
                 Arguments.of("alerte datee dans le passe",
                         new TripAlertRequest("Cotonou", 6.37, 2.39, "Bohicon", 7.18, 2.07,
-                                LocalDate.now().minusDays(1), 1, TripType.INTERURBAIN), "date"),
+                                LocalDate.now().minusDays(1), 1, TripType.INTERURBAIN, null), "date"),
                 Arguments.of("alerte avec longitude 181",
                         new TripAlertRequest("Cotonou", 6.37, 181.0, "Bohicon", 7.18, 2.07,
-                                null, 1, TripType.INTERURBAIN), "originLng")
+                                null, 1, TripType.INTERURBAIN, null), "originLng")
         );
     }
 
@@ -154,6 +154,6 @@ class RequestBoundsTest {
     void payloadsWithinBounds_areAccepted() {
         assertThat(validator.validate(new SendMessageRequest("m".repeat(2000)))).isEmpty();
         assertThat(validator.validate(new TripAlertRequest("Cotonou", 6.37, 2.39, "Bohicon", 7.18, 2.07,
-                LocalDate.now(), 1, TripType.INTERURBAIN))).isEmpty();
+                LocalDate.now(), 1, TripType.INTERURBAIN, null))).isEmpty();
     }
 }

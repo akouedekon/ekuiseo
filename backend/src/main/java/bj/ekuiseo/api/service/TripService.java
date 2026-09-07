@@ -25,16 +25,21 @@ import bj.ekuiseo.api.repository.TripRepository;
 import bj.ekuiseo.api.repository.TripStopRepository;
 import bj.ekuiseo.api.repository.UserRepository;
 import bj.ekuiseo.api.repository.VehicleRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
-import java.util.Map;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -44,6 +49,28 @@ public class TripService {
     private static final double DEFAULT_RADIUS_KM = 5.0;
     /** Plancher du rayon effectif (km) : en dessous, une adresse de quartier ne trouverait plus sa ville. */
     static final double MIN_RADIUS_KM = 1.0;
+    /** Un arret intermediaire ne peut etre planifie au-dela de ce delai apres le depart (constat F419). */
+    static final Duration MAX_STOP_DELAY = Duration.ofHours(24);
+    /** Position conventionnelle de la destination parmi les points candidats d un trajet (voir TripRepository#search). */
+    static final int DESTINATION_POSITION = 1_000_000;
+
+    /**
+     * Tri serveur de la recherche (constat F137). {@code DEPARTURE} par defaut ; la valeur est
+     * traduite en une constante sure passee en parametre lie (jamais concatenee dans le SQL).
+     */
+    public enum SearchSort {
+        DEPARTURE, PRICE, RATING;
+
+        public static SearchSort from(String raw) {
+            if (raw == null || raw.isBlank()) return DEPARTURE;
+            switch (raw.trim().toLowerCase(Locale.ROOT)) {
+                case "price": return PRICE;
+                case "rating": return RATING;
+                case "departure": return DEPARTURE;
+                default: throw new BadRequestException("Tri inconnu : " + raw + " (attendu : departure, price ou rating)");
+            }
+        }
+    }
 
     private final TripRepository tripRepository;
     private final TripStopRepository tripStopRepository;
@@ -51,7 +78,7 @@ public class TripService {
     private final VehicleRepository vehicleRepository;
     private final TripMapper tripMapper;
     private final BookingService bookingService;
-    private final SearchAlertMatchService searchAlertMatchService;
+    private final ApplicationEventPublisher eventPublisher;
     private final SearchEventService searchEventService;
     private final RecurrenceService recurrenceService;
     private final BookingRepository bookingRepository;
@@ -60,7 +87,7 @@ public class TripService {
     public TripService(TripRepository tripRepository, TripStopRepository tripStopRepository,
                         UserRepository userRepository, VehicleRepository vehicleRepository,
                         TripMapper tripMapper, BookingService bookingService,
-                        SearchAlertMatchService searchAlertMatchService,
+                        ApplicationEventPublisher eventPublisher,
                         SearchEventService searchEventService, RecurrenceService recurrenceService,
                         BookingRepository bookingRepository, NotificationService notificationService) {
         this.recurrenceService = recurrenceService;
@@ -72,7 +99,7 @@ public class TripService {
         this.vehicleRepository = vehicleRepository;
         this.tripMapper = tripMapper;
         this.bookingService = bookingService;
-        this.searchAlertMatchService = searchAlertMatchService;
+        this.eventPublisher = eventPublisher;
         this.searchEventService = searchEventService;
     }
 
@@ -95,7 +122,9 @@ public class TripService {
         if (req.tripType() == TripType.QUOTIDIEN && (req.recurrenceRule() == null || req.recurrenceRule().isBlank())) {
             throw new BadRequestException("Une regle de recurrence est requise pour un trajet QUOTIDIEN");
         }
-        validatePrices(req.pricePerSeat(), req.stops() == null ? List.of() : req.stops().stream().map(StopRequest::priceFromOrigin).toList());
+        List<StopRequest> stops = req.stops() == null ? List.of() : req.stops();
+        validatePrices(req.pricePerSeat(), stops.stream().map(StopRequest::priceFromOrigin).toList());
+        validateStopTimes(req.departureAt(), stops.stream().map(StopRequest::plannedAt).toList());
         // Une navette QUOTIDIEN est un modele (TEMPLATE, jamais cherchable) : ses occurrences,
         // generees ci-dessous sur 14 jours, sont les seuls trajets reservables (constats F041/F202).
         boolean recurring = req.tripType() == TripType.QUOTIDIEN;
@@ -122,22 +151,20 @@ public class TripService {
                 .build();
         trip = tripRepository.save(trip);
 
-        if (req.stops() != null) {
-            // Position 1..n pour les arrets intermediaires (l'origine du trajet est
-            // conventionnellement la position 0, voir TripStopResponse et GET
-            // /api/v1/trips/{id}/stops) : on demarre donc a 1, pas a 0.
-            int position = 1;
-            for (StopRequest s : req.stops()) {
-                tripStopRepository.save(TripStop.builder()
-                        .trip(trip)
-                        .position(position++)
-                        .label(s.label())
-                        .lat(s.lat())
-                        .lng(s.lng())
-                        .plannedAt(s.plannedAt())
-                        .priceFromOrigin(s.priceFromOrigin())
-                        .build());
-            }
+        // Position 1..n pour les arrets intermediaires (l'origine du trajet est
+        // conventionnellement la position 0, voir TripStopResponse et GET
+        // /api/v1/trips/{id}/stops) : on demarre donc a 1, pas a 0.
+        int position = 1;
+        for (StopRequest s : stops) {
+            tripStopRepository.save(TripStop.builder()
+                    .trip(trip)
+                    .position(position++)
+                    .label(s.label())
+                    .lat(s.lat())
+                    .lng(s.lng())
+                    .plannedAt(s.plannedAt())
+                    .priceFromOrigin(s.priceFromOrigin())
+                    .build());
         }
 
         if (recurring) {
@@ -148,7 +175,9 @@ public class TripService {
             }
             return tripMapper.toResponse(trip).withGeneratedOccurrences(generated);
         }
-        searchAlertMatchService.notifyMatchingAlerts(trip);
+        // Matching des alertes de recherche apres commit, en asynchrone (constat F527) : un
+        // echec du matching ne fait jamais echouer la publication.
+        eventPublisher.publishEvent(new TripPublishedEvent(trip.getId()));
         return tripMapper.toResponse(trip);
     }
 
@@ -193,6 +222,38 @@ public class TripService {
                 throw new BadRequestException("Le prix jusqu a l arret " + position + " doit etre au moins celui de l arret precedent");
             }
             previous = p;
+            position++;
+        }
+    }
+
+    /**
+     * Heures de passage des arrets (constat F419) : facultatives, mais quand elles sont
+     * donnees elles doivent tomber dans [depart, depart + 24 h] et croitre strictement avec
+     * la position. Un arret « avant le depart » ou deux arrets a la meme minute sont des
+     * erreurs de saisie qui rendraient l estimation d arrivee absurde pour le passager.
+     */
+    static void validateStopTimes(Instant departureAt, List<Instant> plannedAts) {
+        if (departureAt == null) {
+            return;
+        }
+        Instant latest = departureAt.plus(MAX_STOP_DELAY);
+        Instant previous = null;
+        int position = 1;
+        for (Instant plannedAt : plannedAts) {
+            if (plannedAt != null) {
+                if (plannedAt.isBefore(departureAt)) {
+                    throw new BadRequestException("L heure de passage a l arret " + position + " est anterieure au depart");
+                }
+                if (plannedAt.isAfter(latest)) {
+                    throw new BadRequestException("L heure de passage a l arret " + position
+                            + " est a plus de 24 h du depart : verifiez la date");
+                }
+                if (previous != null && !plannedAt.isAfter(previous)) {
+                    throw new BadRequestException("L heure de passage a l arret " + position
+                            + " doit etre posterieure a celle de l arret precedent");
+                }
+                previous = plannedAt;
+            }
             position++;
         }
     }
@@ -390,14 +451,24 @@ public class TripService {
      * Seule la premiere page compte comme une recherche - feuilleter les resultats
      * n'est pas chercher a nouveau.
      *
+     * <p>Phase 2 (constats F137, F115/F409) : tri et filtres executes en SQL ; les arrets
+     * intermediaires font partie des points candidats, et le troncon apparie (montee,
+     * descente, prix du troncon) est renseigne sur chaque resultat qui passe par un arret,
+     * en une requete {@code trip_stops} par page.</p>
+     *
      * @param requesterId utilisateur connecte, ou null (endpoint public)
      * @param originLabel libelle tape par le passager, optionnel (n'influence pas la
      *                    recherche, qui est purement geographique ; ne sert qu'a la trace)
+     * @param sort        departure (defaut), price ou rating
+     * @param maxPrice    prix par place maximal (FCFA), optionnel
+     * @param minRating   note minimale du conducteur, optionnelle
+     * @param verifiedOnly ne garder que les conducteurs a identite verifiee
      */
     @Transactional(readOnly = true)
     public Page<TripResponse> search(UUID requesterId, String originLabel, String destLabel,
                                       double originLat, double originLng, double destLat, double destLng,
                                       LocalDate date, int seats, Double radiusKm, TripType tripType,
+                                      String sort, Long maxPrice, Double minRating, Boolean verifiedOnly,
                                       Pageable pageable) {
         double effectiveRadiusKm = effectiveRadiusKm(radiusKm != null ? radiusKm : DEFAULT_RADIUS_KM,
                 originLat, originLng, destLat, destLng);
@@ -405,15 +476,114 @@ public class TripService {
         // Jour civil du Benin (constat F415) ; les trajets deja partis sont exclus par la requete.
         Instant dateFrom = date != null ? date.atStartOfDay(Tz.BENIN).toInstant() : null;
         Instant dateTo = date != null ? date.plusDays(1).atStartOfDay(Tz.BENIN).toInstant() : null;
+        if (maxPrice != null && maxPrice <= 0) {
+            throw new BadRequestException("Le prix maximal doit etre superieur a 0 F");
+        }
+        if (minRating != null && (minRating < 0 || minRating > 5)) {
+            throw new BadRequestException("La note minimale doit etre comprise entre 0 et 5");
+        }
+        SearchSort searchSort = SearchSort.from(sort);
         Page<Trip> page = tripRepository.search(originLat, originLng, destLat, destLng, radiusMeters, seats,
-                tripType != null ? tripType.name() : null, dateFrom, dateTo, Instant.now(), pageable);
+                tripType != null ? tripType.name() : null, dateFrom, dateTo, Instant.now(),
+                searchSort.name(), maxPrice, minRating, Boolean.TRUE.equals(verifiedOnly), pageable);
         if (pageable.getPageNumber() == 0) {
             searchEventService.record(requesterId,
                     new SearchEventService.SearchRequest(originLabel, originLat, originLng,
                             destLabel, destLat, destLng, date, seats, effectiveRadiusKm, tripType),
                     page.getTotalElements());
         }
-        return page.map(tripMapper::toResponse);
+        List<TripResponse> content = enrichSegments(page.getContent(), originLat, originLng, destLat, destLng, effectiveRadiusKm);
+        return new PageImpl<>(content, pageable, page.getTotalElements());
+    }
+
+    /** Variante historique sans tri ni filtres (tri par depart, aucun filtre). */
+    @Transactional(readOnly = true)
+    public Page<TripResponse> search(UUID requesterId, String originLabel, String destLabel,
+                                      double originLat, double originLng, double destLat, double destLng,
+                                      LocalDate date, int seats, Double radiusKm, TripType tripType,
+                                      Pageable pageable) {
+        return search(requesterId, originLabel, destLabel, originLat, originLng, destLat, destLng, date, seats,
+                radiusKm, tripType, null, null, null, null, pageable);
+    }
+
+    /**
+     * Troncon apparie de chaque resultat (constats F115/F409) : une seule requete
+     * trip_stops pour la page, puis la meme regle qu en SQL en memoire (point de montee
+     * dans le rayon de l origine cherchee, point de descente de position strictement
+     * superieure dans le rayon de la destination, chacun plus proche de l extremite qu il
+     * sert). Les champs restent nuls quand le trajet correspond d origine a destination.
+     */
+    List<TripResponse> enrichSegments(List<Trip> trips, double originLat, double originLng,
+                                      double destLat, double destLng, double radiusKm) {
+        if (trips.isEmpty()) {
+            return List.of();
+        }
+        List<UUID> ids = trips.stream().map(Trip::getId).toList();
+        Map<UUID, List<TripStop>> stopsByTrip = new HashMap<>();
+        for (TripStop stop : tripStopRepository.findByTripIdInOrderByPositionAsc(ids)) {
+            stopsByTrip.computeIfAbsent(stop.getTrip().getId(), k -> new ArrayList<>()).add(stop);
+        }
+        List<TripResponse> result = new ArrayList<>(trips.size());
+        for (Trip trip : trips) {
+            TripResponse base = tripMapper.toResponse(trip);
+            Segment segment = matchSegment(trip, stopsByTrip.getOrDefault(trip.getId(), List.of()),
+                    originLat, originLng, destLat, destLng, radiusKm);
+            result.add(segment == null ? base
+                    : base.withSegment(segment.pickupStopId(), segment.dropoffStopId(), segment.priceFcfa()));
+        }
+        return result;
+    }
+
+    /** Troncon montee -> descente apparie a une recherche ; null quand il s agit du trajet complet. */
+    record Segment(UUID pickupStopId, UUID dropoffStopId, long priceFcfa) {
+    }
+
+    /** Point candidat d un trajet : origine (position 0, prix 0), arret, ou destination (prix par place). */
+    private record Candidate(UUID stopId, int position, double lat, double lng, long priceFromOrigin) {
+    }
+
+    static Segment matchSegment(Trip trip, List<TripStop> stops, double originLat, double originLng,
+                                double destLat, double destLng, double radiusKm) {
+        List<Candidate> candidates = new ArrayList<>(stops.size() + 2);
+        candidates.add(new Candidate(null, 0, trip.getOriginLat(), trip.getOriginLng(), 0L));
+        for (TripStop stop : stops) {
+            candidates.add(new Candidate(stop.getId(), stop.getPosition(), stop.getLat(), stop.getLng(), stop.getPriceFromOrigin()));
+        }
+        candidates.add(new Candidate(null, DESTINATION_POSITION, trip.getDestLat(), trip.getDestLng(), trip.getPricePerSeat()));
+
+        Candidate bestPickup = null;
+        Candidate bestDropoff = null;
+        double bestPickupDistance = Double.MAX_VALUE;
+        for (Candidate pickup : candidates) {
+            double toOrigin = haversineKm(pickup.lat(), pickup.lng(), originLat, originLng);
+            double toDest = haversineKm(pickup.lat(), pickup.lng(), destLat, destLng);
+            if (toOrigin > radiusKm || toOrigin >= toDest || toOrigin >= bestPickupDistance) {
+                continue;
+            }
+            Candidate dropoff = null;
+            double bestDropoffDistance = Double.MAX_VALUE;
+            for (Candidate candidate : candidates) {
+                if (candidate.position() <= pickup.position()) {
+                    continue;
+                }
+                double dToDest = haversineKm(candidate.lat(), candidate.lng(), destLat, destLng);
+                double dToOrigin = haversineKm(candidate.lat(), candidate.lng(), originLat, originLng);
+                if (dToDest <= radiusKm && dToDest < dToOrigin && dToDest < bestDropoffDistance) {
+                    dropoff = candidate;
+                    bestDropoffDistance = dToDest;
+                }
+            }
+            if (dropoff != null) {
+                bestPickup = pickup;
+                bestDropoff = dropoff;
+                bestPickupDistance = toOrigin;
+            }
+        }
+        if (bestPickup == null || (bestPickup.stopId() == null && bestDropoff.stopId() == null)) {
+            return null;
+        }
+        return new Segment(bestPickup.stopId(), bestDropoff.stopId(),
+                Math.max(0L, bestDropoff.priceFromOrigin() - bestPickup.priceFromOrigin()));
     }
 
     /**

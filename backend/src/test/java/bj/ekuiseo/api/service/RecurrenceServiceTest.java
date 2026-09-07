@@ -11,6 +11,7 @@ import bj.ekuiseo.api.repository.TripRepository;
 import bj.ekuiseo.api.repository.TripStopRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -36,8 +37,9 @@ class RecurrenceServiceTest {
 
     private final TripRepository tripRepository = mock(TripRepository.class);
     private final TripStopRepository tripStopRepository = mock(TripStopRepository.class);
-    private final SearchAlertMatchService alerts = mock(SearchAlertMatchService.class);
-    private final RecurrenceService service = new RecurrenceService(tripRepository, tripStopRepository, alerts, mock(org.springframework.transaction.PlatformTransactionManager.class));
+    private final ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
+    private final RecurrenceService service = new RecurrenceService(tripRepository, tripStopRepository, events,
+            mock(org.springframework.transaction.PlatformTransactionManager.class));
 
     @Test
     void parse_readsByDayCountAndUntil() {
@@ -84,7 +86,7 @@ class RecurrenceServiceTest {
             assertThat(o.getSeatsAvailable()).isEqualTo(4);
         });
         verify(tripStopRepository, times(3)).save(any(TripStop.class));
-        verify(alerts, times(3)).notifyMatchingAlerts(any(Trip.class));
+        verify(events, times(3)).publishEvent(any(TripPublishedEvent.class));
     }
 
     @Test
