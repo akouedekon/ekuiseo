@@ -43,6 +43,9 @@ services:
 
   frontend:
     environment:
-      # Le navigateur pilote par Playwright tourne sur l'hote : il appelle l'API sur le port
-      # publie (8080), pas via le proxy Vite interne au conteneur (CORS "*" en dev).
-      VITE_API_URL: ${E2E_API_URL:-http://localhost:8080}
+      # Meme origine que la production : le navigateur pilote par Playwright appelle
+      # /api sur le serveur Vite (5173), qui relaie vers le backend du reseau compose
+      # (proxy de vite.config.ts). Indispensable au cookie de session HttpOnly
+      # (SameSite=Strict) et evite tout detour CORS.
+      VITE_API_URL: ""
+      VITE_DEV_API_URL: http://backend:8080
