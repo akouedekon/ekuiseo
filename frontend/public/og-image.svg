@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="Ekuiseo, covoiturage au Bénin">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0E7C4A"/>
+      <stop offset="1" stop-color="#09603A"/>
+    </linearGradient>
+    <pattern id="dots" width="32" height="32" patternUnits="userSpaceOnUse">
+      <circle cx="4" cy="4" r="1.2" fill="#ffffff" fill-opacity="0.14"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#dots)"/>
+
+  <!-- Symbole : le « E » dont le bras central devient une flèche (LOGO_MARK_PATH). -->
+  <g transform="translate(96 165) scale(9.375)">
+    <rect width="32" height="32" rx="9" fill="#FFFFFF"/>
+    <path d="M9 8h14v3.5H12.5v2.75H18v3.5h-5.5v2.75H23V24H9z M18 12.5 24.5 16 18 19.5z" fill="#0E7C4A"/>
+  </g>
+
+  <g font-family="Archivo, Inter, 'Segoe UI', Roboto, system-ui, sans-serif" fill="#FFFFFF">
+    <text x="440" y="262" font-size="112" font-weight="800" letter-spacing="-5">Ekuiseo</text>
+    <text x="444" y="326" font-size="36" font-weight="600" fill-opacity="0.92">Covoiturage au Bénin</text>
+    <text x="444" y="392" font-size="30" font-weight="500" fill-opacity="0.85">Partagez la route, partagez le prix.</text>
+    <text x="444" y="438" font-size="26" font-weight="400" fill-opacity="0.8">Acompte en mobile money, solde en espèces à bord.</text>
+  </g>
+
+  <!-- Filet tricolore, signature de l'en-tête. -->
+  <rect x="444" y="470" width="140" height="10" rx="5" fill="#FFFFFF"/>
+  <rect x="584" y="470" width="140" height="10" fill="#FCD116"/>
+  <rect x="724" y="470" width="140" height="10" rx="5" fill="#E8112D"/>
+</svg>

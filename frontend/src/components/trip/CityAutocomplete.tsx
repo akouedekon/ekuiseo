@@ -1,9 +1,9 @@
-import { AnimatePresence, motion } from 'motion/react'
+import { AnimatePresence, m } from 'motion/react'
 import { MapPin, X } from 'lucide-react'
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/cn'
 import { useCitySuggestions } from '@/hooks/useGeo'
-import type { CityOption } from '@/lib/cities'
+import { normalize, type CityOption } from '@/lib/cities'
 
 interface CityAutocompleteProps {
   label: string
@@ -45,23 +45,49 @@ export function CityAutocomplete({
     [candidates, exclude],
   )
 
+  // Saisie laissee sans selection : on la garde affichee, avec une erreur explicite.
+  const [unresolved, setUnresolved] = useState(false)
+
+  const select = (city: CityOption) => {
+    onChange(city)
+    setQuery('')
+    setUnresolved(false)
+    setOpen(false)
+  }
+
+  /*
+   * Fermeture sans selection (blur, clic exterieur) : si la saisie correspond
+   * exactement a une suggestion, ou qu'il n'en reste qu'une, on la retient ; sinon
+   * la saisie reste visible et le champ passe en erreur (audit F222). Elle ne
+   * disparait plus silencieusement.
+   */
+  const commit = () => {
+    setOpen(false)
+    if (value || !query.trim()) {
+      setUnresolved(false)
+      return
+    }
+    const q = normalize(query)
+    const exact = suggestions.find((city) => normalize(city.label) === q)
+    const pick = exact ?? (suggestions.length === 1 ? suggestions[0] : undefined)
+    if (pick) select(pick)
+    else setUnresolved(true)
+  }
+  const commitRef = useRef(commit)
+  commitRef.current = commit
+
   // Fermeture au clic exterieur : le champ ne doit jamais rester ouvert « dans le vide ».
   useEffect(() => {
     if (!open) return
     const handler = (event: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false)
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) commitRef.current()
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
-  const select = (city: CityOption) => {
-    onChange(city)
-    setQuery('')
-    setOpen(false)
-  }
-
-  const displayed = open ? query : (value?.label ?? '')
+  const displayed = open ? query : (value?.label ?? (unresolved ? query : ''))
+  const shownError = error ?? (unresolved ? 'Choisissez une ville dans la liste' : undefined)
 
   return (
     <div ref={rootRef} className="relative flex flex-col gap-1.5">
@@ -79,7 +105,7 @@ export function CityAutocomplete({
           aria-controls={listId}
           aria-autocomplete="list"
           aria-activedescendant={open && suggestions[highlight] ? `${listId}-${highlight}` : undefined}
-          aria-invalid={error ? true : undefined}
+          aria-invalid={shownError ? true : undefined}
           autoComplete="off"
           value={displayed}
           placeholder={placeholder ?? 'Ville ou quartier'}
@@ -91,6 +117,7 @@ export function CityAutocomplete({
             setQuery(event.target.value)
             setOpen(true)
             setHighlight(0)
+            setUnresolved(false)
             if (value) onChange(null)
           }}
           onKeyDown={(event) => {
@@ -105,8 +132,13 @@ export function CityAutocomplete({
               event.preventDefault()
               select(suggestions[highlight])
             } else if (event.key === 'Escape') {
-              setOpen(false)
+              commit()
             }
+          }}
+          onBlur={(event) => {
+            // Le focus passe a une suggestion : ce n'est pas une sortie du champ.
+            if (rootRef.current?.contains(event.relatedTarget as Node | null)) return
+            commit()
           }}
           className="ek-field h-12 w-full rounded-[var(--radius-control)] pl-10 pr-10 text-base font-medium placeholder:font-normal placeholder:text-muted"
         />
@@ -117,6 +149,7 @@ export function CityAutocomplete({
             onClick={() => {
               onChange(null)
               setQuery('')
+              setUnresolved(false)
               setOpen(false)
             }}
             className="absolute right-1 flex size-10 items-center justify-center rounded-[var(--radius-control)] text-muted transition-colors hover:text-ink"
@@ -126,15 +159,15 @@ export function CityAutocomplete({
         ) : null}
       </div>
 
-      {error ? (
+      {shownError ? (
         <p role="alert" className="text-[12px] font-medium text-[var(--vermillon)]">
-          {error}
+          {shownError}
         </p>
       ) : null}
 
       <AnimatePresence>
         {open && suggestions.length > 0 ? (
-          <motion.ul
+          <m.ul
             id={listId}
             role="listbox"
             aria-label={`Suggestions pour ${label}`}
@@ -149,6 +182,8 @@ export function CityAutocomplete({
                 <button
                   type="button"
                   onMouseEnter={() => setHighlight(index)}
+                  // Le champ garde le focus : pas de blur (donc pas de fermeture) avant le clic, y compris sur iOS.
+                  onMouseDown={(event) => event.preventDefault()}
                   onClick={() => select(city)}
                   className={cn(
                     'flex min-h-11 w-full items-center gap-2.5 rounded-[6px] px-2.5 text-left transition-colors',
@@ -161,7 +196,7 @@ export function CityAutocomplete({
                 </button>
               </li>
             ))}
-          </motion.ul>
+          </m.ul>
         ) : null}
       </AnimatePresence>
     </div>

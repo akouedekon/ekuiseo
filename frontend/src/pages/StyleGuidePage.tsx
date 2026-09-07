@@ -221,8 +221,8 @@ export function StyleGuidePage() {
             <Stepper value={seats} onChange={setSeats} min={1} max={8} label="places" />
           </div>
           <div className="flex items-center justify-between gap-4">
-            <span className="text-body font-medium">Réservation immédiate</span>
-            <Switch checked={checked} onCheckedChange={setChecked} aria-label="Réservation immédiate" />
+            <span className="text-body font-medium">Notifications par e-mail</span>
+            <Switch checked={checked} onCheckedChange={setChecked} aria-label="Notifications par e-mail" />
           </div>
         </Card>
       </Section>

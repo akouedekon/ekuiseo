@@ -21,8 +21,13 @@ export default defineConfig(({ mode }) => {
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'icons/apple-touch-icon.png'],
+      /*
+       * `prompt` : la nouvelle version attend l'accord de l'utilisateur (toast
+       * « Mettre a jour », ServiceWorkerUpdate.tsx) au lieu de remplacer les chunks
+       * pendant un tunnel de reservation (audit F344).
+       */
+      registerType: 'prompt',
+      includeAssets: ['favicon.svg', 'icons/apple-touch-icon.png', 'og-image.png', 'og-image.svg'],
       manifest: {
         name: 'Ekuiseo — Covoiturage au Bénin',
         short_name: 'Ekuiseo',
@@ -52,12 +57,40 @@ export default defineConfig(({ mode }) => {
       workbox: {
         // Coque applicative precachee : l'app s'ouvre meme sans reseau.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        /*
+         * Hors du precache (audits F141, F337, F417) : la carte (MapLibre, 1 Mo), les
+         * graphiques et tout le back-office - un passager ne les telecharge jamais
+         * d'office. Ils restent charges a la demande et mis en cache au premier usage
+         * par la regle CacheFirst sur /assets/ ci-dessous (noms haches, immuables).
+         */
+        globIgnores: [
+          '**/map-*',
+          '**/charts-*',
+          '**/Admin*',
+          '**/DataTable-*',
+          '**/useAdmin-*',
+          '**/AdminPageHeader-*',
+          '**/AuditTable-*',
+          '**/SuspendUserDialog-*',
+          '**/UserMotivatedActionDialog-*',
+          '**/og-image.*',
+        ],
         navigateFallback: `${BASE_PATH}index.html`,
-        navigateFallbackDenylist: [/^\/api\//],
+        navigateFallbackDenylist: [/^\/api\//, /^\/share\//],
         cleanupOutdatedCaches: true,
-        // maplibre-gl est volumineux et charge a la demande.
-        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
+        // Valeur par defaut de Workbox : rien de plus lourd n'a sa place dans le precache.
+        maximumFileSizeToCacheInBytes: 2 * 1024 * 1024,
         runtimeCaching: [
+          {
+            // Chunks charges a la demande (carte, graphiques, back-office) : haches, donc immuables.
+            urlPattern: ({ url, request }) => request.destination === 'script' && url.pathname.includes('/assets/'),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'ekuiseo-assets',
+              expiration: { maxEntries: 60, maxAgeSeconds: 30 * 24 * 60 * 60 },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
           {
             /*
              * Lectures API PUBLIQUES uniquement, reseau d'abord, cache en secours :
@@ -67,6 +100,8 @@ export default defineConfig(({ mode }) => {
              * /payments, /conversations) servie a un autre compte sur un appareil
              * partage serait une fuite. Elles ne passent donc jamais par ici, et une
              * requete portant un jeton n'est jamais mise en cache (cacheWillUpdate).
+             * Pas de `networkTimeoutSeconds` : le cache ne sert qu'en echec reseau, jamais
+             * parce que le serveur est lent (audit F339 : places et statuts perimes).
              * Ces fonctions sont serialisees dans sw.js : aucune reference externe.
              */
             urlPattern: ({ url, request }) =>
@@ -79,7 +114,6 @@ export default defineConfig(({ mode }) => {
             options: {
               // Meme nom que API_CACHE_NAME dans src/lib/queryClient.ts (purge a la deconnexion).
               cacheName: 'ekuiseo-api',
-              networkTimeoutSeconds: 6,
               expiration: { maxEntries: 120, maxAgeSeconds: 24 * 60 * 60 },
               cacheableResponse: { statuses: [200] },
               plugins: [
@@ -111,16 +145,21 @@ export default defineConfig(({ mode }) => {
     },
   },
   build: {
-    // Le back-office et la carte sont isoles pour alleger le paquet principal.
+    /*
+     * Sourcemaps produites mais non referencees par les bundles (`hidden`) : elles
+     * servent a lire les piles remontees par lib/monitoring.ts et ne doivent pas
+     * etre copiees dans l'image nginx (audit F440).
+     */
+    sourcemap: 'hidden',
+    // La carte est isolee dans son propre chunk ; Recharts suit le lazy des routes admin (audit F335).
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes('node_modules/recharts') || id.includes('node_modules/d3-')) return 'charts'
           if (id.includes('node_modules/maplibre-gl')) return 'map'
         },
       },
     },
-    chunkSizeWarningLimit: 900,
+    chunkSizeWarningLimit: 500,
   },
   server: {
     host: true,

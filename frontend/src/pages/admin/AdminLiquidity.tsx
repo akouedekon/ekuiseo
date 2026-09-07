@@ -1,4 +1,4 @@
-import { motion } from 'motion/react'
+import { m } from 'motion/react'
 import { CalendarRange, Download, SearchX } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
@@ -86,7 +86,7 @@ export function AdminLiquidity() {
           ))}
         </div>
       ) : (
-        <motion.div variants={listContainer} initial="hidden" animate="show" className="grid gap-3 sm:grid-cols-3">
+        <m.div variants={listContainer} initial="hidden" animate="show" className="grid gap-3 sm:grid-cols-3">
           <StatTile
             label="Recherches"
             value={cur.searches.toLocaleString('fr-FR')}
@@ -106,7 +106,7 @@ export function AdminLiquidity() {
             deltaUnit="pts"
             hint={`Utilisateurs connectés, réservation sous 24 h (${cur.searchesByUsers.toLocaleString('fr-FR')} recherches attribuables)`}
           />
-        </motion.div>
+        </m.div>
       )}
 
       {/* --- Axes en penurie : la liste a demarcher --- */}
@@ -174,7 +174,7 @@ export function AdminLiquidity() {
           ))}
         </div>
       ) : (
-        <motion.div
+        <m.div
           variants={listContainer}
           initial="hidden"
           animate="show"
@@ -213,7 +213,7 @@ export function AdminLiquidity() {
             delta={relativeDelta(cur.trips, prev.trips)}
             hint="Hors brouillons et annulés"
           />
-        </motion.div>
+        </m.div>
       )}
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">

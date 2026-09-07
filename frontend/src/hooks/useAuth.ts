@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useSyncExternalStore } from 'react'
 import { apiClient, authStore, type AuthChangeReason } from '@/api/client'
+import { TERMS_VERSION } from '@/lib/legal'
 import { clearApiCache, clearPersistedCache, queryClient, readCacheOwner, writeCacheOwner } from '@/lib/queryClient'
 import { toE164 } from '@/lib/validation'
 import type { AuthResponse, OtpRequestResponse, UserResponse } from '@/api/types'
@@ -16,6 +17,8 @@ export interface OtpRegisterInput {
   lastName: string
   /** Obligatoire : le code de connexion y est envoye. */
   email: string
+  /** Case cochee a l'inscription ; la version acceptee (TERMS_VERSION) est horodatee cote serveur. */
+  acceptTerms: true
 }
 
 /**
@@ -99,9 +102,26 @@ export function useRegisterOtp() {
     mutationFn: (input: OtpRegisterInput) =>
       apiClient.post<OtpRequestResponse>(
         '/api/v1/auth/otp/register',
-        { ...input, phone: normalizePhone(input.phone) },
+        { ...input, phone: normalizePhone(input.phone), termsVersion: TERMS_VERSION },
         { auth: false },
       ),
+  })
+}
+
+/**
+ * PATCH /api/v1/me/terms { termsVersion } (204) : acceptation de la version
+ * courante des CGU par un compte existant (ecran bloquant TermsGate quand
+ * GET /me renvoie termsAcceptanceRequired).
+ */
+export function useAcceptTerms() {
+  return useMutation({
+    mutationFn: () => apiClient.patch<void>('/api/v1/me/terms', { termsVersion: TERMS_VERSION }),
+    onSuccess: () => {
+      queryClient.setQueryData<UserResponse>(['me'], (current) =>
+        current ? { ...current, termsAcceptanceRequired: false } : current,
+      )
+      queryClient.invalidateQueries({ queryKey: ['me'] })
+    },
   })
 }
 

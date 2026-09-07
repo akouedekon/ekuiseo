@@ -1,4 +1,4 @@
-import { motion } from 'motion/react'
+import { m } from 'motion/react'
 import {
   ArrowRight,
   ArrowUpDown,
@@ -48,14 +48,14 @@ const PROMISES = [
   {
     icon: ShieldCheck,
     tone: 'bg-primary-soft text-primary-ink',
-    title: 'Conducteurs vérifiés',
-    text: "Pièce d'identité contrôlée, numéro confirmé par SMS, avis publics après chaque trajet.",
+    title: 'Conducteurs identifiés',
+    text: "Compte confirmé par e-mail, pièce d'identité contrôlée sur demande et signalée par un badge, avis publics après chaque trajet.",
   },
   {
     icon: WifiOff,
     tone: 'bg-accent-soft text-accent-ink',
     title: "Pensé pour le réseau d'ici",
-    text: 'Vos résultats restent en mémoire et vos actions repartent dès que la connexion revient.',
+    text: 'Vos derniers résultats et trajets consultés restent lisibles hors ligne, le temps que la connexion revienne.',
   },
 ]
 
@@ -141,7 +141,7 @@ export function HomeSearchPage() {
 
       <PageContainer width="lg" className="relative pb-12 sm:pt-12">
         {/* --- Hero --- */}
-        <motion.div
+        <m.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
@@ -160,10 +160,10 @@ export function HomeSearchPage() {
             Cotonou, Bohicon, Parakou, Porto-Novo, Lomé… Un acompte en mobile money bloque votre place, le reste se
             règle en espèces à bord — ou tout en ligne, à votre choix.
           </p>
-        </motion.div>
+        </m.div>
 
         {/* --- Panneau de recherche --- */}
-        <motion.div
+        <m.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.45, delay: 0.08 }}
@@ -236,7 +236,7 @@ export function HomeSearchPage() {
               </Button>
             </form>
           </Card>
-        </motion.div>
+        </m.div>
 
         {/* --- Trajet de la semaine (mode quotidien) --- */}
         {tripType === 'QUOTIDIEN' ? (
@@ -268,9 +268,9 @@ export function HomeSearchPage() {
                 onRetry={() => recurring.refetch()}
               />
             ) : recurring.data && recurring.data.length > 0 ? (
-              <motion.div variants={listContainer} initial="hidden" animate="show" className="space-y-3">
+              <m.div variants={listContainer} initial="hidden" animate="show" className="space-y-3">
                 {recurring.data.map((item) => (
-                  <motion.div key={item.id} variants={listItem}>
+                  <m.div key={item.id} variants={listItem}>
                     <Card className="p-5">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -317,9 +317,9 @@ export function HomeSearchPage() {
                         Voir les départs
                       </Button>
                     </Card>
-                  </motion.div>
+                  </m.div>
                 ))}
-              </motion.div>
+              </m.div>
             ) : (
               <Card className="p-5 text-body text-muted">
                 Aucune navette enregistrée. Lancez une recherche quotidienne : nous vous proposerons de la mémoriser.
@@ -347,14 +347,14 @@ export function HomeSearchPage() {
                 ))}
               </div>
             ) : (
-              <motion.ul
+              <m.ul
                 variants={listContainer}
                 initial="hidden"
                 animate="show"
                 className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
               >
                 {popularRoutes.map((route) => (
-                  <motion.li key={`${route.originLabel}-${route.destLabel}`} variants={listItem}>
+                  <m.li key={`${route.originLabel}-${route.destLabel}`} variants={listItem}>
                     <button
                       type="button"
                       onClick={() => goToPopular(route)}
@@ -376,23 +376,23 @@ export function HomeSearchPage() {
                         aria-hidden
                       />
                     </button>
-                  </motion.li>
+                  </m.li>
                 ))}
-              </motion.ul>
+              </m.ul>
             )}
           </section>
         ) : null}
 
         {/* --- Promesses produit --- */}
         <section aria-label="Ce qui distingue Ekuiseo" className="mt-12">
-          <motion.div
+          <m.div
             variants={listContainer}
             initial="hidden"
             animate="show"
             className="grid gap-3 md:grid-cols-3"
           >
             {PROMISES.map((promise) => (
-              <motion.div key={promise.title} variants={listItem}>
+              <m.div key={promise.title} variants={listItem}>
                 <Card className="h-full p-5">
                   <span className={`flex size-10 items-center justify-center rounded-[var(--radius-control)] ${promise.tone}`}>
                     <promise.icon className="size-5" aria-hidden />
@@ -400,9 +400,9 @@ export function HomeSearchPage() {
                   <h2 className="mt-4 font-display text-title font-bold">{promise.title}</h2>
                   <p className="mt-1.5 text-body leading-relaxed text-ink-2">{promise.text}</p>
                 </Card>
-              </motion.div>
+              </m.div>
             ))}
-          </motion.div>
+          </m.div>
         </section>
       </PageContainer>
     </div>

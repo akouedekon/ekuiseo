@@ -1,4 +1,4 @@
-import { motion } from 'motion/react'
+import { m } from 'motion/react'
 import { Banknote, Wallet } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -7,15 +7,21 @@ import { EmptyState, ErrorState } from '@/components/ui/states'
 import { SectionTitle } from '@/components/layout/PageContainer'
 import { useDriverBalance, useMyPayouts } from '@/hooks/useAccount'
 import { formatDayShort, formatFcfa, formatPhone } from '@/lib/format'
+import { CONTACT_EMAIL } from '@/lib/legal'
 import { listContainer, listItem } from '@/lib/motion'
 import type { PayoutStatus } from '@/api/extended'
 
+/*
+ * Libelles honnetes (audit F233) : le virement mobile money est fait a la main
+ * par l'equipe Ekuiseo, il n'y a ni automate ni « relance en cours ». Un echec
+ * appelle un contact avec le support, pas une attente.
+ */
 const STATUS: Record<PayoutStatus, { label: string; tone: 'warning' | 'indigo' | 'success' | 'danger' }> = {
-  PENDING: { label: 'En préparation', tone: 'warning' },
-  PROCESSING: { label: 'En cours de virement', tone: 'indigo' },
+  PENDING: { label: 'À verser', tone: 'warning' },
+  PROCESSING: { label: 'Virement en préparation', tone: 'indigo' },
   PAID: { label: 'Versé', tone: 'success' },
   SETTLED: { label: 'Versé', tone: 'success' },
-  FAILED: { label: 'Échec, relance en cours', tone: 'danger' },
+  FAILED: { label: 'Échec du virement', tone: 'danger' },
 }
 
 /**
@@ -27,6 +33,7 @@ export function EarningsSection() {
   const balance = useDriverBalance()
   const payouts = useMyPayouts()
   const list = payouts.data ?? []
+  const hasFailed = list.some((p) => p.status === 'FAILED')
 
   return (
     <div>
@@ -58,8 +65,8 @@ export function EarningsSection() {
           />
           <p className="mt-2 text-[13px] leading-relaxed text-ink-2">
             {balance.data.pendingBalanceFcfa >= balance.data.minimumPayoutThresholdFcfa
-              ? 'Seuil atteint : ce solde sera inclus dans le prochain lot hebdomadaire.'
-              : `Les reversements partent chaque semaine dès ${formatFcfa(balance.data.minimumPayoutThresholdFcfa)} de solde. Le solde en espèces réglé à bord ne transite pas par Ekuiseo.`}
+              ? "Seuil atteint : ce solde sera inclus dans le prochain lot constitué par l'équipe Ekuiseo, puis viré à la main sur votre compte mobile money vérifié."
+              : `Les reversements sont déclenchés par l'équipe Ekuiseo, en général chaque semaine, dès ${formatFcfa(balance.data.minimumPayoutThresholdFcfa)} de solde et sur un compte mobile money vérifié. Le solde en espèces réglé à bord ne transite pas par Ekuiseo.`}
           </p>
         </Card>
       )}
@@ -77,27 +84,40 @@ export function EarningsSection() {
           <EmptyState
             icon={Banknote}
             title="Aucun reversement pour l'instant"
-            description="Votre premier lot apparaîtra ici dès que votre solde dépassera le seuil."
+            description="Votre premier lot apparaîtra ici lorsque l'équipe Ekuiseo l'aura constitué, une fois le seuil atteint."
             className="py-8"
           />
         </Card>
       ) : (
-        <motion.ul variants={listContainer} initial="hidden" animate="show" className="space-y-2">
-          {list.map((payout) => (
-            <motion.li key={payout.id} variants={listItem}>
-              <Card className="flex items-center gap-3 p-4">
-                <div className="min-w-0 flex-1">
-                  <p className="tnum font-display text-[16px] font-bold">{formatFcfa(payout.amount)}</p>
-                  <p className="tnum text-[13px] text-muted">
-                    {formatDayShort(payout.periodStart)} → {formatDayShort(payout.periodEnd)}
-                    {payout.destinationMsisdn ? ` · ${formatPhone(payout.destinationMsisdn)}` : ''}
-                  </p>
-                </div>
-                <Badge tone={STATUS[payout.status]?.tone ?? 'neutral'}>{STATUS[payout.status]?.label ?? payout.status}</Badge>
-              </Card>
-            </motion.li>
-          ))}
-        </motion.ul>
+        <>
+          <m.ul variants={listContainer} initial="hidden" animate="show" className="space-y-2">
+            {list.map((payout) => (
+              <m.li key={payout.id} variants={listItem}>
+                <Card className="flex items-center gap-3 p-4">
+                  <div className="min-w-0 flex-1">
+                    <p className="tnum font-display text-[16px] font-bold">{formatFcfa(payout.amount)}</p>
+                    <p className="tnum text-[13px] text-muted">
+                      {formatDayShort(payout.periodStart)} → {formatDayShort(payout.periodEnd)}
+                      {payout.destinationMsisdn ? ` · ${formatPhone(payout.destinationMsisdn)}` : ''}
+                      {payout.settledAt ? ` · versé le ${formatDayShort(payout.settledAt)}` : ''}
+                    </p>
+                  </div>
+                  <Badge tone={STATUS[payout.status]?.tone ?? 'neutral'}>{STATUS[payout.status]?.label ?? payout.status}</Badge>
+                </Card>
+              </m.li>
+            ))}
+          </m.ul>
+          {hasFailed ? (
+            <p className="mt-3 rounded-[var(--radius-control)] bg-[var(--vermillon-soft)] px-3 py-2 text-[13px] leading-relaxed text-[var(--vermillon)]">
+              Un virement n'a pas abouti (numéro invalide, plafond de compte, opérateur en panne). Vérifiez votre compte
+              mobile money dans « Paiement », puis écrivez à{' '}
+              <a href={`mailto:${CONTACT_EMAIL}`} className="font-semibold underline underline-offset-2">
+                {CONTACT_EMAIL}
+              </a>{' '}
+              pour qu'il soit refait.
+            </p>
+          ) : null}
+        </>
       )}
     </div>
   )

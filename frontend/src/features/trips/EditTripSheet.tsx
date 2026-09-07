@@ -4,23 +4,30 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 import { Button } from '@/components/ui/button'
 import { Input, Textarea } from '@/components/ui/input'
-import { SettingRow, Stepper, Switch } from '@/components/ui/misc'
+import { Stepper } from '@/components/ui/misc'
 import { Sheet } from '@/components/ui/sheet'
 import { useUpdateTrip } from '@/hooks/useTrips'
 import { describeError } from '@/lib/errors'
+import { MIN_DEPARTURE_LEAD_MS, departureFromFields } from '@/lib/validation'
 import type { TripResponse } from '@/api/types'
 
 const FORM_ID = 'edit-trip-form'
 
-const schema = z.object({
-  date: z.string().min(1, 'Choisissez une date'),
-  time: z.string().min(1, 'Choisissez une heure'),
-  seatsTotal: z.number().min(1).max(8),
-  pricePerSeat: z.number().min(100, 'Prix trop bas').max(100_000, 'Prix trop élevé'),
-  instantBooking: z.boolean(),
-  luggagePolicy: z.string().max(120).optional(),
-  description: z.string().max(400).optional(),
-})
+const schema = z
+  .object({
+    date: z.string().min(1, 'Choisissez une date'),
+    time: z.string().min(1, 'Choisissez une heure'),
+    seatsTotal: z.number().min(1).max(8),
+    pricePerSeat: z.number().min(100, 'Prix trop bas').max(100_000, 'Prix trop élevé'),
+    luggagePolicy: z.string().max(120, '120 caractères maximum'),
+    description: z.string().max(400, '400 caractères maximum'),
+  })
+  .superRefine((values, ctx) => {
+    const departure = departureFromFields(values.date, values.time)
+    if (departure && departure.getTime() < Date.now() + MIN_DEPARTURE_LEAD_MS) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['time'], message: 'Le départ doit être dans au moins 15 minutes' })
+    }
+  })
 
 type Values = z.infer<typeof schema>
 
@@ -38,6 +45,9 @@ function toLocalTime(iso: string): string {
  * Modification d'un trajet publie (PATCH /api/v1/trips/{id}) : horaire, places,
  * prix, conditions. L'itineraire ne se modifie pas ici - un changement de
  * ville est un autre trajet pour les passagers deja inscrits.
+ *
+ * Effacement : un champ texte vide est envoye comme chaine vide (""), que le
+ * serveur traite comme « retirer » ; `null` serait ignore par le PATCH (audit F224).
  */
 export function EditTripSheet({
   trip,
@@ -50,6 +60,7 @@ export function EditTripSheet({
 }) {
   const update = useUpdateTrip()
   const booked = trip.seatsTotal - trip.seatsAvailable
+  const template = trip.status === 'TEMPLATE'
   const form = useForm<Values>({
     resolver: zodResolver(schema),
     mode: 'onTouched',
@@ -58,16 +69,15 @@ export function EditTripSheet({
       time: toLocalTime(trip.departureAt),
       seatsTotal: trip.seatsTotal,
       pricePerSeat: trip.pricePerSeat,
-      instantBooking: trip.instantBooking,
       luggagePolicy: trip.luggagePolicy ?? '',
       description: trip.description ?? '',
     },
   })
 
   const submit = form.handleSubmit((values) => {
-    const departureAt = new Date(`${values.date}T${values.time}:00`)
-    if (departureAt.getTime() <= Date.now()) {
-      form.setError('date', { message: 'Le départ doit être dans le futur' })
+    const departureAt = departureFromFields(values.date, values.time)
+    if (!departureAt) {
+      form.setError('date', { message: 'Date ou heure invalide' })
       return
     }
     if (values.seatsTotal < booked) {
@@ -81,15 +91,16 @@ export function EditTripSheet({
           departureAt: departureAt.toISOString(),
           seatsTotal: values.seatsTotal,
           pricePerSeat: values.pricePerSeat,
-          instantBooking: values.instantBooking,
-          luggagePolicy: values.luggagePolicy?.trim() || null,
-          description: values.description?.trim() || null,
+          luggagePolicy: values.luggagePolicy.trim(),
+          description: values.description.trim(),
         },
       },
       {
         onSuccess: () => {
           onOpenChange(false)
-          toast.success('Trajet mis à jour', { description: 'Les passagers voient les nouvelles conditions.' })
+          toast.success(template ? 'Navette mise à jour' : 'Trajet mis à jour', {
+            description: 'Les passagers voient les nouvelles conditions.',
+          })
         },
         onError: (error) => toast.error(describeError(error, "La modification n'a pas abouti.")),
       },
@@ -100,7 +111,7 @@ export function EditTripSheet({
     <Sheet
       open={open}
       onOpenChange={(next) => !update.isPending && onOpenChange(next)}
-      title="Modifier le trajet"
+      title={template ? 'Modifier la navette' : 'Modifier le trajet'}
       description={`${trip.originLabel} → ${trip.destLabel}`}
       footer={
         <Button type="submit" form={FORM_ID} size="lg" block loading={update.isPending}>
@@ -110,8 +121,19 @@ export function EditTripSheet({
     >
       <form id={FORM_ID} onSubmit={submit} noValidate className="space-y-4 py-2">
         <div className="grid grid-cols-2 gap-3">
-          <Input label="Date" type="date" error={form.formState.errors.date?.message} {...form.register('date')} />
-          <Input label="Heure" type="time" error={form.formState.errors.time?.message} {...form.register('time')} />
+          <Input
+            label={template ? 'Premier départ' : 'Date'}
+            type="date"
+            error={form.formState.errors.date?.message}
+            {...form.register('date')}
+          />
+          <Input
+            label="Heure"
+            type="time"
+            hint={booked > 0 ? 'Changer l’horaire rouvre 24 h d’annulation gratuite aux passagers.' : undefined}
+            error={form.formState.errors.time?.message}
+            {...form.register('time')}
+          />
         </div>
 
         <Controller
@@ -143,21 +165,18 @@ export function EditTripSheet({
           {...form.register('pricePerSeat', { valueAsNumber: true })}
         />
 
-        <Controller
-          control={form.control}
-          name="instantBooking"
-          render={({ field }) => (
-            <SettingRow title="Réservation immédiate" description="Les passagers réservent sans attendre votre accord">
-              <Switch checked={field.value} onCheckedChange={field.onChange} aria-label="Réservation immédiate" />
-            </SettingRow>
-          )}
+        <Input
+          label="Politique bagages"
+          placeholder="1 bagage cabine"
+          hint="Laissez vide pour retirer la mention."
+          error={form.formState.errors.luggagePolicy?.message}
+          {...form.register('luggagePolicy')}
         />
-
-        <Input label="Politique bagages" placeholder="1 bagage cabine" {...form.register('luggagePolicy')} />
         <Textarea
           label="Précisions pour les passagers"
-          hint="400 caractères maximum"
+          hint="400 caractères maximum. Laissez vide pour retirer le texte."
           rows={3}
+          error={form.formState.errors.description?.message}
           {...form.register('description')}
         />
       </form>

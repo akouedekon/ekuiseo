@@ -23,6 +23,7 @@ const STATUS: Record<TripBookingResponse['status'], { label: string; tone: 'succ
   PENDING_PAYMENT: { label: 'Acompte en attente', tone: 'warning' },
   CANCELLED_BY_DRIVER: { label: 'Annulée', tone: 'danger' },
   CANCELLED_BY_PASSENGER: { label: 'Annulée', tone: 'danger' },
+  EXPIRED: { label: 'Expirée (acompte non reçu)', tone: 'neutral' },
 }
 
 /**

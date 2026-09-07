@@ -2,15 +2,18 @@ import path from 'node:path'
 import { defineConfig } from 'vitest/config'
 
 /**
- * Tests unitaires de la logique sans DOM (client HTTP, erreurs, regles de
- * paiement, validation). Environnement Node : localStorage absent, ce que le
- * code doit tolerer (navigation privee), et `fetch` remplace par un double.
+ * Tests unitaires et de composants. Environnement jsdom (audit F435) : les
+ * hooks, gardes de route et ecrans du tunnel de reservation se testent avec
+ * Testing Library ; `fetch` est remplace par un double dans chaque test.
+ * `localStorage` peut etre absent ou vide : le code doit le tolerer.
  */
 export default defineConfig({
-  resolve: { alias: { '@': path.resolve(__dirname, 'src') } },
+  resolve: { alias: { '@': path.resolve(import.meta.dirname, 'src') } },
   test: {
-    environment: 'node',
-    include: ['src/**/*.test.ts'],
+    environment: 'jsdom',
+    include: ['src/**/*.test.{ts,tsx}'],
+    setupFiles: ['src/test/setup.ts'],
     clearMocks: true,
+    restoreMocks: true,
   },
 })

@@ -1,8 +1,6 @@
 import { Ban, Contact, Eraser, MoreHorizontal, RotateCcw, Search, ShieldCheck, ShieldOff, Star, UserX } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router'
-import { toast } from 'sonner'
-import { ConfirmDialog } from '@/components/feedback/ConfirmDialog'
+import { useEffect, useRef, useState } from 'react'
+import { Link, useSearchParams } from 'react-router'
 import { AdminPageHeader } from '@/components/layout/AdminPageHeader'
 import { DataTable, type DataTableColumn } from '@/components/tables/DataTable'
 import { Badge } from '@/components/ui/badge'
@@ -13,11 +11,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Input, Textarea } from '@/components/ui/input'
+import { Input } from '@/components/ui/input'
 import { Avatar } from '@/components/ui/misc'
 import { EmptyState, ErrorState } from '@/components/ui/states'
 import { ContactCorrectionDialog } from '@/features/admin/ContactCorrectionDialog'
-import { useAdminUsers, useAnonymizeUser, useRevokeIdentity, useToggleUserSuspension } from '@/hooks/useAdmin'
+import { SuspendUserDialog, type SuspensionTarget } from '@/features/admin/SuspendUserDialog'
+import { UserMotivatedActionDialog, type UserMotivatedAction } from '@/features/admin/UserMotivatedActionDialog'
+import { useAdminUsers } from '@/hooks/useAdmin'
+import { useMe } from '@/hooks/useAuth'
 import { describeError } from '@/lib/errors'
 import { formatDayShort, formatPhone } from '@/lib/format'
 import type { AdminUserResponse } from '@/api/extended'
@@ -35,8 +36,13 @@ const COLUMNS: DataTableColumn<AdminUserResponse>[] = [
       <span className="flex items-center gap-3">
         <Avatar firstName={user.firstName} lastName={user.lastName} size={36} className="hidden lg:inline-flex" />
         <span className="min-w-0">
-          <Link to={`/drivers/${user.id}`} className="block truncate font-semibold text-ink underline-offset-4 hover:underline">
+          <Link to={`/admin/users/${user.id}`} className="block truncate font-semibold text-ink underline-offset-4 hover:underline">
             {user.firstName} {user.lastName}
+            {user.role === 'ADMIN' ? (
+              <Badge tone="indigo" className="ml-2 align-middle">
+                Admin
+              </Badge>
+            ) : null}
           </Link>
           <span className="tnum block truncate text-label text-muted">
             {formatPhone(user.phone)}
@@ -115,84 +121,37 @@ const COLUMNS: DataTableColumn<AdminUserResponse>[] = [
   },
 ]
 
+/**
+ * Liste des utilisateurs. La recherche vit dans l'URL (?q=) : un lien vers une
+ * recherche se partage et survit au retour arriere depuis une fiche.
+ */
 export function AdminUsers() {
-  const [input, setInput] = useState('')
-  const [query, setQuery] = useState('')
-  const [target, setTarget] = useState<AdminUserResponse | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const query = searchParams.get('q')?.trim() ?? ''
+  const [input, setInput] = useState(query)
+  const debounce = useRef<number | undefined>(undefined)
+  const [suspension, setSuspension] = useState<SuspensionTarget | null>(null)
   const [contactTarget, setContactTarget] = useState<AdminUserResponse | null>(null)
-  const [reason, setReason] = useState('')
   /* Actions motivees du menu « Plus » : anonymisation (irreversible) et retrait du badge d'identite. */
-  const [action, setAction] = useState<{ kind: 'anonymize' | 'revoke-identity'; user: AdminUserResponse } | null>(null)
-  const [actionReason, setActionReason] = useState('')
+  const [action, setAction] = useState<UserMotivatedAction | null>(null)
   const users = useAdminUsers(query)
-  const toggle = useToggleUserSuspension()
-  const anonymize = useAnonymizeUser()
-  const revokeIdentity = useRevokeIdentity()
+  const me = useMe()
 
-  // Anti-rebond : on n'interroge l'API qu'apres un court silence de saisie.
-  useEffect(() => {
-    const id = window.setTimeout(() => setQuery(input.trim()), SEARCH_DEBOUNCE_MS)
-    return () => window.clearTimeout(id)
-  }, [input])
+  // Anti-rebond dans le gestionnaire (pas d'effet) : l'URL n'est ecrite qu'apres un court silence de saisie.
+  const onInputChange = (value: string) => {
+    setInput(value)
+    window.clearTimeout(debounce.current)
+    debounce.current = window.setTimeout(() => {
+      const trimmed = value.trim()
+      setSearchParams(trimmed ? { q: trimmed } : {}, { replace: true })
+    }, SEARCH_DEBOUNCE_MS)
+  }
+  useEffect(() => () => window.clearTimeout(debounce.current), [])
 
   const list = users.data ?? []
 
-  const close = () => {
-    setTarget(null)
-    setReason('')
-  }
-
-  const confirmToggle = () => {
-    if (!target) return
-    const user = target
-    const suspend = !user.suspended
-    if (suspend && !reason.trim()) return
-    toggle.mutate(
-      { id: user.id, suspend, reason: suspend ? reason.trim() : undefined },
-      {
-        onSuccess: () => {
-          toast.success(
-            suspend
-              ? `${user.firstName} ${user.lastName} a été suspendu`
-              : `${user.firstName} ${user.lastName} a été réactivé`,
-          )
-          close()
-        },
-        onError: (error) => toast.error(describeError(error, "L'action n'a pas abouti. Réessayez.")),
-      },
-    )
-  }
-
-  const closeAction = () => {
-    setAction(null)
-    setActionReason('')
-  }
-
-  const confirmAction = () => {
-    if (!action || !actionReason.trim()) return
-    const { kind, user } = action
-    const name = `${user.firstName} ${user.lastName}`
-    const input = { id: user.id, reason: actionReason.trim() }
-    if (kind === 'anonymize') {
-      anonymize.mutate(input, {
-        onSuccess: () => {
-          toast.success(`Le compte de ${name} a été anonymisé`, {
-            description: 'Profil remplacé, contacts effacés, sessions révoquées. Réservations et paiements conservés.',
-          })
-          closeAction()
-        },
-        onError: (error) => toast.error(describeError(error, "L'anonymisation n'a pas abouti.")),
-      })
-    } else {
-      revokeIdentity.mutate(input, {
-        onSuccess: () => {
-          toast.success(`Badge d'identité retiré à ${name}`, { description: "L'utilisateur a été prévenu, avec le motif." })
-          closeAction()
-        },
-        onError: (error) => toast.error(describeError(error, "Le retrait n'a pas abouti.")),
-      })
-    }
-  }
+  /** Un administrateur ne se suspend pas lui-meme, ni un autre administrateur : cela se regle en base, pas depuis l'interface. */
+  const canSuspend = (user: AdminUserResponse) => user.role !== 'ADMIN' && user.id !== me.data?.id
 
   return (
     <div>
@@ -206,7 +165,7 @@ export function AdminUsers() {
         label="Rechercher"
         placeholder="Nom, numéro ou e-mail"
         value={input}
-        onChange={(event) => setInput(event.target.value)}
+        onChange={(event) => onInputChange(event.target.value)}
         leading={<Search />}
         className="mb-4"
         aria-describedby={undefined}
@@ -239,24 +198,26 @@ export function AdminUsers() {
                   <Contact className="size-4" aria-hidden />
                   Contact
                 </Button>
-                <Button
-                  size="sm"
-                  variant={user.suspended ? 'secondary' : 'ghost'}
-                  className={user.suspended ? undefined : 'text-[var(--vermillon)]'}
-                  onClick={() => setTarget(user)}
-                >
-                  {user.suspended ? (
-                    <>
-                      <RotateCcw className="size-4" aria-hidden />
-                      Réactiver
-                    </>
-                  ) : (
-                    <>
-                      <Ban className="size-4" aria-hidden />
-                      Suspendre
-                    </>
-                  )}
-                </Button>
+                {canSuspend(user) ? (
+                  <Button
+                    size="sm"
+                    variant={user.suspended ? 'secondary' : 'ghost'}
+                    className={user.suspended ? undefined : 'text-[var(--vermillon)]'}
+                    onClick={() => setSuspension(user)}
+                  >
+                    {user.suspended ? (
+                      <>
+                        <RotateCcw className="size-4" aria-hidden />
+                        Réactiver
+                      </>
+                    ) : (
+                      <>
+                        <Ban className="size-4" aria-hidden />
+                        Suspendre
+                      </>
+                    )}
+                  </Button>
+                ) : null}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button size="sm" variant="ghost" aria-label={`Plus d'actions pour ${user.firstName} ${user.lastName}`}>
@@ -283,72 +244,8 @@ export function AdminUsers() {
       )}
 
       <ContactCorrectionDialog user={contactTarget} onOpenChange={(open) => !open && setContactTarget(null)} />
-
-      <ConfirmDialog
-        open={target !== null}
-        onOpenChange={(open) => !open && close()}
-        title={target?.suspended ? 'Réactiver ce compte ?' : 'Suspendre ce compte ?'}
-        description={
-          target
-            ? target.suspended
-              ? `${target.firstName} ${target.lastName} pourra de nouveau se connecter, réserver et publier.`
-              : `${target.firstName} ${target.lastName} ne pourra plus se connecter ni réserver ; il en sera informé, avec le motif. Ses trajets à venir restent visibles jusqu'à leur annulation manuelle.`
-            : undefined
-        }
-        tone={target?.suspended ? 'default' : 'danger'}
-        confirmLabel={target?.suspended ? 'Réactiver' : 'Suspendre'}
-        confirmDisabled={target ? !target.suspended && !reason.trim() : true}
-        loading={toggle.isPending}
-        onConfirm={confirmToggle}
-      >
-        {target && !target.suspended ? (
-          <Textarea
-            label="Motif de la suspension"
-            hint="Obligatoire. Conservé dans le journal d'audit."
-            placeholder="Signalements répétés, fraude à l'acompte…"
-            rows={3}
-            maxLength={500}
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-          />
-        ) : null}
-      </ConfirmDialog>
-
-      <ConfirmDialog
-        open={action !== null}
-        onOpenChange={(open) => !open && closeAction()}
-        title={
-          action?.kind === 'anonymize'
-            ? `Anonymiser le compte de ${action.user.firstName} ${action.user.lastName} ?`
-            : action
-              ? `Retirer le badge d'identité de ${action.user.firstName} ${action.user.lastName} ?`
-              : undefined
-        }
-        description={
-          action?.kind === 'anonymize'
-            ? "Irréversible. Le profil est remplacé (nom, contacts, photo), les comptes mobile money, alertes et notifications sont effacés et les sessions révoquées. Réservations, paiements et avis sont conservés pour la comptabilité. Refusé si un trajet ou une réservation est en cours."
-            : "Le badge « Vérifié » disparaît du profil ; l'utilisateur est prévenu, avec le motif, et peut soumettre un nouveau dossier."
-        }
-        tone="danger"
-        confirmLabel={action?.kind === 'anonymize' ? 'Anonymiser définitivement' : 'Retirer le badge'}
-        confirmDisabled={!actionReason.trim()}
-        loading={anonymize.isPending || revokeIdentity.isPending}
-        onConfirm={confirmAction}
-      >
-        <Textarea
-          label="Motif"
-          hint="Obligatoire. Conservé dans le journal d'audit."
-          placeholder={
-            action?.kind === 'anonymize'
-              ? "Demande d'effacement reçue le…"
-              : 'Document déclaré invalide, usurpation signalée…'
-          }
-          rows={3}
-          maxLength={500}
-          value={actionReason}
-          onChange={(event) => setActionReason(event.target.value)}
-        />
-      </ConfirmDialog>
+      <SuspendUserDialog target={suspension} onOpenChange={(open) => !open && setSuspension(null)} />
+      <UserMotivatedActionDialog action={action} onOpenChange={(open) => !open && setAction(null)} />
     </div>
   )
 }

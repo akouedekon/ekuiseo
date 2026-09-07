@@ -1,4 +1,4 @@
-import { motion } from 'motion/react'
+import { m } from 'motion/react'
 import { ChevronRight, MessagesSquare } from 'lucide-react'
 import { Link } from 'react-router'
 import { Card } from '@/components/ui/card'
@@ -39,9 +39,9 @@ export function MessagesPage() {
           description="Vous pourrez écrire au conducteur dès votre première réservation."
         />
       ) : (
-        <motion.ul variants={listContainer} initial="hidden" animate="show" className="space-y-2">
+        <m.ul variants={listContainer} initial="hidden" animate="show" className="space-y-2">
           {list.map((conversation) => (
-            <motion.li key={conversation.bookingId} variants={listItem}>
+            <m.li key={conversation.bookingId} variants={listItem}>
               <Card className={conversation.unreadCount > 0 ? 'border-l-[3px] border-l-[var(--indigo)]' : ''}>
                 <Link
                   to={`/bookings/${conversation.bookingId}/messages`}
@@ -89,9 +89,9 @@ export function MessagesPage() {
                   )}
                 </Link>
               </Card>
-            </motion.li>
+            </m.li>
           ))}
-        </motion.ul>
+        </m.ul>
       )}
     </PageContainer>
   )

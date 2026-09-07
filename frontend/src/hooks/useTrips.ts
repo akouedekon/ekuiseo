@@ -15,9 +15,16 @@ export interface TripSearchParams {
   seats?: number
   radiusKm?: number
   tripType?: TripType
+  /* Tri et filtres appliques PAR LE SERVEUR sur l'ensemble des resultats (audit F137) : jamais sur la page chargee. */
+  sort?: TripSearchSort
+  maxPrice?: number
+  minRating?: number
+  verifiedOnly?: boolean
   page?: number
   size?: number
 }
+
+export type TripSearchSort = 'departure' | 'price' | 'rating'
 
 function toQueryString(params: object): string {
   const usp = new URLSearchParams()

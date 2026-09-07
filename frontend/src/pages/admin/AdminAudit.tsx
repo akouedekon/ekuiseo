@@ -1,121 +1,169 @@
-import { ChevronLeft, ChevronRight, ScrollText } from 'lucide-react'
-import { useState } from 'react'
+import { Filter, X } from 'lucide-react'
+import { useState, type FormEvent } from 'react'
+import { useSearchParams } from 'react-router'
 import { AdminPageHeader } from '@/components/layout/AdminPageHeader'
-import { DataTable, type DataTableColumn } from '@/components/tables/DataTable'
-import { Badge } from '@/components/ui/badge'
+import { SelectField } from '@/components/forms/SelectField'
 import { Button } from '@/components/ui/button'
-import { EmptyState, ErrorState } from '@/components/ui/states'
+import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { AuditTable } from '@/features/admin/AuditTable'
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from '@/features/admin/auditVocabulary'
 import { useAuditLog } from '@/hooks/useAdmin'
-import { formatDateTime } from '@/lib/format'
-import type { AuditLogResponse } from '@/api/extended'
+import type { AuditLogFilters } from '@/api/extended'
 
 const PAGE_SIZE = 25
+const ANY = '__any__'
 
-const COLUMNS: DataTableColumn<AuditLogResponse>[] = [
-  {
-    id: 'createdAt',
-    header: 'Date',
-    mobile: 'meta',
-    sortValue: (row) => row.createdAt,
-    className: 'w-44',
-    cell: (row) => <span className="tnum whitespace-nowrap text-ink-2">{formatDateTime(row.createdAt)}</span>,
-  },
-  {
-    id: 'action',
-    header: 'Action',
-    mobile: 'title',
-    sortValue: (row) => row.action,
-    cell: (row) => <Badge tone="outline">{row.action}</Badge>,
-  },
-  {
-    id: 'entity',
-    header: 'Objet',
-    mobile: 'meta',
-    cell: (row) =>
-      row.entityType ? (
-        <span className="tnum text-label text-ink-2">
-          {row.entityType}
-          {row.entityId ? <span className="text-muted"> · {row.entityId.slice(0, 8)}</span> : null}
-        </span>
-      ) : (
-        <span className="text-muted">—</span>
-      ),
-  },
-  {
-    id: 'actor',
-    header: 'Acteur',
-    mobile: 'meta',
-    className: 'hidden xl:table-cell',
-    cell: (row) => <span className="tnum text-label text-muted">{row.actorId ? row.actorId.slice(0, 8) : 'système'}</span>,
-  },
-  {
-    id: 'details',
-    header: 'Détails',
-    mobile: 'value',
-    className: 'hidden lg:table-cell max-w-[360px]',
-    cell: (row) =>
-      row.details && Object.keys(row.details).length > 0 ? (
-        <code className="block truncate text-[12px] text-ink-2">{JSON.stringify(row.details)}</code>
-      ) : (
-        <span className="text-muted">—</span>
-      ),
-  },
-]
+const ACTION_OPTIONS = [{ value: ANY, label: 'Toutes les actions' }, ...AUDIT_ACTIONS.map((a) => ({ value: a, label: a }))]
+const ENTITY_OPTIONS = [{ value: ANY, label: 'Tous les objets' }, ...AUDIT_ENTITY_TYPES.map((t) => ({ value: t, label: t }))]
 
-/** Journal d'audit (GET /api/v1/admin/audit-log) : qui a fait quoi, pagine cote serveur. */
+/** Etat du formulaire, en clair (dates au format yyyy-mm-dd des champs natifs). */
+interface Draft {
+  action: string
+  actorId: string
+  entityType: string
+  entityId: string
+  from: string
+  to: string
+}
+
+const EMPTY_DRAFT: Draft = { action: '', actorId: '', entityType: '', entityId: '', from: '', to: '' }
+
+function draftFromParams(params: URLSearchParams): Draft {
+  return {
+    action: params.get('action') ?? '',
+    actorId: params.get('actorId') ?? '',
+    entityType: params.get('entityType') ?? '',
+    entityId: params.get('entityId') ?? '',
+    from: params.get('from') ?? '',
+    to: params.get('to') ?? '',
+  }
+}
+
+/** Borne inclusive : le jour saisi couvre de 00:00 a 23:59:59 dans le fuseau du navigateur. */
+function dayStart(date: string): string {
+  return new Date(`${date}T00:00:00`).toISOString()
+}
+function dayEnd(date: string): string {
+  return new Date(`${date}T23:59:59.999`).toISOString()
+}
+
+function filtersFromParams(params: URLSearchParams): AuditLogFilters {
+  const draft = draftFromParams(params)
+  return {
+    action: draft.action || undefined,
+    actorId: draft.actorId.trim() || undefined,
+    entityType: draft.entityType || undefined,
+    entityId: draft.entityId.trim() || undefined,
+    from: draft.from ? dayStart(draft.from) : undefined,
+    to: draft.to ? dayEnd(draft.to) : undefined,
+  }
+}
+
+/**
+ * Journal d'audit (GET /api/v1/admin/audit-log) : qui a fait quoi, filtre et
+ * pagine cote serveur. Les filtres vivent dans l'URL pour qu'une recherche se
+ * partage (« regarde ce qui s'est passe sur ce compte »).
+ */
 export function AdminAudit() {
-  const [page, setPage] = useState(0)
-  const audit = useAuditLog(page, PAGE_SIZE)
-  const data = audit.data
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [draft, setDraft] = useState<Draft>(() => draftFromParams(searchParams))
+
+  const page = Math.max(0, Number(searchParams.get('page') ?? 0) || 0)
+  const filters = filtersFromParams(searchParams)
+  const activeCount = Object.values(filters).filter(Boolean).length
+  const audit = useAuditLog(page, PAGE_SIZE, filters)
+
+  const write = (next: Draft, nextPage: number) => {
+    const params = new URLSearchParams()
+    for (const [key, value] of Object.entries(next)) {
+      if (value) params.set(key, value)
+    }
+    if (nextPage > 0) params.set('page', String(nextPage))
+    setSearchParams(params)
+  }
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    write(draft, 0)
+  }
+
+  const reset = () => {
+    setDraft(EMPTY_DRAFT)
+    write(EMPTY_DRAFT, 0)
+  }
 
   return (
     <div>
       <AdminPageHeader
         title="Journal d'audit"
-        count={data?.totalElements}
+        count={audit.data?.totalElements}
         description="Actions sensibles du back-office et du système : suspensions, validations, reversements, remboursements."
       />
 
-      {audit.isError ? (
-        <ErrorState onRetry={() => audit.refetch()} />
-      ) : (
-        <>
-          <DataTable
-            caption="Journal d'audit"
-            columns={COLUMNS}
-            rows={data?.content ?? []}
-            rowKey={(row) => row.id}
-            loading={audit.isPending}
-            initialSort={{ id: 'createdAt', direction: 'desc' }}
-            empty={<EmptyState icon={ScrollText} title="Journal vide" description="Aucune action enregistrée pour le moment." />}
+      <Card className="mb-4 p-4">
+        <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-label="Filtres du journal">
+          <SelectField
+            label="Action"
+            value={draft.action || ANY}
+            onValueChange={(value) => setDraft((d) => ({ ...d, action: value === ANY ? '' : value }))}
+            options={ACTION_OPTIONS}
           />
-          {data && data.totalPages > 1 ? (
-            <nav className="mt-4 flex items-center justify-between gap-3" aria-label="Pagination du journal">
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={page === 0 || audit.isFetching}
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-              >
-                <ChevronLeft className="size-4" aria-hidden />
-                Précédent
+          <SelectField
+            label="Type d'objet"
+            value={draft.entityType || ANY}
+            onValueChange={(value) => setDraft((d) => ({ ...d, entityType: value === ANY ? '' : value }))}
+            options={ENTITY_OPTIONS}
+          />
+          <Input
+            label="Identifiant de l'objet"
+            placeholder="UUID complet"
+            value={draft.entityId}
+            onChange={(event) => setDraft((d) => ({ ...d, entityId: event.target.value }))}
+            spellCheck={false}
+          />
+          <Input
+            label="Acteur (identifiant)"
+            placeholder="UUID de l'administrateur ou de l'utilisateur"
+            value={draft.actorId}
+            onChange={(event) => setDraft((d) => ({ ...d, actorId: event.target.value }))}
+            spellCheck={false}
+          />
+          <Input
+            label="Du"
+            type="date"
+            value={draft.from}
+            max={draft.to || undefined}
+            onChange={(event) => setDraft((d) => ({ ...d, from: event.target.value }))}
+          />
+          <Input
+            label="Au"
+            type="date"
+            value={draft.to}
+            min={draft.from || undefined}
+            onChange={(event) => setDraft((d) => ({ ...d, to: event.target.value }))}
+          />
+          <div className="flex flex-wrap items-end gap-2 sm:col-span-2 xl:col-span-3">
+            <Button type="submit" size="sm" loading={audit.isFetching && !audit.isPending}>
+              <Filter className="size-4" aria-hidden />
+              Filtrer
+            </Button>
+            {activeCount > 0 ? (
+              <Button type="button" size="sm" variant="ghost" onClick={reset}>
+                <X className="size-4" aria-hidden />
+                Effacer les filtres ({activeCount})
               </Button>
-              <span className="tnum text-label text-muted">
-                Page {page + 1} sur {data.totalPages}
-              </span>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={page + 1 >= data.totalPages || audit.isFetching}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                Suivant
-                <ChevronRight className="size-4" aria-hidden />
-              </Button>
-            </nav>
-          ) : null}
-        </>
-      )}
+            ) : null}
+          </div>
+        </form>
+      </Card>
+
+      <AuditTable
+        audit={audit}
+        page={page}
+        onPageChange={(next) => write(draftFromParams(searchParams), next)}
+        emptyDescription={activeCount > 0 ? 'Aucune action ne correspond à ces filtres.' : 'Aucune action enregistrée pour le moment.'}
+      />
     </div>
   )
 }

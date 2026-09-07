@@ -49,21 +49,26 @@ export function AccountHeaderCard({
         </Button>
       </div>
 
+      {/*
+       * Le code de connexion part par e-mail : c'est l'e-mail qui est confirme. Le
+       * badge « telephone non confirme » est masque tant que le canal SMS n'est pas
+       * actif - il serait negatif pour tout le monde, sans action possible (audit F234).
+       */}
       <div className="mt-3 flex flex-wrap gap-1.5">
         {user.emailVerified ? (
           <Badge tone="success">
             <Check aria-hidden />
             E-mail confirmé
           </Badge>
-        ) : null}
+        ) : (
+          <Badge tone="warning">E-mail non confirmé</Badge>
+        )}
         {user.phoneVerified ? (
           <Badge tone="success">
             <Check aria-hidden />
             Téléphone confirmé
           </Badge>
-        ) : (
-          <Badge tone="warning">Téléphone non confirmé</Badge>
-        )}
+        ) : null}
         {identity && IdentityIcon ? (
           <Badge tone={identity.tone}>
             <IdentityIcon aria-hidden />

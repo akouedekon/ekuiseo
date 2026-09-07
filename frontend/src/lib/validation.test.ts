@@ -94,3 +94,32 @@ describe('momoSchema et identitySchema', () => {
     expect(identitySchema.safeParse({ documentType: 'CNI', documentNumber: '' }).success).toBe(false)
   })
 })
+
+describe('horaires de publication', () => {
+  it('propose la prochaine demi-heure ronde au moins 15 minutes plus tard', async () => {
+    const { nextHalfHour } = await import('./validation')
+    expect(nextHalfHour(new Date(2026, 8, 7, 7, 2))).toEqual({ date: '2026-09-07', time: '07:30' })
+    expect(nextHalfHour(new Date(2026, 8, 7, 7, 20))).toEqual({ date: '2026-09-07', time: '08:00' })
+    expect(nextHalfHour(new Date(2026, 8, 7, 23, 50))).toEqual({ date: '2026-09-08', time: '00:30' })
+  })
+
+  it('reconstruit une date locale et refuse une saisie incomplete', async () => {
+    const { departureFromFields } = await import('./validation')
+    expect(departureFromFields('2026-09-07', '07:30')?.getHours()).toBe(7)
+    expect(departureFromFields('', '07:30')).toBeNull()
+    expect(departureFromFields('2026-09-07', '7h30')).toBeNull()
+  })
+})
+
+describe('registerSchema', () => {
+  it("exige l'acceptation des CGU", async () => {
+    const { registerSchema } = await import('./validation')
+    const base = { phone: '+2290197000322', firstName: 'Koffi', lastName: 'Aholou', email: 'k@example.com' }
+    expect(registerSchema.safeParse({ ...base, acceptTerms: true }).success).toBe(true)
+    const refused = registerSchema.safeParse({ ...base, acceptTerms: false })
+    expect(refused.success).toBe(false)
+    if (!refused.success) {
+      expect(refused.error.issues.some((i) => i.path[0] === 'acceptTerms')).toBe(true)
+    }
+  })
+})

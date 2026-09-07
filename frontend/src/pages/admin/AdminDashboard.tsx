@@ -1,5 +1,5 @@
-import { motion } from 'motion/react'
-import { ArrowRight, CalendarRange, Target } from 'lucide-react'
+import { m } from 'motion/react'
+import { AlertTriangle, ArrowRight, BadgeCheck, Banknote, CalendarRange, Target, Wallet, type LucideIcon } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router'
 import {
@@ -22,9 +22,10 @@ import { Card } from '@/components/ui/card'
 import { Progress } from '@/components/ui/misc'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ErrorState, StatSkeleton } from '@/components/ui/states'
-import { useAdminLiquidity, useAdminStats } from '@/hooks/useAdmin'
+import { useAdminLiquidity, useAdminOverview, useAdminStats } from '@/hooks/useAdmin'
+import { cn } from '@/lib/cn'
 import { describeError } from '@/lib/errors'
-import { formatFcfa, formatFcfaCompact } from '@/lib/format'
+import { formatFcfa, formatFcfaCompact, formatFromNow } from '@/lib/format'
 import { listContainer } from '@/lib/motion'
 import type { BookingStatus } from '@/api/types'
 import { CHART, formatHours, formatPercent, pointsDelta, relativeDelta } from './adminMetrics'
@@ -37,6 +38,7 @@ const STATUS_LABEL: Record<BookingStatus, string> = {
   CANCELLED_BY_PASSENGER: 'Annul. passager',
   CANCELLED_BY_DRIVER: 'Annul. conducteur',
   NO_SHOW: 'Non présentés',
+  EXPIRED: 'Expirées (acompte non reçu)',
 }
 
 const STATUS_COLOR: Record<BookingStatus, string> = {
@@ -47,6 +49,8 @@ const STATUS_COLOR: Record<BookingStatus, string> = {
   CANCELLED_BY_PASSENGER: CHART.vermillon,
   CANCELLED_BY_DRIVER: CHART.vermillon,
   NO_SHOW: CHART.muted,
+  // Expiree = acompte jamais recu : une place liberee, pas une perte pour la plateforme.
+  EXPIRED: CHART.muted,
 }
 
 /**
@@ -100,6 +104,9 @@ export function AdminDashboard() {
           </SelectContent>
         </Select>
       </div>
+
+      {/* --- Files d'attente : ce qui attend une decision aujourd'hui --- */}
+      <QueuesBlock />
 
       {/* --- Metrique nord : places confirmees vs seuil de viabilite --- */}
       <Card className="relative overflow-hidden p-5 sm:p-6">
@@ -197,7 +204,7 @@ export function AdminDashboard() {
           ))}
         </div>
       ) : (
-        <motion.div
+        <m.div
           variants={listContainer}
           initial="hidden"
           animate="show"
@@ -239,7 +246,7 @@ export function AdminDashboard() {
             lowerIsBetter
             hint="Médiane, publication → première réservation"
           />
-        </motion.div>
+        </m.div>
       )}
 
       {/* --- Volume --- */}
@@ -251,7 +258,7 @@ export function AdminDashboard() {
           ))}
         </div>
       ) : (
-        <motion.div
+        <m.div
           variants={listContainer}
           initial="hidden"
           animate="show"
@@ -275,7 +282,7 @@ export function AdminDashboard() {
             title={formatFcfa(data.totals.revenue)}
             delta={data.deltas.revenue}
           />
-        </motion.div>
+        </m.div>
       )}
 
       {/* --- Volume : trajets et reservations --- */}
@@ -447,5 +454,138 @@ export function AdminDashboard() {
         </div>
       </Card>
     </div>
+  )
+}
+
+/* ------------------------------------------------------------- Files d'attente */
+
+interface QueueTile {
+  to: string
+  icon: LucideIcon
+  label: string
+  value: number
+  /** Ligne d'appui : montant du, anciennete du plus vieux dossier. */
+  detail: string | null
+  /** Question a laquelle le chiffre repond ; affichee au survol et aux lecteurs d'ecran. */
+  question: string
+}
+
+/**
+ * Ce qui attend une decision aujourd'hui, avant les courbes : chaque tuile est
+ * un lien vers la file concernee. Rafraichi chaque minute. Un zero est une bonne
+ * nouvelle et se lit comme tel (teinte neutre).
+ */
+function QueuesBlock() {
+  const overview = useAdminOverview()
+  const data = overview.data
+
+  if (overview.isError) {
+    return (
+      <Card className="mb-5 px-4 py-3 text-[13px] text-muted">
+        Files d'attente indisponibles.{' '}
+        <button
+          type="button"
+          className="font-semibold text-primary-ink underline-offset-4 hover:underline"
+          onClick={() => overview.refetch()}
+        >
+          Réessayer
+        </button>
+      </Card>
+    )
+  }
+
+  const tiles: QueueTile[] = data
+    ? [
+        {
+          to: '/admin/reports',
+          icon: AlertTriangle,
+          label: 'Signalements ouverts',
+          value: data.openReports,
+          detail: data.inReviewReports > 0 ? `${data.inReviewReports.toLocaleString('fr-FR')} en cours d'instruction` : null,
+          question: 'Qui attend une réponse de la modération ?',
+        },
+        {
+          to: '/admin/verifications',
+          icon: BadgeCheck,
+          label: "Vérifications d'identité",
+          value: data.pendingVerifications,
+          detail: data.oldestPendingVerificationAt
+            ? `Le plus ancien déposé ${formatFromNow(data.oldestPendingVerificationAt)}`
+            : null,
+          question: 'Depuis combien de temps un conducteur attend-il son badge ?',
+        },
+        {
+          to: '/admin/payouts',
+          icon: Wallet,
+          label: 'Reversements dus',
+          value: data.pendingPayouts,
+          detail: data.pendingPayouts > 0 ? `${formatFcfa(data.pendingPayoutsAmountFcfa)} à virer aux conducteurs` : null,
+          question: "Combien la plateforme doit-elle aux conducteurs aujourd'hui ?",
+        },
+        {
+          to: '/admin/payments',
+          icon: Banknote,
+          label: 'Remboursements à traiter',
+          value: data.refundsToHandle,
+          detail: data.refundsToHandle > 0 ? "L'automate n'a pas pu finir : action manuelle" : null,
+          question: 'Quels passagers attendent leur argent ?',
+        },
+      ]
+    : []
+
+  return (
+    <section aria-labelledby="admin-queues" className="mb-5">
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <h2 id="admin-queues" className="font-display text-[15px] font-bold">
+          Files d'attente
+        </h2>
+        <span className="text-[12px] text-muted">Rafraîchi chaque minute</span>
+      </div>
+      {overview.isPending || !data ? (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <StatSkeleton key={i} />
+          ))}
+        </div>
+      ) : (
+        <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {tiles.map((tile) => {
+            const active = tile.value > 0
+            return (
+              <li key={tile.to}>
+                <Link
+                  to={tile.to}
+                  title={tile.question}
+                  aria-label={`${tile.label} : ${tile.value.toLocaleString('fr-FR')}${tile.detail ? `, ${tile.detail}` : ''}. ${tile.question}`}
+                  className="block h-full rounded-[var(--radius-card)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  <Card
+                    interactive
+                    className={cn('flex h-full items-start gap-3 p-4', active && 'border-l-[3px] border-l-[var(--vermillon)]')}
+                  >
+                    <span
+                      className={cn(
+                        'flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-control)]',
+                        active ? 'bg-danger-soft text-danger-ink' : 'bg-surface-2 text-muted',
+                      )}
+                    >
+                      <tile.icon className="size-5" aria-hidden />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-label font-medium text-muted">{tile.label}</span>
+                      <span className="tnum mt-1 block font-display text-[26px] font-extrabold leading-none tracking-[-0.03em] text-ink">
+                        {tile.value.toLocaleString('fr-FR')}
+                      </span>
+                      <span className="mt-1.5 block text-caption text-muted">{tile.detail ?? 'Rien en attente'}</span>
+                    </span>
+                    <ArrowRight className="ml-auto mt-1 size-4 shrink-0 text-muted" aria-hidden />
+                  </Card>
+                </Link>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </section>
   )
 }

@@ -113,7 +113,54 @@ export function suggestPricePerSeat(distanceKm: number): number {
   return Math.round(raw / 500) * 500
 }
 
-/** Duree de route estimee (55 km/h de moyenne, routes beninoises). */
-export function estimateDurationMinutes(distanceKm: number): number {
-  return Math.max(15, Math.round((distanceKm * 1.15) / 55 * 60))
+/** Sinuosite moyenne du reseau : la route fait ~15 % de plus que l'orthodromie. */
+const ROAD_FACTOR = 1.15
+/** Vitesse moyenne en zone urbaine (embouteillages de Cotonou, zemidjans, feux). */
+export const URBAN_SPEED_KMH = 25
+/** Vitesse moyenne sur les routes nationales bitumees. */
+export const INTERCITY_SPEED_KMH = 55
+/** Formalites a un poste frontiere (Hillacondji, Kraké, Malanville). */
+export const BORDER_CROSSING_MINUTES = 45
+
+/**
+ * Vrai si un point est hors du Benin : en dessous de 7° N, le pays s'etend de
+ * Grand-Popo (1,6° E) a la frontiere nigeriane (2,75° E) ; au nord, de 0,77° E a
+ * 3,85° E. Lome (1,22° E) et Lagos (3,38° E) tombent bien en dehors. Un libelle
+ * portant un pays entre parentheses (« Lomé (Togo) ») tranche aussi.
+ */
+export function isOutsideBenin(lat: number, lng: number, label?: string): boolean {
+  if (label && /\((togo|nig[ée]ria|niger|ghana|burkina)\)/i.test(label)) return true
+  if (lat < 6.1 || lat > 12.45) return true
+  if (lat < 7) return lng < 1.6 || lng > 2.75
+  return lng < 0.77 || lng > 3.85
+}
+
+/**
+ * Duree de route ESTIMEE, jamais un horaire ferme (audit F414). Modele a deux
+ * vitesses : 25 km/h en deca de 30 km (axe urbain : Cotonou - Calavi, Cotonou -
+ * Porto-Novo aux heures de pointe), 55 km/h au-dela ; + 45 min par franchissement
+ * de frontiere. Afficher le resultat avec le signe « ≈ » ou la mention « estimee ».
+ */
+export function estimateDurationMinutes(distanceKm: number, options: { crossBorder?: boolean } = {}): number {
+  const roadKm = distanceKm * ROAD_FACTOR
+  const speed = distanceKm < URBAN_AXIS_KM ? URBAN_SPEED_KMH : INTERCITY_SPEED_KMH
+  const minutes = (roadKm / speed) * 60 + (options.crossBorder ? BORDER_CROSSING_MINUTES : 0)
+  return Math.max(15, Math.round(minutes))
+}
+
+/** Heure d'arrivee estimee (ISO) d'un trajet, a partir de ses coordonnees et de son depart. */
+export function estimateArrivalIso(trip: {
+  originLat: number
+  originLng: number
+  originLabel?: string
+  destLat: number
+  destLng: number
+  destLabel?: string
+  departureAt: string
+}): string {
+  const km = haversineKm(trip.originLat, trip.originLng, trip.destLat, trip.destLng)
+  const crossBorder =
+    isOutsideBenin(trip.originLat, trip.originLng, trip.originLabel) !==
+    isOutsideBenin(trip.destLat, trip.destLng, trip.destLabel)
+  return new Date(new Date(trip.departureAt).getTime() + estimateDurationMinutes(km, { crossBorder }) * 60_000).toISOString()
 }

@@ -1,5 +1,6 @@
-import { Banknote, PlayCircle, Wallet } from 'lucide-react'
+import { Banknote, CircleX, PlayCircle, RotateCcw, Wallet } from 'lucide-react'
 import { useState } from 'react'
+import { Link } from 'react-router'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/feedback/ConfirmDialog'
 import { AdminPageHeader } from '@/components/layout/AdminPageHeader'
@@ -7,12 +8,13 @@ import { DataTable, type DataTableColumn } from '@/components/tables/DataTable'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Input, Textarea } from '@/components/ui/input'
 import { EmptyState, ErrorState } from '@/components/ui/states'
 import { providerLabel } from '@/lib/payments'
 import { PaymentAccountsToVerify } from '@/features/admin/PaymentAccountsToVerify'
-import { useAdminPayouts, useMarkPayoutPaid, useRunPayoutBatch } from '@/hooks/useAdmin'
+import { useAdminPayouts, useFailPayout, useRunPayoutBatch, useSettlePayout } from '@/hooks/useAdmin'
 import { describeError } from '@/lib/errors'
-import { formatDayShort, formatFcfa, formatPhone } from '@/lib/format'
+import { formatDateTime, formatDayShort, formatFcfa, formatPhone } from '@/lib/format'
 import type { AdminPayoutResponse, PayoutStatus } from '@/api/extended'
 
 const STATUS: Record<PayoutStatus, { label: string; tone: 'warning' | 'indigo' | 'success' | 'danger'; order: number }> = {
@@ -28,6 +30,15 @@ const ACCENT: Partial<Record<PayoutStatus, string>> = {
   FAILED: 'var(--vermillon)',
 }
 
+/** Lots qui attendent encore un virement : a verser, en cours, ou a relancer apres echec. */
+function isDue(payout: AdminPayoutResponse): boolean {
+  return payout.status === 'PENDING' || payout.status === 'PROCESSING' || payout.status === 'FAILED'
+}
+
+function isSettled(payout: AdminPayoutResponse): boolean {
+  return payout.status === 'PAID' || payout.status === 'SETTLED'
+}
+
 function accountLabel(payout: AdminPayoutResponse): string {
   const provider = payout.provider ? providerLabel(payout.provider) : null
   const phone = payout.phone ? formatPhone(payout.phone) : null
@@ -41,7 +52,11 @@ const COLUMNS: DataTableColumn<AdminPayoutResponse>[] = [
     header: 'Conducteur',
     mobile: 'title',
     sortValue: (payout) => payout.driverName,
-    cell: (payout) => <span className="font-semibold text-ink">{payout.driverName}</span>,
+    cell: (payout) => (
+      <Link to={`/admin/users/${payout.driverId}`} className="font-semibold text-ink underline-offset-4 hover:underline">
+        {payout.driverName}
+      </Link>
+    ),
   },
   {
     id: 'account',
@@ -101,31 +116,99 @@ const COLUMNS: DataTableColumn<AdminPayoutResponse>[] = [
     sortValue: (payout) => STATUS[payout.status]?.order ?? 9,
     cell: (payout) => <Badge tone={STATUS[payout.status]?.tone ?? 'neutral'}>{STATUS[payout.status]?.label ?? payout.status}</Badge>,
   },
+  {
+    id: 'settlement',
+    header: 'Règlement',
+    mobile: 'meta',
+    className: 'hidden lg:table-cell max-w-[260px]',
+    cell: (payout) => {
+      const settledAt = payout.settledAt ?? payout.paidAt
+      if (isSettled(payout)) {
+        return (
+          <span className="block text-label text-ink-2">
+            {payout.externalReference ? (
+              <span className="tnum block truncate" title={payout.externalReference}>
+                Réf. {payout.externalReference}
+              </span>
+            ) : null}
+            {settledAt ? <span className="tnum block text-muted">{formatDateTime(settledAt)}</span> : null}
+            {!payout.externalReference && !settledAt ? <span className="text-muted">—</span> : null}
+          </span>
+        )
+      }
+      if (payout.status === 'FAILED' && payout.failureReason) {
+        return (
+          <span className="block text-label text-[var(--vermillon)]" title={payout.failureReason}>
+            {payout.failureReason}
+          </span>
+        )
+      }
+      return <span className="text-muted">—</span>
+    },
+  },
 ]
 
+type SettleDraft = { payout: AdminPayoutResponse; reference: string; amount: string }
+type FailDraft = { payout: AdminPayoutResponse; reason: string }
+
+/**
+ * Reversements : le decaissement mobile money se fait hors plateforme, puis se
+ * consigne ici avec la reference de l'operateur (regle) ou un motif (echec). Un
+ * lot en echec se relance par le meme geste une fois le virement refait.
+ */
 export function AdminPayouts() {
   const payouts = useAdminPayouts()
-  const markPaid = useMarkPayoutPaid()
+  const settle = useSettlePayout()
+  const fail = useFailPayout()
   const runBatch = useRunPayoutBatch()
-  const [target, setTarget] = useState<AdminPayoutResponse | null>(null)
+  const [settling, setSettling] = useState<SettleDraft | null>(null)
+  const [failing, setFailing] = useState<FailDraft | null>(null)
   const [runOpen, setRunOpen] = useState(false)
 
   const list = payouts.data ?? []
-  const due = list.filter((p) => p.status === 'PENDING' || p.status === 'FAILED')
+  const due = list.filter(isDue)
   const pendingTotal = due.reduce((sum, p) => sum + p.amount, 0)
 
-  const confirmPaid = () => {
-    if (!target) return
-    const payout = target
-    markPaid.mutate(payout.id, {
-      onSuccess: () => {
-        toast.success('Reversement enregistré', {
-          description: `${formatFcfa(payout.amount)} pour ${payout.driverName}`,
-        })
-        setTarget(null)
+  const settledAmount = settling && settling.amount.trim() ? Number(settling.amount) : undefined
+  const settledAmountValid =
+    settledAmount === undefined || (Number.isInteger(settledAmount) && settledAmount > 0 && settling !== null && settledAmount <= settling.payout.amount)
+
+  const confirmSettle = () => {
+    if (!settling || !settling.reference.trim() || !settledAmountValid) return
+    const { payout } = settling
+    settle.mutate(
+      {
+        id: payout.id,
+        externalReference: settling.reference.trim(),
+        settledAmountFcfa: settledAmount !== undefined && settledAmount !== payout.amount ? settledAmount : undefined,
       },
-      onError: (error) => toast.error(describeError(error, "Le reversement n'a pas pu être enregistré. Réessayez.")),
-    })
+      {
+        onSuccess: () => {
+          toast.success('Reversement enregistré', {
+            description: `${formatFcfa(settledAmount ?? payout.amount)} pour ${payout.driverName}`,
+          })
+          setSettling(null)
+        },
+        onError: (error) => toast.error(describeError(error, "Le reversement n'a pas pu être enregistré. Réessayez.")),
+      },
+    )
+  }
+
+  const confirmFail = () => {
+    if (!failing || !failing.reason.trim()) return
+    const { payout } = failing
+    fail.mutate(
+      { id: payout.id, reason: failing.reason.trim() },
+      {
+        onSuccess: () => {
+          toast.success('Lot marqué en échec', {
+            description: `${payout.driverName} reste à payer : relancez le lot une fois le virement refait.`,
+          })
+          setFailing(null)
+        },
+        onError: (error) => toast.error(describeError(error, "L'échec n'a pas pu être enregistré. Réessayez.")),
+      },
+    )
   }
 
   const confirmRun = () => {
@@ -163,7 +246,7 @@ export function AdminPayouts() {
       <AdminPageHeader
         title="Reversements"
         count={payouts.isSuccess ? due.length : undefined}
-        description="Lots hebdomadaires dus aux conducteurs. Le décaissement mobile money se fait hors plateforme, puis se marque ici comme versé."
+        description="Lots hebdomadaires dus aux conducteurs. Le décaissement mobile money se fait hors plateforme, puis se consigne ici avec la référence de l'opérateur."
         actions={
           <Button variant="secondary" size="sm" onClick={() => setRunOpen(true)} loading={runBatch.isPending}>
             <PlayCircle className="size-4" aria-hidden />
@@ -205,28 +288,100 @@ export function AdminPayouts() {
             />
           }
           rowActions={(payout) =>
-            payout.status === 'PENDING' || payout.status === 'FAILED' ? (
-              <Button size="sm" onClick={() => setTarget(payout)}>
-                {payout.status === 'FAILED' ? 'Relancer' : 'Marquer versé'}
-              </Button>
+            isDue(payout) ? (
+              <span className="flex flex-wrap justify-end gap-1">
+                {payout.status !== 'FAILED' ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-[var(--vermillon)]"
+                    onClick={() => setFailing({ payout, reason: '' })}
+                  >
+                    <CircleX className="size-4" aria-hidden />
+                    Marquer en échec
+                  </Button>
+                ) : null}
+                <Button size="sm" onClick={() => setSettling({ payout, reference: '', amount: '' })}>
+                  {payout.status === 'FAILED' ? (
+                    <>
+                      <RotateCcw className="size-4" aria-hidden />
+                      Relancer
+                    </>
+                  ) : (
+                    'Marquer réglé'
+                  )}
+                </Button>
+              </span>
             ) : null
           }
         />
       )}
 
       <ConfirmDialog
-        open={target !== null}
-        onOpenChange={(open) => !open && setTarget(null)}
-        title="Confirmer le versement ?"
+        open={settling !== null}
+        onOpenChange={(open) => !open && setSettling(null)}
+        title={settling?.payout.status === 'FAILED' ? 'Relancer et régler ce lot ?' : 'Confirmer le versement ?'}
         description={
-          target
-            ? `${formatFcfa(target.amount)} pour ${target.driverName}, vers ${accountLabel(target)}. Ne confirmez qu'une fois le transfert mobile money réellement effectué : cette action est définitive.`
+          settling
+            ? `${formatFcfa(settling.payout.amount)} pour ${settling.payout.driverName}, vers ${accountLabel(settling.payout)}. Ne confirmez qu'une fois le transfert mobile money réellement effectué : cette action est définitive et journalisée.`
             : undefined
         }
-        confirmLabel="Oui, versé"
-        loading={markPaid.isPending}
-        onConfirm={confirmPaid}
-      />
+        confirmLabel="Oui, réglé"
+        confirmDisabled={!settling || !settling.reference.trim() || !settledAmountValid}
+        loading={settle.isPending}
+        onConfirm={confirmSettle}
+      >
+        {settling ? (
+          <div className="space-y-3">
+            <Input
+              label="Référence du virement"
+              hint="Obligatoire. Identifiant de l'opération chez l'opérateur (reçu MoMo, Moov, Celtiis)."
+              placeholder="Ex. MP240905.1432.A12345"
+              value={settling.reference}
+              onChange={(event) => setSettling((s) => (s ? { ...s, reference: event.target.value } : s))}
+              spellCheck={false}
+              autoComplete="off"
+            />
+            <Input
+              label="Montant réellement versé (FCFA)"
+              hint={`Laissez vide si ${formatFcfa(settling.payout.amount)} ont été versés. À renseigner seulement si l'opérateur a retenu des frais.`}
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={settling.payout.amount}
+              step={5}
+              value={settling.amount}
+              onChange={(event) => setSettling((s) => (s ? { ...s, amount: event.target.value } : s))}
+              error={settledAmountValid ? undefined : `Montant entier entre 1 et ${formatFcfa(settling.payout.amount)}.`}
+            />
+          </div>
+        ) : null}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={failing !== null}
+        onOpenChange={(open) => !open && setFailing(null)}
+        title="Marquer ce lot en échec ?"
+        description={
+          failing
+            ? `${formatFcfa(failing.payout.amount)} pour ${failing.payout.driverName}. Le lot reste dû : il se relancera une fois le virement refait. Le motif est journalisé.`
+            : undefined
+        }
+        tone="danger"
+        confirmLabel="Marquer en échec"
+        confirmDisabled={!failing?.reason.trim()}
+        loading={fail.isPending}
+        onConfirm={confirmFail}
+      >
+        <Textarea
+          label="Motif de l'échec"
+          hint="Obligatoire. Numéro invalide, plafond de compte atteint, opérateur en panne…"
+          rows={3}
+          maxLength={500}
+          value={failing?.reason ?? ''}
+          onChange={(event) => setFailing((f) => (f ? { ...f, reason: event.target.value } : f))}
+        />
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={runOpen}

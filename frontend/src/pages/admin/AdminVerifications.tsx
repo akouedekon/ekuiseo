@@ -1,4 +1,4 @@
-import { motion } from 'motion/react'
+import { m } from 'motion/react'
 import { BadgeCheck, Check, FileText, X } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router'
@@ -115,9 +115,9 @@ export function AdminVerifications() {
           }
         />
       ) : (
-        <motion.ul variants={listContainer} initial="hidden" animate="show" className="space-y-3">
+        <m.ul variants={listContainer} initial="hidden" animate="show" className="space-y-3">
           {list.map((item) => (
-            <motion.li key={item.id} variants={listItem} layout exit={{ opacity: 0, x: -24 }}>
+            <m.li key={item.id} variants={listItem} exit={{ opacity: 0, x: -24 }}>
               <Card>
                 <div className="flex items-start gap-3 p-4">
                   <Avatar firstName={item.firstName} lastName={item.lastName} size={44} />
@@ -184,9 +184,9 @@ export function AdminVerifications() {
                   </div>
                 ) : null}
               </Card>
-            </motion.li>
+            </m.li>
           ))}
-        </motion.ul>
+        </m.ul>
       )}
 
       <Dialog open={rejecting !== null} onOpenChange={(open) => !open && !review.isPending && setRejecting(null)}>

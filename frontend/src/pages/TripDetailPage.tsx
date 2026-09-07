@@ -1,4 +1,4 @@
-import { motion } from 'motion/react'
+import { m } from 'motion/react'
 import {
   BadgeCheck,
   Briefcase,
@@ -9,7 +9,6 @@ import {
   Flag,
   Snowflake,
   Users,
-  Zap,
 } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
@@ -18,7 +17,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Avatar, RatingStars, Separator, Skeleton } from '@/components/ui/misc'
-import { ErrorState } from '@/components/ui/states'
+import { ErrorState, OfflineState, isOfflineWithoutData } from '@/components/ui/states'
 import { PageContainer, PageHeader, SectionTitle } from '@/components/layout/PageContainer'
 import { RouteMap } from '@/components/trip/RouteMap'
 import { RouteTimeline } from '@/components/trip/RouteTimeline'
@@ -28,7 +27,9 @@ import { estimatePaymentPlan } from '@/lib/payments'
 import { useIsAuthenticated, useMe } from '@/hooks/useAuth'
 import { usePublicUser, useUserReviews } from '@/hooks/useReviews'
 import { useTrip, useTripStops } from '@/hooks/useTrips'
-import { estimateDurationMinutes, haversineKm } from '@/lib/cities'
+import { format, parseISO } from 'date-fns'
+import { useIsDesktop } from '@/hooks/useMediaQuery'
+import { estimateArrivalIso } from '@/lib/cities'
 import { formatDuration, formatFcfa, formatFromNow, formatRelativeDay } from '@/lib/format'
 
 export function TripDetailPage() {
@@ -39,10 +40,20 @@ export function TripDetailPage() {
   const me = useMe()
   const authed = useIsAuthenticated()
   const [reportOpen, setReportOpen] = useState(false)
+  const desktop = useIsDesktop()
   const driverId = trip.data?.driver.id
   const driver = usePublicUser(driverId)
   const reviews = useUserReviews(driverId)
 
+  if (isOfflineWithoutData(trip))
+    return (
+      <PageContainer width="md">
+        <OfflineState
+          description="Ce trajet n'a pas encore été enregistré sur cet appareil. Il s'affichera dès que la connexion reviendra."
+          onRetry={() => trip.refetch()}
+        />
+      </PageContainer>
+    )
   if (trip.isPending) return <TripDetailSkeleton />
   if (trip.isError || !trip.data)
     return (
@@ -56,10 +67,26 @@ export function TripDetailPage() {
     )
 
   const data = trip.data
-  const km = haversineKm(data.originLat, data.originLng, data.destLat, data.destLng)
-  const durationMin = estimateDurationMinutes(km)
-  const arrival = new Date(new Date(data.departureAt).getTime() + durationMin * 60_000).toISOString()
+  // Arrivee et duree sont des ESTIMATIONS du front (modele a deux vitesses, lib/cities.ts).
+  const arrival = estimateArrivalIso(data)
+  const durationMin = Math.round((new Date(arrival).getTime() - new Date(data.departureAt).getTime()) / 60_000)
   const stopList = stops.data ?? []
+  /*
+   * Retour depuis un lien partage (WhatsApp) : pas d'historique dans l'application.
+   * On reconstruit la recherche correspondante plutot que d'envoyer vers /search sans
+   * parametres, soit l'ecran « Recherche incomplete » (audit F220).
+   */
+  const backTo = `/search?${new URLSearchParams({
+    from: data.originLabel,
+    fromLat: String(data.originLat),
+    fromLng: String(data.originLng),
+    to: data.destLabel,
+    toLat: String(data.destLat),
+    toLng: String(data.destLng),
+    date: format(parseISO(data.departureAt), 'yyyy-MM-dd'),
+    seats: '1',
+    type: data.tripType,
+  }).toString()}`
   const points = buildRoutePoints(
     data.originLabel,
     data.destLabel,
@@ -102,8 +129,8 @@ export function TripDetailPage() {
 
         <PageHeader
           title={`${data.originLabel} → ${data.destLabel}`}
-          subtitle={`${formatRelativeDay(data.departureAt)} · ${formatDuration(durationMin)} de route`}
-          backTo="/search"
+          subtitle={`${formatRelativeDay(data.departureAt)} · ≈ ${formatDuration(durationMin)} de route (estimation)`}
+          backTo={backTo}
           actions={
             <ShareTripButton
               title={`${data.originLabel} → ${data.destLabel}`}
@@ -164,7 +191,8 @@ export function TripDetailPage() {
               ) : null}
             </Card>
 
-            <RouteMap points={mapPoints} className="h-[220px] lg:hidden" />
+            {/* Une seule instance de carte a la fois : mobile ici, desktop dans la colonne laterale. */}
+            {!desktop ? <RouteMap points={mapPoints} className="h-[220px]" /> : null}
 
             {/* --- Conducteur --- */}
             <Card>
@@ -223,12 +251,6 @@ export function TripDetailPage() {
                     <Users aria-hidden />
                     {full ? 'Complet' : `${data.seatsAvailable}/${data.seatsTotal} places`}
                   </Badge>
-                  {data.instantBooking ? (
-                    <Badge tone="indigo">
-                      <Zap aria-hidden />
-                      Immédiat
-                    </Badge>
-                  ) : null}
                   {data.vehicle.comfortLevel !== 'BASIC' ? (
                     <Badge tone="neutral">
                       <Snowflake aria-hidden />
@@ -294,7 +316,7 @@ export function TripDetailPage() {
               ) : (
                 <div className="space-y-2">
                   {reviewList.map((review, index) => (
-                    <motion.div
+                    <m.div
                       key={review.id}
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -309,7 +331,7 @@ export function TripDetailPage() {
                           <p className="mt-1.5 text-[14px] leading-relaxed text-ink-2">{review.comment}</p>
                         ) : null}
                       </Card>
-                    </motion.div>
+                    </m.div>
                   ))}
                 </div>
               )}
@@ -328,7 +350,7 @@ export function TripDetailPage() {
           {/* --- Colonne de reservation (desktop) --- */}
           <aside className="hidden lg:block">
             <div className="sticky top-24 space-y-3">
-              <RouteMap points={mapPoints} className="h-[240px]" />
+              {desktop ? <RouteMap points={mapPoints} className="h-[240px]" /> : null}
               <Card className="p-4">
                 <PriceBlock pricePerSeat={data.pricePerSeat} />
                 {isOwnTrip ? (

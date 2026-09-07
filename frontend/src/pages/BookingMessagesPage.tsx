@@ -1,5 +1,5 @@
-import { motion } from 'motion/react'
-import { Clock, Send } from 'lucide-react'
+import { m } from 'motion/react'
+import { Clock, Lock, Send } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { toast } from 'sonner'
@@ -54,6 +54,13 @@ export function BookingMessagesPage() {
   }
 
   const counterpart = conversation?.counterpart ?? booking.data?.trip.driver
+  /*
+   * Conversation close (audit F546) : reservation annulee ou expiree, le serveur
+   * refuse l'ecriture (403). On le dit avant l'envoi, la lecture reste possible.
+   */
+  const bookingStatus = booking.data?.status
+  const closed =
+    bookingStatus === 'CANCELLED_BY_DRIVER' || bookingStatus === 'CANCELLED_BY_PASSENGER' || bookingStatus === 'EXPIRED'
   const tripInfo = conversation
     ? { tripId: conversation.tripId, originLabel: conversation.originLabel, destLabel: conversation.destLabel, departureAt: conversation.departureAt }
     : booking.data
@@ -93,7 +100,7 @@ export function BookingMessagesPage() {
               const pending = message.id.startsWith('pending-')
               const showAvatar = !mine && list[index - 1]?.senderId !== message.senderId
               return (
-                <motion.li
+                <m.li
                   key={message.id}
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -138,7 +145,7 @@ export function BookingMessagesPage() {
                       )}
                     </p>
                   </div>
-                </motion.li>
+                </m.li>
               )
             })}
             <div ref={endRef} />
@@ -148,10 +155,23 @@ export function BookingMessagesPage() {
 
       {!online ? (
         <Badge tone="warning" className="mx-auto mt-3">
-          Hors ligne — vos messages partiront au retour du réseau
+          Hors ligne — l'envoi est impossible tant que le réseau ne revient pas
         </Badge>
       ) : null}
 
+      {closed ? (
+        <p
+          role="status"
+          className="mt-3 flex items-start gap-2 rounded-[var(--radius-card)] border border-rule bg-[var(--surface-calm)] px-4 py-3 text-[13px] leading-relaxed text-ink-2"
+        >
+          <Lock className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
+          Conversation close :{' '}
+          {bookingStatus === 'EXPIRED'
+            ? "cette réservation a expiré faute d'acompte."
+            : 'cette réservation a été annulée.'}{' '}
+          Les messages restent lisibles, mais plus aucun envoi n'est possible.
+        </p>
+      ) : (
       <form onSubmit={submit} className="mt-3 flex items-end gap-2">
         <label htmlFor="message-input" className="sr-only">
           Votre message
@@ -171,10 +191,11 @@ export function BookingMessagesPage() {
           placeholder="Écrire un message…"
           className="ek-field max-h-32 min-h-11 flex-1 resize-none rounded-[var(--radius-control)] px-3 py-2.5 text-base placeholder:text-muted"
         />
-        <Button type="submit" size="icon" disabled={!draft.trim() || !id} aria-label="Envoyer le message">
+        <Button type="submit" size="icon" disabled={!draft.trim() || !id || !online} aria-label="Envoyer le message">
           <Send className="size-[18px]" aria-hidden />
         </Button>
       </form>
+      )}
     </PageContainer>
   )
 }

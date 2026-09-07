@@ -1,5 +1,5 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog'
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { AnimatePresence, m, useReducedMotion } from 'motion/react'
 import { X } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/cn'
@@ -30,7 +30,7 @@ export function Sheet({ open, onOpenChange, title, description, children, footer
         {open ? (
           <DialogPrimitive.Portal forceMount>
             <DialogPrimitive.Overlay asChild forceMount>
-              <motion.div
+              <m.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
@@ -40,7 +40,7 @@ export function Sheet({ open, onOpenChange, title, description, children, footer
             </DialogPrimitive.Overlay>
 
             <DialogPrimitive.Content asChild forceMount>
-              <motion.div
+              <m.div
                 initial={reduce ? { opacity: 0 } : { y: '100%' }}
                 animate={reduce ? { opacity: 1 } : { y: 0 }}
                 exit={reduce ? { opacity: 0 } : { y: '100%' }}
@@ -84,7 +84,7 @@ export function Sheet({ open, onOpenChange, title, description, children, footer
                 ) : (
                   <div className="safe-bottom shrink-0" />
                 )}
-              </motion.div>
+              </m.div>
             </DialogPrimitive.Content>
           </DialogPrimitive.Portal>
         ) : null}

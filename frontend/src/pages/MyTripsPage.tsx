@@ -1,20 +1,23 @@
-import { motion } from 'motion/react'
+import { m } from 'motion/react'
 import {
   Ban,
   Car,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   Clock,
   History,
   MessageSquare,
   Pencil,
   PlusCircle,
+  Repeat,
   Star,
   Ticket,
+  TimerOff,
   Users,
   XCircle,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/feedback/ConfirmDialog'
@@ -31,14 +34,22 @@ import { EditTripSheet } from '@/features/trips/EditTripSheet'
 import { TripPassengersSheet } from '@/features/trips/TripPassengersSheet'
 import { useCancelBooking, useMyBookings } from '@/hooks/useBookings'
 import { useCancelTrip, useMyTrips } from '@/hooks/useTrips'
+import { cn } from '@/lib/cn'
 import { describeError } from '@/lib/errors'
-import { formatFcfa, formatRelativeDay, formatTime } from '@/lib/format'
+import { formatDayShort, formatFcfa, formatRelativeDay, formatTime } from '@/lib/format'
 import { listContainer, listItem } from '@/lib/motion'
 import type { BookingDetailResponse } from '@/api/extended'
 import type { BookingStatus, TripResponse } from '@/api/types'
 
 type TabKey = 'upcoming' | 'past' | 'driving'
 const TABS: TabKey[] = ['upcoming', 'past', 'driving']
+type DrivingScope = 'upcoming' | 'past'
+
+/** Tableau vide partage : reference stable pour les memos tant que la requete n'a pas repondu. */
+const NO_TRIPS: TripResponse[] = []
+
+/** Un trajet conduit passe dans l historique 6 h apres son depart (delai de cloture serveur), ou des qu il est termine / annule. */
+const COMPLETION_DELAY_MS = 6 * 60 * 60 * 1000
 
 /** Traduction et couleur de chaque etat de reservation — une seule source. */
 const BOOKING_STATUS: Record<
@@ -51,16 +62,27 @@ const BOOKING_STATUS: Record<
   CANCELLED_BY_DRIVER: { label: 'Annulée par le conducteur', tone: 'danger', icon: Ban },
   COMPLETED: { label: 'Terminée', tone: 'neutral', icon: History },
   NO_SHOW: { label: 'Non présenté', tone: 'danger', icon: XCircle },
+  EXPIRED: { label: 'Expirée (acompte non reçu)', tone: 'neutral', icon: TimerOff },
+}
+
+/** Reservation close : plus d action possible, et la conversation est fermee (audit F546). */
+function isClosedBooking(status: BookingStatus): boolean {
+  return status === 'CANCELLED_BY_DRIVER' || status === 'CANCELLED_BY_PASSENGER' || status === 'EXPIRED'
 }
 
 function isPastBooking(booking: BookingDetailResponse): boolean {
   return (
     booking.status === 'COMPLETED' ||
     booking.status === 'NO_SHOW' ||
-    booking.status === 'CANCELLED_BY_DRIVER' ||
-    booking.status === 'CANCELLED_BY_PASSENGER' ||
+    isClosedBooking(booking.status) ||
     new Date(booking.trip.departureAt).getTime() < Date.now()
   )
+}
+
+function isPastTrip(trip: TripResponse): boolean {
+  if (trip.status === 'TEMPLATE') return false
+  if (trip.status === 'COMPLETED' || trip.status === 'CANCELLED') return true
+  return new Date(trip.departureAt).getTime() + COMPLETION_DELAY_MS < Date.now()
 }
 
 const RRULE_DAY_LABELS: Record<string, string> = { MO: 'lun', TU: 'mar', WE: 'mer', TH: 'jeu', FR: 'ven', SA: 'sam', SU: 'dim' }
@@ -87,6 +109,44 @@ function canReview(booking: BookingDetailResponse): boolean {
 }
 
 /**
+ * Trajets conduits regroupes : une navette (modele TEMPLATE) et ses occurrences
+ * forment un seul bloc, les trajets ponctuels restent isoles (audit F229). Les
+ * occurrences dont le modele n'est pas dans la liste sont regroupees entre elles.
+ */
+interface DrivingGroup {
+  key: string
+  template: TripResponse | null
+  occurrences: TripResponse[]
+}
+
+function groupDriving(trips: TripResponse[]): DrivingGroup[] {
+  const byParent = new Map<string, TripResponse[]>()
+  const singles: TripResponse[] = []
+  const templates: TripResponse[] = []
+  for (const trip of trips) {
+    if (trip.status === 'TEMPLATE') templates.push(trip)
+    else if (trip.parentTripId) {
+      const list = byParent.get(trip.parentTripId) ?? []
+      list.push(trip)
+      byParent.set(trip.parentTripId, list)
+    } else singles.push(trip)
+  }
+  const byTime = (a: TripResponse, b: TripResponse) => a.departureAt.localeCompare(b.departureAt)
+  const groups: DrivingGroup[] = []
+  for (const template of templates) {
+    groups.push({ key: template.id, template, occurrences: (byParent.get(template.id) ?? []).sort(byTime) })
+    byParent.delete(template.id)
+  }
+  for (const [parentId, occurrences] of byParent) {
+    groups.push({ key: parentId, template: null, occurrences: occurrences.sort(byTime) })
+  }
+  for (const trip of singles) groups.push({ key: trip.id, template: null, occurrences: [trip] })
+  // Prochain depart en premier ; une navette se classe sur sa premiere occurrence.
+  const firstDeparture = (g: DrivingGroup) => g.occurrences[0]?.departureAt ?? g.template?.departureAt ?? ''
+  return groups.sort((a, b) => firstDeparture(a).localeCompare(firstDeparture(b)))
+}
+
+/**
  * Mes trajets : reservations (a venir / passees) et trajets conduits.
  * L'onglet actif vit dans l'URL (?tab=) : partageable et conserve au rechargement.
  */
@@ -94,6 +154,7 @@ export function MyTripsPage({ defaultTab = 'upcoming' }: { defaultTab?: TabKey }
   const [searchParams, setSearchParams] = useSearchParams()
   const tabParam = searchParams.get('tab')
   const tab: TabKey = TABS.includes(tabParam as TabKey) ? (tabParam as TabKey) : defaultTab
+  const [drivingScope, setDrivingScope] = useState<DrivingScope>('upcoming')
   const bookings = useMyBookings()
   const trips = useMyTrips()
   const cancelBooking = useCancelBooking()
@@ -112,7 +173,13 @@ export function MyTripsPage({ defaultTab = 'upcoming' }: { defaultTab?: TabKey }
   const bookingList = bookings.data ?? []
   const upcoming = bookingList.filter((b) => !isPastBooking(b))
   const past = bookingList.filter(isPastBooking)
-  const driving = trips.data ?? []
+  const drivingAll = trips.data ?? NO_TRIPS
+  const drivingUpcoming = useMemo(() => groupDriving(drivingAll.filter((t) => !isPastTrip(t))), [drivingAll])
+  const drivingPast = useMemo(
+    () => groupDriving(drivingAll.filter(isPastTrip)).sort((a, b) => b.occurrences[0].departureAt.localeCompare(a.occurrences[0].departureAt)),
+    [drivingAll],
+  )
+  const drivingGroups = drivingScope === 'upcoming' ? drivingUpcoming : drivingPast
 
   const confirmCancel = () => {
     if (!confirm) return
@@ -134,6 +201,14 @@ export function MyTripsPage({ defaultTab = 'upcoming' }: { defaultTab?: TabKey }
       })
     }
   }
+
+  const askCancelTrip = (trip: TripResponse) =>
+    setConfirm({
+      kind: 'trip',
+      id: trip.id,
+      label: `${trip.originLabel} → ${trip.destLabel}`,
+      template: trip.status === 'TEMPLATE',
+    })
 
   const renderBookings = (list: BookingDetailResponse[], pastTab: boolean) => {
     if (bookings.isPending) return <ListSkeleton count={pastTab ? 2 : 3} />
@@ -157,7 +232,7 @@ export function MyTripsPage({ defaultTab = 'upcoming' }: { defaultTab?: TabKey }
     return (
       // Pas d'AnimatePresence intercalee ici : elle couperait la propagation
       // des variantes et les cartes resteraient invisibles.
-      <motion.div variants={listContainer} initial="hidden" animate="show" className="space-y-3">
+      <m.div variants={listContainer} initial="hidden" animate="show" className="space-y-3">
         {list.map((booking) => (
           <BookingCard
             key={booking.id}
@@ -177,7 +252,7 @@ export function MyTripsPage({ defaultTab = 'upcoming' }: { defaultTab?: TabKey }
             }
           />
         ))}
-      </motion.div>
+      </m.div>
     )
   }
 
@@ -209,7 +284,7 @@ export function MyTripsPage({ defaultTab = 'upcoming' }: { defaultTab?: TabKey }
           <TabsTrigger value="past">Passés</TabsTrigger>
           <TabsTrigger value="driving">
             Je conduis
-            {driving.length > 0 ? <CountPill>{driving.length}</CountPill> : null}
+            {drivingUpcoming.length > 0 ? <CountPill>{drivingUpcoming.length}</CountPill> : null}
           </TabsTrigger>
         </TabsList>
 
@@ -217,40 +292,72 @@ export function MyTripsPage({ defaultTab = 'upcoming' }: { defaultTab?: TabKey }
         <TabsContent value="past">{renderBookings(past, true)}</TabsContent>
 
         <TabsContent value="driving">
+          {/* Sous-onglets : les trajets passes et annules ne se melangent plus aux prochains departs. */}
+          <div className="mb-3 flex gap-1 rounded-[var(--radius-control)] bg-surface-2 p-1" role="tablist" aria-label="Période des trajets conduits">
+            {(
+              [
+                { value: 'upcoming', label: 'À venir', count: drivingUpcoming.length },
+                { value: 'past', label: 'Passés', count: drivingPast.length },
+              ] as const
+            ).map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="tab"
+                aria-selected={drivingScope === option.value}
+                onClick={() => setDrivingScope(option.value)}
+                className={cn(
+                  'inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-[7px] px-3 text-label font-semibold transition-colors',
+                  drivingScope === option.value ? 'bg-surface text-ink shadow-e1' : 'text-ink-2 hover:text-ink',
+                )}
+              >
+                {option.label}
+                {option.count > 0 ? <span className="tnum text-caption text-muted">{option.count}</span> : null}
+              </button>
+            ))}
+          </div>
+
           {trips.isPending ? (
             <ListSkeleton count={2} />
           ) : trips.isError ? (
             <ErrorState onRetry={() => trips.refetch()} />
-          ) : driving.length === 0 ? (
-            <EmptyState
-              icon={Car}
-              title="Vous ne conduisez aucun trajet"
-              description="Publiez un trajet et partagez vos frais de route."
-              action={
-                <Button asChild>
-                  <Link to="/publish">Publier un trajet</Link>
-                </Button>
-              }
-            />
+          ) : drivingGroups.length === 0 ? (
+            drivingScope === 'past' ? (
+              <EmptyState icon={History} title="Aucun trajet passé" description="Les trajets que vous avez conduits ou annulés seront listés ici." />
+            ) : (
+              <EmptyState
+                icon={Car}
+                title="Vous ne conduisez aucun trajet"
+                description="Publiez un trajet et partagez vos frais de route."
+                action={
+                  <Button asChild>
+                    <Link to="/publish">Publier un trajet</Link>
+                  </Button>
+                }
+              />
+            )
           ) : (
-            <motion.div variants={listContainer} initial="hidden" animate="show" className="space-y-3">
-              {driving.map((trip) => (
-                <DrivingCard
-                  key={trip.id}
-                  trip={trip}
-                  onEdit={() => setEditing(trip)}
-                  onPassengers={() => setViewingPassengers(trip)}
-                  onCancel={() =>
-                    setConfirm({
-                      kind: 'trip',
-                      id: trip.id,
-                      label: `${trip.originLabel} → ${trip.destLabel}`,
-                      template: trip.status === 'TEMPLATE',
-                    })
-                  }
-                />
-              ))}
-            </motion.div>
+            <m.div key={drivingScope} variants={listContainer} initial="hidden" animate="show" className="space-y-3">
+              {drivingGroups.map((group) =>
+                group.template || group.occurrences.length > 1 ? (
+                  <ShuttleGroupCard
+                    key={group.key}
+                    group={group}
+                    onEdit={setEditing}
+                    onPassengers={setViewingPassengers}
+                    onCancel={askCancelTrip}
+                  />
+                ) : (
+                  <DrivingCard
+                    key={group.key}
+                    trip={group.occurrences[0]}
+                    onEdit={() => setEditing(group.occurrences[0])}
+                    onPassengers={() => setViewingPassengers(group.occurrences[0])}
+                    onCancel={() => askCancelTrip(group.occurrences[0])}
+                  />
+                ),
+              )}
+            </m.div>
           )}
         </TabsContent>
       </Tabs>
@@ -325,17 +432,17 @@ function BookingCard({
   const status = BOOKING_STATUS[booking.status]
   const StatusIcon = status.icon
   const pending = booking.status === 'PENDING_PAYMENT'
-  const cancelled = booking.status.startsWith('CANCELLED')
+  const closed = isClosedBooking(booking.status)
   const deadline = booking.paymentPlan.depositDueAt ? new Date(booking.paymentPlan.depositDueAt).getTime() : null
 
   return (
-    <motion.div variants={listItem} layout>
+    <m.div variants={listItem}>
       <Card
         className={
           // L'etat se lit d'abord au filet lateral, avant meme de lire la puce.
           pending
             ? 'border-l-[3px] border-l-[var(--ocre)]'
-            : cancelled
+            : closed
               ? 'border-l-[3px] border-l-[var(--vermillon)] opacity-80'
               : booking.status === 'CONFIRMED'
                 ? 'border-l-[3px] border-l-[var(--vert)]'
@@ -390,7 +497,8 @@ function BookingCard({
           </div>
         </div>
 
-        {!past ? (
+        {/* Reservation close (annulee, expiree) : plus de messagerie ni d'annulation - la conversation est fermee. */}
+        {!past && !closed ? (
           <div className="flex items-center gap-2 border-t border-rule px-3 py-2">
             {pending ? (
               <Button asChild size="sm" className="flex-1">
@@ -408,7 +516,7 @@ function BookingCard({
                 ) : null}
               </Link>
             </Button>
-            {!cancelled && onCancel ? (
+            {onCancel ? (
               <Button variant="ghost" size="sm" className="ml-auto text-[var(--vermillon)]" onClick={onCancel}>
                 Annuler
               </Button>
@@ -429,8 +537,23 @@ function BookingCard({
           </div>
         ) : null}
       </Card>
-    </motion.div>
+    </m.div>
   )
+}
+
+/** Ce qu un trajet conduit autorise encore : modification, liste d appel, annulation. */
+function drivingState(trip: TripResponse) {
+  const cancelled = trip.status === 'CANCELLED'
+  const completed = trip.status === 'COMPLETED'
+  const template = trip.status === 'TEMPLATE'
+  // Le statut ONGOING est pose par le serveur toutes les 5 min ; l heure locale couvre l intervalle.
+  const departed = trip.status === 'ONGOING' || (!template && new Date(trip.departureAt).getTime() < Date.now())
+  const editable = !cancelled && !completed && !departed
+  const booked = trip.seatsTotal - trip.seatsAvailable
+  // La liste d appel sert des qu il y a des passagers, et jusqu a 48 h apres le depart (no-show).
+  const showPassengers =
+    !template && !cancelled && (booked > 0 || departed) && new Date(trip.departureAt).getTime() + 48 * 3600 * 1000 > Date.now()
+  return { cancelled, completed, template, departed, editable, booked, showPassengers }
 }
 
 function DrivingCard({
@@ -444,19 +567,10 @@ function DrivingCard({
   onCancel: () => void
   onPassengers: () => void
 }) {
-  const cancelled = trip.status === 'CANCELLED'
-  const completed = trip.status === 'COMPLETED'
-  const template = trip.status === 'TEMPLATE'
-  // Le statut ONGOING est pose par le serveur toutes les 5 min ; l heure locale couvre l intervalle.
-  const departed = trip.status === 'ONGOING' || (!template && new Date(trip.departureAt).getTime() < Date.now())
-  const editable = !cancelled && !completed && !departed
-  const booked = trip.seatsTotal - trip.seatsAvailable
-  // La liste d appel sert des qu il y a des passagers, et jusqu a 48 h apres le depart (no-show).
-  const showPassengers =
-    !template && !cancelled && (booked > 0 || departed) && new Date(trip.departureAt).getTime() + 48 * 3600 * 1000 > Date.now()
+  const { cancelled, completed, template, departed, editable, booked, showPassengers } = drivingState(trip)
 
   return (
-    <motion.div variants={listItem} layout>
+    <m.div variants={listItem}>
       <Card
         className={
           cancelled
@@ -479,16 +593,7 @@ function DrivingCard({
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              {template ? (
-                <Badge tone={cancelled ? 'danger' : 'neutral'}>Navette</Badge>
-              ) : departed && !completed && !cancelled ? (
-                <Badge tone="warning">En cours</Badge>
-              ) : (
-                <Badge tone={cancelled ? 'danger' : completed ? 'neutral' : booked > 0 ? 'success' : 'warning'}>
-                  <Users aria-hidden />
-                  {booked}/{trip.seatsTotal}
-                </Badge>
-              )}
+              <TripStatusBadge trip={trip} />
               <ChevronRight className="size-4 text-muted" aria-hidden />
             </div>
           </div>
@@ -508,10 +613,12 @@ function DrivingCard({
             ) : null}
             {editable ? (
               <>
-                <Button variant="ghost" size="sm" onClick={onEdit}>
-                  <Pencil className="size-4" aria-hidden />
-                  Modifier
-                </Button>
+                {!departed ? (
+                  <Button variant="ghost" size="sm" onClick={onEdit}>
+                    <Pencil className="size-4" aria-hidden />
+                    Modifier
+                  </Button>
+                ) : null}
                 <Button variant="ghost" size="sm" className="ml-auto text-[var(--vermillon)]" onClick={onCancel}>
                   {template ? 'Arrêter la navette' : 'Annuler le trajet'}
                 </Button>
@@ -520,6 +627,131 @@ function DrivingCard({
           </div>
         ) : null}
       </Card>
-    </motion.div>
+    </m.div>
+  )
+}
+
+function TripStatusBadge({ trip }: { trip: TripResponse }) {
+  const { cancelled, completed, template, departed, booked } = drivingState(trip)
+  if (template) return <Badge tone={cancelled ? 'danger' : 'neutral'}>Navette</Badge>
+  if (departed && !completed && !cancelled) return <Badge tone="warning">En cours</Badge>
+  return (
+    <Badge tone={cancelled ? 'danger' : completed ? 'neutral' : booked > 0 ? 'success' : 'warning'}>
+      <Users aria-hidden />
+      {booked}/{trip.seatsTotal}
+    </Badge>
+  )
+}
+
+/**
+ * Navette et ses occurrences : un seul bloc au lieu d'une carte par jour. Le
+ * modele porte l'action « arrêter » ; chaque occurrence garde ses propres
+ * actions (passagers, modification, annulation d'un seul depart).
+ */
+function ShuttleGroupCard({
+  group,
+  onEdit,
+  onPassengers,
+  onCancel,
+}: {
+  group: DrivingGroup
+  onEdit: (trip: TripResponse) => void
+  onPassengers: (trip: TripResponse) => void
+  onCancel: (trip: TripResponse) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const template = group.template
+  const head = template ?? group.occurrences[0]
+  const active = group.occurrences.filter((t) => t.status !== 'CANCELLED')
+  const bookedSeats = active.reduce((sum, t) => sum + (t.seatsTotal - t.seatsAvailable), 0)
+  const cancelledTemplate = template?.status === 'CANCELLED'
+
+  return (
+    <m.div variants={listItem}>
+      <Card className={cn('border-l-[3px]', cancelledTemplate ? 'border-l-[var(--vermillon)] opacity-80' : 'border-l-[var(--indigo)]')}>
+        <div className="p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate font-display text-[16px] font-bold leading-tight">
+                {head.originLabel} → {head.destLabel}
+              </p>
+              <p className="tnum mt-0.5 text-[13px] text-muted">
+                Navette · {describeRecurrence(head.recurrenceRule)} à {formatTime(head.departureAt)}
+              </p>
+            </div>
+            <Badge tone={cancelledTemplate ? 'danger' : 'neutral'}>
+              <Repeat aria-hidden />
+              Navette
+            </Badge>
+          </div>
+          <p className="tnum mt-2 text-[13px] text-ink-2">
+            {formatFcfa(head.pricePerSeat)} par place · {active.length} départ{active.length > 1 ? 's' : ''}
+            {group.occurrences.length > 0 ? ` · ${bookedSeats} place${bookedSeats > 1 ? 's' : ''} réservée${bookedSeats > 1 ? 's' : ''}` : ''}
+          </p>
+        </div>
+
+        {group.occurrences.length > 0 ? (
+          <>
+            <button
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              aria-expanded={open}
+              className="flex w-full items-center justify-between gap-2 border-t border-rule px-4 py-2.5 text-[13px] font-semibold text-ink-2 transition-colors hover:bg-[var(--surface-calm)]"
+            >
+              {open ? 'Masquer les départs' : `Voir les ${group.occurrences.length} départ${group.occurrences.length > 1 ? 's' : ''}`}
+              <ChevronDown className={cn('size-4 transition-transform', open && 'rotate-180')} aria-hidden />
+            </button>
+            {open ? (
+              <ul className="divide-y divide-rule border-t border-rule">
+                {group.occurrences.map((trip) => {
+                  const state = drivingState(trip)
+                  return (
+                    <li key={trip.id} className="flex flex-wrap items-center gap-2 px-4 py-2.5">
+                      <Link to={`/trips/${trip.id}`} className="tnum min-w-0 flex-1 text-[14px] font-medium underline-offset-4 hover:underline">
+                        {formatDayShort(trip.departureAt)} · {formatTime(trip.departureAt)}
+                      </Link>
+                      <TripStatusBadge trip={trip} />
+                      {state.showPassengers ? (
+                        <Button variant="ghost" size="iconSm" aria-label="Passagers" onClick={() => onPassengers(trip)}>
+                          <Users className="size-4" aria-hidden />
+                        </Button>
+                      ) : null}
+                      {state.editable && !state.departed ? (
+                        <Button variant="ghost" size="iconSm" aria-label="Modifier ce départ" onClick={() => onEdit(trip)}>
+                          <Pencil className="size-4" aria-hidden />
+                        </Button>
+                      ) : null}
+                      {state.editable ? (
+                        <Button
+                          variant="ghost"
+                          size="iconSm"
+                          aria-label="Annuler ce départ"
+                          className="text-[var(--vermillon)]"
+                          onClick={() => onCancel(trip)}
+                        >
+                          <XCircle className="size-4" aria-hidden />
+                        </Button>
+                      ) : null}
+                    </li>
+                  )
+                })}
+              </ul>
+            ) : null}
+          </>
+        ) : null}
+
+        {template && !cancelledTemplate ? (
+          <div className="flex items-center gap-2 border-t border-rule px-3 py-2">
+            <Button variant="ghost" size="sm" onClick={() => onEdit(template)}>
+              <Pencil className="size-4" aria-hidden />
+              Modifier la navette
+            </Button>
+            <Button variant="ghost" size="sm" className="ml-auto text-[var(--vermillon)]" onClick={() => onCancel(template)}>
+              Arrêter la navette
+            </Button>
+          </div>
+        ) : null}
+      </Card>
+    </m.div>
   )
 }
