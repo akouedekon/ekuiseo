@@ -30,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -216,7 +217,7 @@ class AuthServiceTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> details = ArgumentCaptor.forClass(Map.class);
-        verify(auditService).log(eq(user.getId()), eq(AuthService.AUDIT_OTP_REQUESTED), eq("user"), eq(user.getId()), details.capture());
+        verify(auditService).log(isNull(), eq(AuthService.AUDIT_OTP_REQUESTED), eq("user"), eq(user.getId()), details.capture());
         assertThat(details.getValue()).containsEntry("ip", "").containsEntry("userAgent", "");
     }
 

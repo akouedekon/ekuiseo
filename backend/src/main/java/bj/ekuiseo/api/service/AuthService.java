@@ -151,7 +151,11 @@ public class AuthService {
         Map<String, Object> details = requestDetails();
         details.put("channel", String.valueOf(response.channel()));
         details.put("destination", String.valueOf(response.destination()));
-        auditService.log(user.getId(), AUDIT_OTP_REQUESTED, "user", user.getId(), details);
+        // Acteur volontairement nul : a l inscription, l utilisateur n est pas encore commite et
+        // l audit tourne dans sa propre transaction (REQUIRES_NEW) ; un actor_id inconnu
+        // violerait la cle etrangere audit_log.actor_id (regression constatee en production
+        // le 2026-09-07). L identifiant reste dans entity_id.
+        auditService.log(null, AUDIT_OTP_REQUESTED, "user", user.getId(), details);
         return response;
     }
 
