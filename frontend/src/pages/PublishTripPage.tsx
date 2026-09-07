@@ -14,7 +14,7 @@ import {
   Trash2,
   Wallet,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form'
 import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
@@ -200,7 +200,18 @@ export function PublishTripPage() {
     setStep((s) => Math.max(0, s - 1))
   }
 
-  const submit = form.handleSubmit((data) => {
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    // Entree dans un champ (ou tout envoi implicite) avant le recapitulatif : on avance
+    // d une etape, on ne publie jamais sans que le conducteur ait vu le resume.
+    if (step < 2) {
+      event.preventDefault()
+      void goNext()
+      return
+    }
+    return publish(event)
+  }
+
+  const publish = form.handleSubmit((data) => {
     if (!origin || !destination) {
       toast.error('Le départ et la destination sont requis.')
       setStep(0)
@@ -794,13 +805,19 @@ export function PublishTripPage() {
               <span className="sr-only sm:not-sr-only">Retour</span>
             </Button>
           ) : null}
+          {/*
+           * Deux elements DOM distincts (`key`) : sans cela React reutilise le meme <button>
+           * et, le passage a l'etape 3 se faisant dans les microtaches du clic sur
+           * « Continuer », le navigateur executait l'action par defaut du clic sur un bouton
+           * devenu `type="submit"` : le trajet etait publie sans passer par le recapitulatif.
+           */}
           {step < 2 ? (
-            <Button type="button" size="lg" block onClick={goNext}>
+            <Button key="next" type="button" size="lg" block onClick={goNext}>
               Continuer
               <ArrowRight className="size-4" aria-hidden />
             </Button>
           ) : (
-            <Button type="submit" size="lg" block loading={createTrip.isPending}>
+            <Button key="submit" type="submit" size="lg" block loading={createTrip.isPending}>
               Publier le trajet
             </Button>
           )}
