@@ -13,6 +13,7 @@ import java.time.Instant;
  * @param pendingPayouts lots de reversement PENDING
  * @param pendingPayoutsAmountFcfa montant total du aux conducteurs dans ces lots
  * @param refundsToHandle remboursements REFUND_PENDING ou REFUND_MANUAL
+ * @param heavyMessageSenders comptes ayant envoye plus de 50 messages sur les dernieres 24 h (abus possible, constat F555)
  */
 public record AdminOverviewResponse(
         long openReports,
@@ -21,6 +22,7 @@ public record AdminOverviewResponse(
         Instant oldestPendingVerificationAt,
         long pendingPayouts,
         long pendingPayoutsAmountFcfa,
-        long refundsToHandle
+        long refundsToHandle,
+        long heavyMessageSenders
 ) {
 }

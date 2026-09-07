@@ -40,6 +40,17 @@ public final class Masking {
         return phone(number);
     }
 
+    /**
+     * Initiale du nom de famille suivie d un point (« Aholou » -> « A. »), montree aux
+     * appelants anonymes a la place du nom complet (constat F519) ; null ou vide reste tel quel.
+     */
+    public static String lastNameInitial(String lastName) {
+        if (lastName == null) return null;
+        String trimmed = lastName.trim();
+        if (trimmed.isEmpty()) return trimmed;
+        return trimmed.substring(0, 1).toUpperCase(java.util.Locale.ROOT) + ".";
+    }
+
     /** Remplace toute suite de 4 a 8 chiffres (un code de connexion) par des etoiles. */
     public static String codes(String text) {
         if (text == null) return null;

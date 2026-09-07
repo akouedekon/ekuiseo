@@ -15,8 +15,8 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-/** Recherche de lieux (villes/quartiers du Benin, voir migration V3) pour l'autocompletion origine/destination. */
-@Tag(name = "Geocodage", description = "Autocompletion de villes/quartiers pour les champs origine/destination")
+/** Referentiel de lieux (villes, quartiers, gares du Benin, migrations V3 et V17) pour l'autocompletion origine/destination. */
+@Tag(name = "Geocodage", description = "Autocompletion de villes/quartiers/gares pour les champs origine/destination")
 @RestController
 @RequestMapping("/api/v1/geo")
 public class GeoController {
@@ -30,13 +30,21 @@ public class GeoController {
     /**
      * Referentiel quasi statique (table geo_places alimentee par migration) : cache public
      * d un jour cote navigateur et proxy (constat F416), en plus de la limitation de debit par
-     * IP de RateLimitingFilter sur cet endpoint public.
+     * IP de RateLimitingFilter sur ces endpoints publics.
      */
-    @Operation(summary = "Rechercher un lieu", description = "Recherche insensible a la casse et aux accents sur le nom (prefixe ou sous-chaine), ex: q=cotonou ou q=natitngou. Reponse cacheable 24 h (Cache-Control: public, max-age=86400).")
+    @Operation(summary = "Rechercher un lieu", description = "Recherche insensible a la casse et aux accents sur le nom ou un alias (prefixe ou sous-chaine), avec repli tolerant aux fautes (trigrammes) quand rien ne correspond : q=cotonou, q=calavi ou q=natitngou. Chaque lieu porte sa ville de rattachement (parentName). Reponse cacheable 24 h (Cache-Control: public, max-age=86400).")
     @GetMapping("/search")
     public ResponseEntity<List<GeoPlaceResponse>> search(@RequestParam @Size(max = 100) String q) {
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.maxAge(1, TimeUnit.DAYS).cachePublic())
                 .body(geocodingService.search(q));
+    }
+
+    @Operation(summary = "Referentiel complet des lieux", description = "Toutes les villes, quartiers et gares du referentiel (kind CITY/DISTRICT/STATION), villes d abord : source unique pour le front, qui n en garde plus de copie. Reponse cacheable 24 h (Cache-Control: public, max-age=86400).")
+    @GetMapping("/places")
+    public ResponseEntity<List<GeoPlaceResponse>> places() {
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.maxAge(1, TimeUnit.DAYS).cachePublic())
+                .body(geocodingService.listAll());
     }
 }

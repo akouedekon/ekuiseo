@@ -1,5 +1,6 @@
 package bj.ekuiseo.api.domain;
 
+import bj.ekuiseo.api.domain.enums.GeoPlaceKind;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -10,10 +11,14 @@ import lombok.Setter;
 import java.util.UUID;
 
 /**
- * Lieu geocode (ville ou quartier), servant de cache/referentiel en base pour
- * la recherche d'adresses cote application (voir GeocodingService). Alimente
- * par la migration V3 (villes et quartiers du Benin + Lome/Lagos pour le
- * trafic transfrontalier).
+ * Lieu geocode (ville, quartier ou gare routiere), servant de referentiel en base pour
+ * la recherche d'adresses cote application (voir GeocodingService). Alimente par les
+ * migrations V3 et V17 (villes et quartiers du Benin, gares et carrefours de rendez-vous,
+ * Lome/Lagos pour le trafic transfrontalier).
+ *
+ * <p>La colonne {@code aliases} (text[], V17 : autres graphies, deja normalisees) n est
+ * pas mappee ici : elle n est lue que par les requetes natives de recherche
+ * (GeoPlaceRepository#search), jamais exposee telle quelle.</p>
  */
 @Entity
 @Table(name = "geo_places")
@@ -42,9 +47,10 @@ public class GeoPlace {
     @Builder.Default
     private String countryCode = "BJ";
 
-    /** CITY ou DISTRICT (quartier rattache a une ville, ex: Cadjehoun -> Cotonou). */
+    /** CITY, DISTRICT (quartier rattache a une ville) ou STATION (gare, carrefour), voir V17. */
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
-    private String kind;
+    private GeoPlaceKind kind;
 
     @Column(name = "parent_place_id")
     private UUID parentPlaceId;

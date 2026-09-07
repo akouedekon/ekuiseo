@@ -1,5 +1,6 @@
 package bj.ekuiseo.api.service;
 
+import bj.ekuiseo.api.common.Masking;
 import bj.ekuiseo.api.common.PhoneNumbers;
 import bj.ekuiseo.api.common.exception.BadRequestException;
 import bj.ekuiseo.api.common.exception.ConflictException;
@@ -17,11 +18,13 @@ import bj.ekuiseo.api.dto.auth.RefreshRequest;
 import bj.ekuiseo.api.mapper.UserMapper;
 import bj.ekuiseo.api.repository.UserRepository;
 import bj.ekuiseo.api.security.JwtService;
-import org.springframework.security.crypto.password.PasswordEncoder;
+import bj.ekuiseo.api.security.RequestContext;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -32,38 +35,51 @@ import java.util.UUID;
  * <p>Cycle d un compte : cree en {@code PENDING_VERIFICATION} a l inscription, il
  * devient {@code ACTIVE} a la premiere verification de code ; jamais verifie, il est
  * purge apres 24 h (AuthHousekeepingScheduler) et son numero redevient libre.</p>
+ *
+ * <p>Phase 3 (constats F541/F544/F148) : chaque evenement d authentification est journalise
+ * dans audit_log avec l adresse IP et le User-Agent (OTP_REQUESTED, OTP_VERIFY_FAILED,
+ * OTP_VERIFY_SUCCEEDED, TOKEN_REFRESHED), la derniere connexion reussie est conservee sur le
+ * compte ({@code users.last_login_at}), et aucun hachage factice de mot de passe n est plus
+ * ecrit ({@code password_hash} nul).</p>
  */
 @Service
 public class AuthService {
 
+    public static final String AUDIT_OTP_REQUESTED = "OTP_REQUESTED";
+    public static final String AUDIT_OTP_VERIFY_FAILED = "OTP_VERIFY_FAILED";
+    public static final String AUDIT_OTP_VERIFY_SUCCEEDED = "OTP_VERIFY_SUCCEEDED";
+    public static final String AUDIT_TOKEN_REFRESHED = "TOKEN_REFRESHED";
+
     private final UserRepository userRepository;
     private final OtpCodeService otpCodes;
-    private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokens;
     private final OtpDeliveryService otpDelivery;
     private final UserMapper userMapper;
     private final TermsPolicy termsPolicy;
+    private final AuditService auditService;
+    private final RequestContext requestContext;
 
     /** Message unique pour un numero OU un e-mail deja pris (constat F512 : pas d enumeration des comptes). */
     static final String ALREADY_USED = "Ce numero ou cet e-mail est deja utilise";
 
-    public AuthService(UserRepository userRepository, OtpCodeService otpCodes, PasswordEncoder passwordEncoder,
-                       JwtService jwtService, RefreshTokenService refreshTokens, OtpDeliveryService otpDelivery,
-                       UserMapper userMapper, TermsPolicy termsPolicy) {
+    public AuthService(UserRepository userRepository, OtpCodeService otpCodes, JwtService jwtService,
+                       RefreshTokenService refreshTokens, OtpDeliveryService otpDelivery, UserMapper userMapper,
+                       TermsPolicy termsPolicy, AuditService auditService, RequestContext requestContext) {
         this.userRepository = userRepository;
         this.otpCodes = otpCodes;
-        this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.refreshTokens = refreshTokens;
         this.otpDelivery = otpDelivery;
         this.userMapper = userMapper;
         this.termsPolicy = termsPolicy;
+        this.auditService = auditService;
+        this.requestContext = requestContext;
     }
 
     /**
-     * Inscription : cree le compte en attente de verification (mot de passe aleatoire
-     * inutilisable, aucun jeton remis) et envoie le code a l adresse e-mail obligatoire.
+     * Inscription : cree le compte en attente de verification (aucun mot de passe, aucun
+     * jeton remis) et envoie le code a l adresse e-mail obligatoire.
      * Un numero deja verifie ou un e-mail deja pris renvoie 409 avec un seul et meme message
      * (constat F512) ; un numero jamais verifie est repris avec les nouvelles informations
      * (anti-squat, constat F023). L acceptation des CGU est horodatee avec sa version
@@ -105,7 +121,6 @@ public class AuthService {
                 .firstName(req.firstName().trim())
                 .lastName(req.lastName().trim())
                 .email(email)
-                .passwordHash(passwordEncoder.encode("otp-only-" + UUID.randomUUID()))
                 .status(UserStatus.PENDING_VERIFICATION)
                 .termsVersion(termsPolicy.currentVersion())
                 .termsAcceptedAt(acceptedAt)
@@ -132,17 +147,36 @@ public class AuthService {
     private OtpRequestResponse sendCode(User user) {
         OtpDeliveryService.Channel channel = otpDelivery.resolveChannel(user.getEmail());
         String code = otpCodes.issue(user.getPhone(), OtpCodeService.PURPOSE_LOGIN, channel.name());
-        return otpDelivery.deliver(user.getPhone(), user.getEmail(), code);
+        OtpRequestResponse response = otpDelivery.deliver(user.getPhone(), user.getEmail(), code);
+        Map<String, Object> details = requestDetails();
+        details.put("channel", String.valueOf(response.channel()));
+        details.put("destination", String.valueOf(response.destination()));
+        auditService.log(user.getId(), AUDIT_OTP_REQUESTED, "user", user.getId(), details);
+        return response;
     }
 
+    /**
+     * Verification du code : le compte est retrouve d abord (404 si le numero est inconnu),
+     * un code faux ou grille est journalise (OTP_VERIFY_FAILED) avant d etre signale (400) ;
+     * un succes active un compte en attente, marque le canal verifie, date la connexion et
+     * ouvre la session.
+     */
     @Transactional(noRollbackFor = BadRequestException.class)
     public AuthResponse verifyOtp(OtpVerifyRequest req) {
         String phone = PhoneNumbers.normalize(req.phone());
-        OtpCode otp = otpCodes.consume(phone, OtpCodeService.PURPOSE_LOGIN, req.code());
-
         User user = userRepository.findByPhone(phone)
                 .orElseThrow(() -> new NotFoundException("Aucun compte associe a ce numero, inscrivez-vous d abord"));
         assertNotSuspended(user);
+        OtpCode otp;
+        try {
+            otp = otpCodes.consume(phone, OtpCodeService.PURPOSE_LOGIN, req.code());
+        } catch (BadRequestException ex) {
+            Map<String, Object> details = requestDetails();
+            details.put("reason", ex.getMessage());
+            details.put("phone", Masking.phone(phone));
+            auditService.log(user.getId(), AUDIT_OTP_VERIFY_FAILED, "user", user.getId(), details);
+            throw ex;
+        }
         if ("EMAIL".equals(otp.getChannel())) {
             user.setEmailVerified(true);
         } else {
@@ -151,7 +185,11 @@ public class AuthService {
         if (user.getStatus() == UserStatus.PENDING_VERIFICATION) {
             user.setStatus(UserStatus.ACTIVE);
         }
+        user.setLastLoginAt(Instant.now());
         userRepository.save(user);
+        Map<String, Object> details = requestDetails();
+        details.put("channel", String.valueOf(otp.getChannel()));
+        auditService.log(user.getId(), AUDIT_OTP_VERIFY_SUCCEEDED, "user", user.getId(), details);
         return tokensFor(user);
     }
 
@@ -165,6 +203,7 @@ public class AuthService {
             refreshTokens.revokeAll(user.getId());
             throw new UnauthorizedException("Compte suspendu");
         }
+        auditService.log(user.getId(), AUDIT_TOKEN_REFRESHED, "user", user.getId(), requestDetails());
         return new AuthResponse(jwtService.generateAccessToken(user.getId()), rotation.refreshToken(),
                 userMapper.toResponse(user));
     }
@@ -185,6 +224,16 @@ public class AuthService {
         if (user.getStatus() == UserStatus.DELETED) {
             throw new UnauthorizedException("Compte supprime");
         }
+    }
+
+    /** IP et User-Agent de la requete en cours (vides hors requete HTTP), base de chaque entree d audit. */
+    private Map<String, Object> requestDetails() {
+        Map<String, Object> details = new LinkedHashMap<>();
+        String ip = requestContext.clientIp();
+        String userAgent = requestContext.userAgent();
+        details.put("ip", ip == null ? "" : ip);
+        details.put("userAgent", userAgent == null ? "" : userAgent);
+        return details;
     }
 
     private AuthResponse tokensFor(User user) {

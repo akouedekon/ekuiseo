@@ -56,4 +56,15 @@ public record TripResponse(
                 departureAt, seatsTotal, seatsAvailable, pricePerSeat, instantBooking, luggagePolicy, description, status,
                 recurrenceRule, createdAt, parentTripId, generatedOccurrences, pickupStopId, dropoffStopId, segmentPriceFcfa);
     }
+
+    /** Meme trajet, conducteur reduit a l initiale de son nom pour un appelant anonyme (constat F519). */
+    public TripResponse withAnonymizedDriver() {
+        if (driver == null) {
+            return this;
+        }
+        return new TripResponse(id, driver.anonymized(), vehicle, tripType, originLabel, originLat, originLng, destLabel,
+                destLat, destLng, departureAt, seatsTotal, seatsAvailable, pricePerSeat, instantBooking, luggagePolicy,
+                description, status, recurrenceRule, createdAt, parentTripId, generatedOccurrences, pickupStopId,
+                dropoffStopId, segmentPriceFcfa);
+    }
 }

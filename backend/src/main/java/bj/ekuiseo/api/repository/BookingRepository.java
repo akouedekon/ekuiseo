@@ -279,4 +279,121 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     // projection par interface se base sur cette convention underscore -> camelCase
     // pour retrouver getNoShow()/getLateCancelledByDriver() sans ambiguite.
     DriverReliabilityStats getReliabilityStats(@Param("driverId") UUID driverId);
+
+    // ------------------------------------------------------------------
+    // KPI de retention et de paiement (AdminRetentionService, point n.14) :
+    // agregation SQL sur [from, to), jamais de reservations en memoire.
+    // ------------------------------------------------------------------
+
+    /** Cohorte de passagers, pour {@link #getPassengerRetentionStats}. */
+    interface PassengerRetentionStats {
+        long getCohortSize();
+
+        long getRetained();
+    }
+
+    /**
+     * Retention passager a 30 jours (CLAUDE.md section 2) : passagers ayant une reservation
+     * vendue (statuts donnes) sur [from, to), ancres a leur premiere de la periode ; retenus
+     * s ils en font une autre dans les 30 jours suivants. Seuls ceux dont la fenetre de 30
+     * jours est ecoulee a {@code now} entrent dans le denominateur.
+     */
+    @Query(value = """
+            with sold as (
+                select b.passenger_id, b.created_at
+                from bookings b
+                where b.status in (:soldStatuses)
+            ),
+            cohort as (
+                select s.passenger_id, min(s.created_at) as first_at
+                from sold s
+                where s.created_at >= :from and s.created_at < :to
+                group by s.passenger_id
+            )
+            select
+              count(*) filter (where c.first_at + interval '30 days' <= cast(:now as timestamptz)) as cohort_size,
+              count(*) filter (where c.first_at + interval '30 days' <= cast(:now as timestamptz)
+                                 and exists (select 1 from sold s where s.passenger_id = c.passenger_id
+                                             and s.created_at > c.first_at
+                                             and s.created_at <= c.first_at + interval '30 days')) as retained
+            from cohort c
+            """, nativeQuery = true)
+    PassengerRetentionStats getPassengerRetentionStats(@Param("from") Instant from, @Param("to") Instant to,
+                                                       @Param("soldStatuses") List<String> soldStatuses,
+                                                       @Param("now") Instant now);
+
+    /** Reservations vendues d une periode : part du quotidien, panier, places (voir {@link #getSoldBookingStats}). */
+    interface SoldBookingStats {
+        long getSoldBookings();
+
+        long getDailyBookings();
+
+        Double getAverageBasket();
+
+        Double getSeatsPerBooking();
+    }
+
+    /** Reservations vendues (statuts donnes) creees sur [from, to) : total, part QUOTIDIEN, panier moyen, places par reservation. */
+    @Query(value = """
+            select count(*) as sold_bookings,
+                   count(*) filter (where t.trip_type = 'QUOTIDIEN') as daily_bookings,
+                   cast(avg(b.amount) as double precision) as average_basket,
+                   cast(avg(b.seats) as double precision) as seats_per_booking
+            from bookings b
+            join trips t on t.id = b.trip_id
+            where b.created_at >= :from and b.created_at < :to
+              and b.status in (:soldStatuses)
+            """, nativeQuery = true)
+    SoldBookingStats getSoldBookingStats(@Param("from") Instant from, @Param("to") Instant to,
+                                         @Param("soldStatuses") List<String> soldStatuses);
+
+    /** Conversion reservation -> acompte encaisse et expirations, pour {@link #getMomoConversionStats}. */
+    interface MomoConversionStats {
+        long getMomoBookings();
+
+        long getPaidBookings();
+
+        long getExpiredBookings();
+    }
+
+    /**
+     * Reservations mobile money (MOMO_DEPOSIT / MOMO_FULL, jamais CASH) creees sur [from, to) :
+     * celles dont l acompte a ete encaisse (un paiement SUCCEEDED, rembourse ou en cours de
+     * remboursement existe) et celles expirees faute de paiement dans les 20 minutes.
+     */
+    @Query(value = """
+            select count(*) as momo_bookings,
+                   count(*) filter (where exists (
+                       select 1 from payments p
+                       where p.booking_id = b.id
+                         and p.status in ('SUCCEEDED', 'REFUND_PENDING', 'REFUNDED', 'REFUND_MANUAL'))) as paid_bookings,
+                   count(*) filter (where b.status = 'EXPIRED') as expired_bookings
+            from bookings b
+            where b.created_at >= :from and b.created_at < :to
+              and b.payment_method in ('MOMO_DEPOSIT', 'MOMO_FULL')
+            """, nativeQuery = true)
+    MomoConversionStats getMomoConversionStats(@Param("from") Instant from, @Param("to") Instant to);
+
+    /** Repartition par mode de paiement, pour {@link #getPaymentMethodShare}. */
+    interface PaymentMethodStats {
+        String getMethod();
+
+        long getCount();
+
+        long getAmountFcfa();
+    }
+
+    /** Reservations vendues (statuts donnes) creees sur [from, to) par mode de paiement : nombre et volume (FCFA). */
+    @Query(value = """
+            select b.payment_method as method,
+                   count(*) as count,
+                   coalesce(sum(b.amount), 0) as amount_fcfa
+            from bookings b
+            where b.created_at >= :from and b.created_at < :to
+              and b.status in (:soldStatuses)
+            group by b.payment_method
+            order by b.payment_method
+            """, nativeQuery = true)
+    List<PaymentMethodStats> getPaymentMethodShare(@Param("from") Instant from, @Param("to") Instant to,
+                                                   @Param("soldStatuses") List<String> soldStatuses);
 }

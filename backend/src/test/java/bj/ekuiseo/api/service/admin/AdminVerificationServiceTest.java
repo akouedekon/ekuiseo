@@ -58,21 +58,27 @@ class AdminVerificationServiceTest {
     @Test
     void approve_setsBadge_andNotifies() {
         user.setIdentityVerified(false);
+        pending.setDocumentNumber("B1234567");
 
         service.approve(adminId, pending.getId());
 
         assertThat(pending.getStatus()).isEqualTo(IdentityVerificationStatus.APPROVED);
         assertThat(pending.getReviewedBy()).isSameAs(admin);
         assertThat(user.isIdentityVerified()).isTrue();
+        // Constat F515 : une fois decide, le numero de piece est reduit a ses 4 derniers caracteres.
+        assertThat(pending.getDocumentNumber()).isEqualTo("****4567");
         verify(notificationService).notify(eq(user), eq(NotificationType.IDENTITY_APPROVED), any());
     }
 
     @Test
     void reject_clearsBadge_andNotifiesWithReason() {
+        pending.setDocumentNumber("CI-99-2021-000123");
+
         service.reject(adminId, pending.getId(), "Photo illisible");
 
         assertThat(pending.getStatus()).isEqualTo(IdentityVerificationStatus.REJECTED);
         assertThat(pending.getRejectionReason()).isEqualTo("Photo illisible");
+        assertThat(pending.getDocumentNumber()).isEqualTo("****0123");
         assertThat(user.isIdentityVerified()).isFalse();
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> payload = ArgumentCaptor.forClass(Map.class);
@@ -99,9 +105,14 @@ class AdminVerificationServiceTest {
         when(repository.findByStatusOrderBySubmittedAtAsc(IdentityVerificationStatus.PENDING)).thenReturn(List.of(pending));
         when(repository.findByStatusOrderByReviewedAtDesc(IdentityVerificationStatus.REJECTED)).thenReturn(List.of(decided));
 
-        List<AdminVerificationResponse> queue = service.listByStatus(null);
-        List<AdminVerificationResponse> history = service.listByStatus(IdentityVerificationStatus.REJECTED);
+        List<AdminVerificationResponse> queue = service.listByStatus(adminId, null);
+        List<AdminVerificationResponse> history = service.listByStatus(adminId, IdentityVerificationStatus.REJECTED);
 
+        // Constat F520 : chaque consultation de la file est journalisee avec le statut et le nombre de dossiers.
+        verify(auditService).log(eq(adminId), eq("ADMIN_VERIFICATIONS_LISTED"), eq("identity_verification"), eq(null),
+                eq(Map.of("status", "PENDING", "resultCount", 1)));
+        verify(auditService).log(eq(adminId), eq("ADMIN_VERIFICATIONS_LISTED"), eq("identity_verification"), eq(null),
+                eq(Map.of("status", "REJECTED", "resultCount", 1)));
         assertThat(queue).extracting(AdminVerificationResponse::id).containsExactly(pending.getId());
         assertThat(queue.get(0).reviewedAt()).isNull();
         assertThat(history).hasSize(1);
@@ -120,8 +131,18 @@ class AdminVerificationServiceTest {
         when(repository.findOtherUserIdsWithDocument(bj.ekuiseo.api.domain.enums.IdentityDocumentType.CNI, "B1234567", user.getId()))
                 .thenReturn(List.of(other));
 
-        List<AdminVerificationResponse> queue = service.listByStatus(IdentityVerificationStatus.PENDING);
+        List<AdminVerificationResponse> queue = service.listByStatus(adminId, IdentityVerificationStatus.PENDING);
 
         assertThat(queue.get(0).duplicateOfUserIds()).containsExactly(other);
+    }
+
+    /** Constat F515 : troncature idempotente, un numero deja tronque ou trop court reste tel quel. */
+    @Test
+    void truncateDocumentNumber_keepsOnlyTheLastFourCharacters() {
+        assertThat(AdminVerificationService.truncateDocumentNumber("B1234567")).isEqualTo("****4567");
+        assertThat(AdminVerificationService.truncateDocumentNumber("****4567")).isEqualTo("****4567");
+        assertThat(AdminVerificationService.truncateDocumentNumber("1234")).isEqualTo("1234");
+        assertThat(AdminVerificationService.truncateDocumentNumber("  ")).isEqualTo("  ");
+        assertThat(AdminVerificationService.truncateDocumentNumber(null)).isNull();
     }
 }

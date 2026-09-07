@@ -23,9 +23,10 @@ public interface SearchAlertRepository extends JpaRepository<SearchAlert, UUID> 
 
     /**
      * Alertes qui correspondent a un trajet qui vient d etre publie, en UNE requete
-     * (constat F526, plus de N+1) : actives, fenetre de dates couvrant le jour du depart,
-     * places suffisantes, type de trajet respecte, jamais celles du conducteur lui-meme, et
-     * correspondance geographique au rayon propre a chaque alerte (radius_km, V16).
+     * (constat F526, plus de N+1) : actives, trajet encore PUBLISHED avec des places
+     * (constat F535), fenetre de dates couvrant le jour du depart, places suffisantes, type
+     * de trajet respecte, jamais celles du conducteur lui-meme, et correspondance
+     * geographique au rayon propre a chaque alerte (radius_km, V16).
      *
      * <p>Meme logique de montee/descente que la recherche (TripRepository#search, constats
      * F115/F409) : les points candidats du trajet sont son origine (position 0), ses arrets
@@ -60,6 +61,7 @@ public interface SearchAlertRepository extends JpaRepository<SearchAlert, UUID> 
             )
             select a.* from search_alerts a
             where a.active = true
+              and exists (select 1 from trips t where t.id = :tripId and t.status = 'PUBLISHED' and t.seats_available > 0)
               and (a.date_from is null or a.date_from <= cast(:departureDate as date))
               and (a.date_to is null or a.date_to >= cast(:departureDate as date))
               and a.seats <= :seatsAvailable
@@ -83,4 +85,14 @@ public interface SearchAlertRepository extends JpaRepository<SearchAlert, UUID> 
                                    @Param("departureDate") LocalDate departureDate,
                                    @Param("seatsAvailable") int seatsAvailable,
                                    @Param("tripType") String tripType);
+
+    /**
+     * Marque une alerte comme prevenue pour un trajet (ou une navette : {@code tripKey} =
+     * parent_trip_id ?? trip_id), table search_alert_matches de V17 (constat F533). Renvoie 1
+     * si la ligne vient d etre inseree (notifier), 0 si l alerte avait deja ete prevenue.
+     */
+    @Modifying(flushAutomatically = true)
+    @Query(value = "insert into search_alert_matches (alert_id, trip_key) values (:alertId, :tripKey) on conflict do nothing",
+            nativeQuery = true)
+    int insertMatch(@Param("alertId") UUID alertId, @Param("tripKey") UUID tripKey);
 }

@@ -68,6 +68,29 @@ class OtpCodeServiceTest {
         verify(repository, never()).consumeActive(any(), any(), any());
     }
 
+    /** Constat F543 : la limite glissante (3 / 10 min) est comptee en base, durable a un redeploiement. */
+    @Test
+    void issueRefusesBeyondTheSlidingWindow_countedInDatabase_withRetryAfter() {
+        OtpCodeService limited = new OtpCodeService(repository, encoder, 5, 20, 3, 10);
+        Instant now = Instant.now();
+        // 3 codes dans les 10 dernieres minutes, 3 sur la journee.
+        when(repository.countByPhoneAndCreatedAtAfter(eq("+2290197000322"), any())).thenAnswer(inv -> {
+            Instant after = inv.getArgument(1);
+            return after.isAfter(now.minus(11, ChronoUnit.MINUTES)) ? 3L : 3L;
+        });
+
+        assertThatThrownBy(() -> limited.issue("+2290197000322", OtpCodeService.PURPOSE_LOGIN, "EMAIL"))
+                .isInstanceOf(TooManyRequestsException.class)
+                .hasMessageContaining("quelques minutes")
+                .satisfies(ex -> assertThat(((TooManyRequestsException) ex).getRetryAfterSeconds()).isEqualTo(600));
+        verify(repository, never()).save(any());
+
+        // Deux codes seulement dans la fenetre : le troisieme passe.
+        when(repository.countByPhoneAndCreatedAtAfter(eq("+2290197000322"), any())).thenReturn(2L);
+        when(repository.save(any(OtpCode.class))).thenAnswer(inv -> inv.getArgument(0));
+        assertThat(limited.issue("+2290197000322", OtpCodeService.PURPOSE_LOGIN, "EMAIL")).matches("\\d{6}");
+    }
+
     @Test
     void wrongCodeIncrementsAttempts_andNoRollback() throws Exception {
         OtpCode otp = otp("h", 3);

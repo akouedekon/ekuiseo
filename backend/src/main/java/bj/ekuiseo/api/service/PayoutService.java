@@ -261,20 +261,10 @@ public class PayoutService {
         return new AdminPayoutResponse(payout.getId(), driver.getId(),
                 driver.getFirstName() + " " + driver.getLastName(), payout.getDestinationProvider(),
                 payout.getDestinationMsisdn(), payout.getAmount(), tripCount, payout.getPeriodStart(),
-                payout.getPeriodEnd(), toAdminStatus(payout.getStatus()), payout.getSettledAt(),
+                // Un seul vocabulaire de statut, celui de PayoutStatus (SETTLED, plus de PAID - constat F455).
+                payout.getPeriodEnd(), payout.getStatus(), payout.getSettledAt(),
                 reversedCount, reversedAmount, payout.getExternalReference(), payout.getSettledAmount(),
                 payout.getFailureReason(), payout.getSettledAt());
-    }
-
-    /** PENDING/PROCESSING/FAILED sont identiques ; SETTLED (interne) devient PAID (vocabulaire front, extended.ts). */
-    private String toAdminStatus(PayoutStatus status) {
-        return status == PayoutStatus.SETTLED ? "PAID" : status.name();
-    }
-
-    /** Variante sans corps de {@link #settle(UUID, UUID, String, Long)} (alias historique POST .../pay). */
-    @Transactional
-    public PayoutResponse settle(UUID adminId, UUID payoutId) {
-        return settle(adminId, payoutId, null, null);
     }
 
     /**

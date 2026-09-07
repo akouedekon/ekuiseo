@@ -14,10 +14,12 @@ import bj.ekuiseo.api.domain.enums.BookingStatus;
 import bj.ekuiseo.api.domain.enums.NotificationType;
 import bj.ekuiseo.api.domain.enums.PaymentMethod;
 import bj.ekuiseo.api.domain.enums.TripStatus;
+import bj.ekuiseo.api.domain.enums.UserStatus;
 import bj.ekuiseo.api.dto.booking.BookingDetailResponse;
 import bj.ekuiseo.api.dto.booking.BookingQuoteRequest;
 import bj.ekuiseo.api.dto.booking.BookingResponse;
 import bj.ekuiseo.api.dto.booking.CreateBookingRequest;
+import bj.ekuiseo.api.dto.booking.TripBookingResponse;
 import bj.ekuiseo.api.dto.payment.PaymentPlanResponse;
 import bj.ekuiseo.api.dto.trip.RecurringTripResponse;
 import bj.ekuiseo.api.mapper.BookingMapper;
@@ -35,8 +37,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -44,6 +48,7 @@ import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -53,6 +58,9 @@ public class BookingService {
     private static final Logger log = LoggerFactory.getLogger(BookingService.class);
     private static final List<BookingStatus> ACTIVE_STATUSES =
             List.of(BookingStatus.PENDING_PAYMENT, BookingStatus.CONFIRMED);
+    /** Point n.13 de l audit : le paiement en especes contourne l acompte, il est reserve aux conducteurs a identite verifiee. */
+    static final String CASH_REQUIRES_VERIFIED_DRIVER =
+            "Le paiement en especes n est possible qu avec un conducteur dont l identite est verifiee";
 
     private final BookingRepository bookingRepository;
     private final TripRepository tripRepository;
@@ -112,6 +120,11 @@ public class BookingService {
         if (bookingRepository.existsByTripIdAndPassengerIdAndStatusIn(tripId, passengerId, ACTIVE_STATUSES)) {
             throw new ConflictException("Vous avez deja une reservation active sur ce trajet");
         }
+        PaymentMethod method = resolvePaymentMethod(req.paymentMode());
+        assertCashAllowed(trip, method);
+        // Arrets et prix du troncon resolus AVANT de decrementer les places : un arret inconnu
+        // ne doit pas laisser une place bloquee (constat F122).
+        long unitPrice = resolveUnitPrice(trip, req.pickupStopId(), req.dropoffStopId());
         User passenger = userRepository.findById(passengerId)
                 .orElseThrow(() -> new NotFoundException("Passager introuvable"));
 
@@ -127,8 +140,7 @@ public class BookingService {
 
         // Regle metier n.11 : commission ramenee a 0% si le conducteur est abonne.
         boolean commissionWaived = driverSubscriptionRepository.hasActiveSubscription(trip.getDriver().getId(), Instant.now());
-        PaymentMethod method = resolvePaymentMethod(req.paymentMode());
-        BookingAmounts amounts = computeAmounts(resolveUnitPrice(trip, req.dropoffStopId()), req.seats(), commissionWaived, method);
+        BookingAmounts amounts = computeAmounts(unitPrice, req.seats(), commissionWaived, method);
         boolean isCash = method == PaymentMethod.CASH;
 
         Booking booking = Booking.builder()
@@ -142,12 +154,12 @@ public class BookingService {
                 .depositAmount(amounts.depositAmount())
                 .balanceDueOnBoard(amounts.balanceDueOnBoard())
                 .paymentMethod(method)
-                // Le paiement especes est confirme immediatement (regle au comptant a bord ;
-                // une veritable validation du conducteur pour ce mode n'est PAS implementee
-                // dans cette passe, voir README "ce qui reste a faire" - a specifier avant
-                // d'ouvrir ce mode a des conducteurs non verifies). Le paiement mobile money
-                // (acompte ou totalite selon le mode) reste PENDING_PAYMENT jusqu'au webhook
-                // Kkiapay confirmant l'encaissement de deposit_amount.
+                // Le paiement especes est confirme immediatement (regle au comptant a bord),
+                // et n est ouvert qu aux conducteurs a identite verifiee (assertCashAllowed,
+                // point n.13 de l audit) : une validation du conducteur reservation par
+                // reservation n est pas implementee. Le paiement mobile money (acompte ou
+                // totalite selon le mode) reste PENDING_PAYMENT jusqu'au webhook Kkiapay
+                // confirmant l'encaissement de deposit_amount.
                 .status(isCash ? BookingStatus.CONFIRMED : BookingStatus.PENDING_PAYMENT)
                 // Echeance de l acompte (V12) : le scheduler d expiration lit cette colonne, que
                 // PaymentService#initiate prolonge si le paiement est lance juste avant la limite.
@@ -160,9 +172,16 @@ public class BookingService {
                     NotificationTemplates.payload("bookingId", booking.getId().toString(), "tripId", trip.getId().toString(),
                             "passengerName", booking.getPassenger().getFirstName(), "seats", booking.getSeats(),
                             "route", trip.getOriginLabel() + " -> " + trip.getDestLabel(),
-                            "departureAt", java.util.Objects.toString(trip.getDepartureAt(), "")));
+                            "departureAt", Objects.toString(trip.getDepartureAt(), "")));
         }
         return bookingMapper.toResponse(booking);
+    }
+
+    /** Point n.13 de l audit : CASH refuse (400) si le conducteur n a pas l identite verifiee. */
+    private static void assertCashAllowed(Trip trip, PaymentMethod method) {
+        if (method == PaymentMethod.CASH && !trip.getDriver().isIdentityVerified()) {
+            throw new BadRequestException(CASH_REQUIRES_VERIFIED_DRIVER);
+        }
     }
 
     /**
@@ -196,7 +215,9 @@ public class BookingService {
 
         boolean commissionWaived = driverSubscriptionRepository.hasActiveSubscription(trip.getDriver().getId(), Instant.now());
         PaymentMethod method = resolvePaymentMethod(req.paymentMode());
-        BookingAmounts amounts = computeAmounts(resolveUnitPrice(trip, req.dropoffStopId()), req.seats(), commissionWaived, method);
+        assertCashAllowed(trip, method);
+        BookingAmounts amounts = computeAmounts(resolveUnitPrice(trip, req.pickupStopId(), req.dropoffStopId()),
+                req.seats(), commissionWaived, method);
         boolean isCash = method == PaymentMethod.CASH;
         // Aucune reservation n'existe encore : pas de createdAt reel pour ancrer l'echeance
         // de l'acompte, Instant.now() sert d'estimation "si vous reservez maintenant" -
@@ -219,25 +240,43 @@ public class BookingService {
         if (!Instant.now().isBefore(trip.getDepartureAt())) {
             throw new ConflictException("Ce trajet est deja parti");
         }
-        if (trip.getDriver().getStatus() != bj.ekuiseo.api.domain.enums.UserStatus.ACTIVE) {
+        if (trip.getDriver().getStatus() != UserStatus.ACTIVE) {
             throw new ConflictException("Ce conducteur n est plus disponible");
         }
     }
 
     /**
-     * Prix unitaire de la reservation : le tarif du troncon jusqu'a l'arret de descente
-     * quand il est precise (tarif par troncon, voir TripStop#priceFromOrigin), sinon le
-     * prix du trajet complet. Un arret qui n'appartient pas au trajet est refuse.
+     * Prix unitaire de la reservation (tarif par troncon, constat F122) : difference des
+     * {@code price_from_origin} entre l arret de descente (prix du trajet complet si absent :
+     * la destination) et l arret de montee (0 si absent : l origine). Les deux arrets doivent
+     * appartenir au trajet ({@link #resolveStop}) et la montee preceder la descente.
      */
-    private long resolveUnitPrice(Trip trip, UUID dropoffStopId) {
-        if (dropoffStopId == null) {
+    private long resolveUnitPrice(Trip trip, UUID pickupStopId, UUID dropoffStopId) {
+        if (pickupStopId == null && dropoffStopId == null) {
             return trip.getPricePerSeat();
         }
-        return tripStopRepository.findByTripIdOrderByPosition(trip.getId()).stream()
-                .filter(stop -> stop.getId().equals(dropoffStopId))
+        List<TripStop> stops = tripStopRepository.findByTripIdOrderByPosition(trip.getId());
+        TripStop pickup = resolveStop(stops, pickupStopId);
+        TripStop dropoff = resolveStop(stops, dropoffStopId);
+        int pickupPosition = pickup == null ? 0 : pickup.getPosition();
+        int dropoffPosition = dropoff == null ? Integer.MAX_VALUE : dropoff.getPosition();
+        if (pickupPosition >= dropoffPosition) {
+            throw new BadRequestException("L arret de montee doit preceder l arret de descente");
+        }
+        long pickupPrice = pickup == null ? 0L : pickup.getPriceFromOrigin();
+        long dropoffPrice = dropoff == null ? trip.getPricePerSeat() : dropoff.getPriceFromOrigin();
+        return Math.max(0L, dropoffPrice - pickupPrice);
+    }
+
+    /** Arret du trajet portant cet identifiant ; null pour un identifiant absent ; 400 pour un arret d un autre trajet. */
+    private static TripStop resolveStop(List<TripStop> stops, UUID stopId) {
+        if (stopId == null) {
+            return null;
+        }
+        return stops.stream()
+                .filter(stop -> stopId.equals(stop.getId()))
                 .findFirst()
-                .map(TripStop::getPriceFromOrigin)
-                .orElseThrow(() -> new BadRequestException("Arret de descente inconnu pour ce trajet"));
+                .orElseThrow(() -> new BadRequestException("Arret inconnu pour ce trajet"));
     }
 
     /** {@code MOMO_DEPOSIT} si absent (regle metier n.21) - voir CreateBookingRequest/BookingQuoteRequest. */
@@ -394,16 +433,16 @@ public class BookingService {
             // Heure locale (Benin), formatee HH:mm pour l affichage (constat F415).
             LocalTime timeOfDay = trip.getDepartureAt().atZone(Tz.BENIN).toLocalTime().withSecond(0).withNano(0);
             long matches = tripRepository.countByOriginLabelAndDestLabelAndStatusAndDepartureAtAfterAndSeatsAvailableGreaterThan(
-                    trip.getOriginLabel(), trip.getDestLabel(), bj.ekuiseo.api.domain.enums.TripStatus.PUBLISHED, now, 0);
+                    trip.getOriginLabel(), trip.getDestLabel(), TripStatus.PUBLISHED, now, 0);
             var next = tripRepository.findFirstByOriginLabelAndDestLabelAndStatusAndDepartureAtAfterAndSeatsAvailableGreaterThanOrderByDepartureAtAsc(
-                    trip.getOriginLabel(), trip.getDestLabel(), bj.ekuiseo.api.domain.enums.TripStatus.PUBLISHED, now, 0);
+                    trip.getOriginLabel(), trip.getDestLabel(), TripStatus.PUBLISHED, now, 0);
             UUID virtualId = UUID.nameUUIDFromBytes(
                     (passengerId + "|" + trip.getOriginLabel() + "|" + trip.getDestLabel()).getBytes());
             result.add(new RecurringTripResponse(virtualId, trip.getOriginLabel(), trip.getOriginLat(), trip.getOriginLng(),
                     trip.getDestLabel(), trip.getDestLat(), trip.getDestLng(),
                     weekdays.stream().map(DayOfWeek::getValue).sorted().toList(),
                     timeOfDay.toString(), mostRecent.getSeats(), matches,
-                    next.map(bj.ekuiseo.api.domain.Trip::getDepartureAt).orElse(null)));
+                    next.map(Trip::getDepartureAt).orElse(null)));
         }
         return result;
     }
@@ -466,10 +505,10 @@ public class BookingService {
                 "refundStatus", refund.status().name(),
                 "seats", booking.getSeats(), "cancelledBy", "PASSENGER",
                 "route", trip.getOriginLabel() + " -> " + trip.getDestLabel(),
-                "departureAt", java.util.Objects.toString(trip.getDepartureAt(), ""));
+                "departureAt", Objects.toString(trip.getDepartureAt(), ""));
         // Le passager recoit un accuse de reception avec le sort de son acompte (forPassenger
         // distingue le gabarit de celui envoye au conducteur, meme type et memes montants).
-        Map<String, Object> passengerPayload = new java.util.LinkedHashMap<>(payload);
+        Map<String, Object> passengerPayload = new LinkedHashMap<>(payload);
         passengerPayload.put("forPassenger", true);
         notificationService.notify(booking.getPassenger(), NotificationType.BOOKING_CANCELLED, passengerPayload);
         if (wasConfirmed) {
@@ -491,7 +530,7 @@ public class BookingService {
      * acomptes jamais payes n interessent pas le depart.
      */
     @Transactional(readOnly = true)
-    public List<bj.ekuiseo.api.dto.booking.TripBookingResponse> listForDriver(UUID tripId, UUID driverId) {
+    public List<TripBookingResponse> listForDriver(UUID tripId, UUID driverId) {
         Trip trip = tripRepository.findById(tripId).orElseThrow(() -> new NotFoundException("Trajet introuvable"));
         if (!trip.getDriver().getId().equals(driverId)) {
             throw new ForbiddenException("Vous n etes pas le conducteur de ce trajet");
@@ -499,7 +538,7 @@ public class BookingService {
         return bookingRepository.findByTripIdAndStatusIn(tripId,
                         List.of(BookingStatus.CONFIRMED, BookingStatus.COMPLETED, BookingStatus.NO_SHOW)).stream()
                 .sorted(Comparator.comparing(Booking::getCreatedAt))
-                .map(b -> new bj.ekuiseo.api.dto.booking.TripBookingResponse(b.getId(), b.getPassenger().getId(),
+                .map(b -> new TripBookingResponse(b.getId(), b.getPassenger().getId(),
                         b.getPassenger().getFirstName(), b.getPassenger().getLastName(), b.getPassenger().getPhotoUrl(),
                         b.getPassenger().getRatingAvg(), b.getSeats(), b.getStatus(), b.getPaymentMethod(),
                         b.getBalanceDueOnBoard(), b.getPickupStopId(), b.getDropoffStopId(), b.getCreatedAt()))
@@ -507,7 +546,7 @@ public class BookingService {
     }
 
     /** Fenetre pendant laquelle le conducteur peut signaler l absence d un passager apres le depart. */
-    static final java.time.Duration NO_SHOW_WINDOW = java.time.Duration.ofHours(48);
+    static final Duration NO_SHOW_WINDOW = Duration.ofHours(48);
 
     /**
      * Signalement d absence par le conducteur (POST /api/v1/bookings/{id}/no-show,
@@ -549,9 +588,11 @@ public class BookingService {
      * ici (ce n est jamais la faute du passager, contrairement a
      * {@link #cancelByPassenger}) - integral de depositAmount, seul montant reellement
      * encaisse par la plateforme (regle metier n.21) : balanceDueOnBoard n a jamais
-     * transite par Kkiapay, le passager ne le doit simplement plus. L annulation est
-     * comptabilisee dans les statistiques du conducteur si elle est tardive (voir
-     * DriverCancellationPolicy), afin de pouvoir moderer les conducteurs peu fiables.
+     * transite par Kkiapay, le passager ne le doit simplement plus. Une reservation encore
+     * PENDING_PAYMENT n a rien encaisse : elle est annulee sans remboursement ni promesse
+     * de remboursement (constat F144). L annulation est comptabilisee dans les statistiques
+     * du conducteur si elle est tardive (voir DriverCancellationPolicy), afin de pouvoir
+     * moderer les conducteurs peu fiables.
      */
     @Transactional
     public void cascadeCancelForDriverTripCancellation(Trip trip) {
@@ -574,31 +615,40 @@ public class BookingService {
         boolean late = driverCancellationPolicy.isLate(now, trip.getDepartureAt());
 
         for (Booking booking : active) {
+            // Seule une reservation confirmee a un acompte a rembourser (constat F144) ; une
+            // reservation en attente de paiement n a rien encaisse.
+            boolean paid = booking.getStatus() == BookingStatus.CONFIRMED && booking.getDepositAmount() > 0;
             booking.setStatus(BookingStatus.CANCELLED_BY_DRIVER);
             booking.setExpiresAt(null);
             bookingRepository.save(booking);
 
-            PaymentService.RefundOutcome refund = paymentService.refundBooking(booking, booking.getDepositAmount(), refundReason);
-            log.info("Annulation de trajet : reservation {} annulee, remboursement {} ({})",
-                    booking.getId(), refund.status(), refund.message());
+            long refundAmount = paid ? booking.getDepositAmount() : 0L;
+            if (paid) {
+                PaymentService.RefundOutcome refund = paymentService.refundBooking(booking, refundAmount, refundReason);
+                log.info("Annulation de trajet : reservation {} annulee, remboursement {} ({})",
+                        booking.getId(), refund.status(), refund.message());
+            } else {
+                log.info("Annulation de trajet : reservation {} annulee sans acompte encaisse, rien a rembourser", booking.getId());
+            }
 
             notificationService.notifyCritical(booking.getPassenger(), NotificationType.BOOKING_CANCELLED,
                     Map.of("bookingId", booking.getId().toString(), "tripId", trip.getId().toString(),
-                            "refundAmountFcfa", booking.getDepositAmount(),
+                            "refundAmountFcfa", refundAmount,
                             "cancelledBy", "SUSPENSION_CONDUCTEUR".equals(refundReason) ? "PLATFORM" : "DRIVER",
                             "route", trip.getOriginLabel() + " -> " + trip.getDestLabel(),
-                            "departureAt", java.util.Objects.toString(trip.getDepartureAt(), "")),
+                            "departureAt", Objects.toString(trip.getDepartureAt(), "")),
                     "Ekuiseo : votre trajet " + trip.getOriginLabel() + " - " + trip.getDestLabel() + " du "
-                            + formatLocal(trip.getDepartureAt()) + " a ete annule par le conducteur. "
-                            + (booking.getDepositAmount() > 0 ? "Votre acompte vous sera rembourse integralement." : ""));
+                            + formatLocal(trip.getDepartureAt()) + " a ete annule par le conducteur."
+                            + (paid ? " Votre acompte vous sera rembourse integralement." : " Aucun montant n avait ete preleve."));
         }
 
         if (countLate && !active.isEmpty() && late) {
-            User driver = trip.getDriver();
-            driver.setLateCancellationsCount(driver.getLateCancellationsCount() + 1);
-            userRepository.save(driver);
+            // Increment atomique en base (constat F147) : deux cascades concurrentes ne se
+            // perdent plus mutuellement une annulation.
+            UUID driverId = trip.getDriver().getId();
+            userRepository.incrementLateCancellations(driverId);
             log.warn("Annulation tardive du conducteur {} pour le trajet {} ({} reservation(s) affectee(s))",
-                    driver.getId(), trip.getId(), active.size());
+                    driverId, trip.getId(), active.size());
         }
 
         auditService.log(trip.getDriver().getId(), auditAction, "trip", trip.getId(),
@@ -632,7 +682,7 @@ public class BookingService {
                         Map.of("bookingId", booking.getId().toString(), "tripId", trip.getId().toString(),
                                 "seats", booking.getSeats(), "cancelledBy", "PASSENGER",
                                 "route", trip.getOriginLabel() + " -> " + trip.getDestLabel(),
-                                "departureAt", java.util.Objects.toString(trip.getDepartureAt(), "")));
+                                "departureAt", Objects.toString(trip.getDepartureAt(), "")));
             }
             cancelled++;
         }
@@ -641,7 +691,7 @@ public class BookingService {
 
     /** Date et heure locales du Benin pour les SMS et messages (ex. « 12/09/2026 07:30 »). */
     public static String formatLocal(Instant instant) {
-        return java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(Tz.BENIN).format(instant);
+        return DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(Tz.BENIN).format(instant);
     }
 
     /**

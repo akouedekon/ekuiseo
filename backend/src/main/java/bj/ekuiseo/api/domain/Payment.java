@@ -11,6 +11,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
@@ -91,7 +92,20 @@ public class Payment {
     @Column(name = "refunded_at")
     private Instant refundedAt;
 
+    /**
+     * Montant reellement verifie aupres de Kkiapay (V17, constat F151), tel quel : un
+     * surpaiement est visible ici et journalise (PAYMENT_OVERPAID), jamais rembourse
+     * automatiquement. Null tant qu aucune verification n a eu lieu.
+     */
+    @Column(name = "verified_amount")
+    private Long verifiedAmount;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;
+
+    /** Derniere mise a jour (V17) : ce que le client lit dans PaymentStatusResponse.updatedAt. */
+    @UpdateTimestamp
+    @Column(name = "updated_at")
+    private Instant updatedAt;
 }

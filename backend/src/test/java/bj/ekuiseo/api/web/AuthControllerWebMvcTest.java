@@ -49,7 +49,7 @@ class AuthControllerWebMvcTest extends AbstractWebMvcTest {
     @Test
     void register_validBody_is202_andServiceReceivesTheRequest() throws Exception {
         OtpRegisterRequest request = new OtpRegisterRequest(PHONE, "Jean", "Dossou", "jean@example.test", true, "2026-09");
-        when(authService.registerWithOtp(request)).thenReturn(new OtpRequestResponse("EMAIL", "je***@example.test"));
+        when(authService.registerWithOtp(request)).thenReturn(new OtpRequestResponse(bj.ekuiseo.api.dto.auth.OtpChannel.EMAIL, "je***@example.test"));
 
         mockMvc.perform(fromNewIp(json(post("/api/v1/auth/otp/register"), request)))
                 .andExpect(status().isAccepted())
@@ -94,7 +94,7 @@ class AuthControllerWebMvcTest extends AbstractWebMvcTest {
     @Test
     void requestOtp_isPublic_andReturns202() throws Exception {
         OtpRequestRequest request = new OtpRequestRequest(PHONE);
-        when(authService.requestOtp(request)).thenReturn(new OtpRequestResponse("EMAIL", "je***@example.test"));
+        when(authService.requestOtp(request)).thenReturn(new OtpRequestResponse(bj.ekuiseo.api.dto.auth.OtpChannel.EMAIL, "je***@example.test"));
 
         mockMvc.perform(fromNewIp(json(post("/api/v1/auth/otp/request"), request)))
                 .andExpect(status().isAccepted())
@@ -154,7 +154,7 @@ class AuthControllerWebMvcTest extends AbstractWebMvcTest {
     /** Quota par IP du RateLimitingFilter sur les demandes de code (3 en test) : la 4e est refusee avant le controleur. */
     @Test
     void requestOtp_beyondIpQuota_is429FromRateLimitingFilter() throws Exception {
-        when(authService.requestOtp(any())).thenReturn(new OtpRequestResponse("EMAIL", "je***@example.test"));
+        when(authService.requestOtp(any())).thenReturn(new OtpRequestResponse(bj.ekuiseo.api.dto.auth.OtpChannel.EMAIL, "je***@example.test"));
         String ip = "198.51.100.7";
 
         for (int i = 0; i < 3; i++) {

@@ -20,10 +20,26 @@ public class PaymentHousekeepingScheduler {
 
     private final RefundService refundService;
     private final SubscriptionService subscriptionService;
+    private final PaymentService paymentService;
 
-    public PaymentHousekeepingScheduler(RefundService refundService, SubscriptionService subscriptionService) {
+    public PaymentHousekeepingScheduler(RefundService refundService, SubscriptionService subscriptionService,
+                                        PaymentService paymentService) {
         this.refundService = refundService;
         this.subscriptionService = subscriptionService;
+        this.paymentService = paymentService;
+    }
+
+    /** Toutes les 5 minutes : paiements INITIATED de plus de 20 minutes sans reservation ni abonnement en attente -> FAILED (F019). */
+    @Scheduled(fixedRate = 300_000, initialDelay = 150_000)
+    public void failAbandonedPayments() {
+        try {
+            int n = paymentService.failAbandonedInitiated(Instant.now().minus(PaymentService.ABANDON_DELAY_MINUTES, ChronoUnit.MINUTES));
+            if (n > 0) {
+                log.info("{} paiement(s) abandonne(s) marque(s) FAILED", n);
+            }
+        } catch (RuntimeException ex) {
+            log.error("Menage des paiements abandonnes : echec de l execution", ex);
+        }
     }
 
     /** Toutes les 5 minutes : remboursements demandes depuis plus de 2 minutes et toujours en attente. */

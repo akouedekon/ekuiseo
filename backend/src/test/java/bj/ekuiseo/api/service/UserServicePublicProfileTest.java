@@ -143,6 +143,22 @@ class UserServicePublicProfileTest {
         assertThat(profile.responseTimeMinutes()).isEqualTo(8); // arrondi de 7.6
     }
 
+    /** Constat F519 : un visiteur anonyme ne voit que l initiale du nom ; un utilisateur connecte le nom complet. */
+    @Test
+    void lastName_isReducedToItsInitial_forAnonymousRequesters() {
+        UUID driverId = UUID.randomUUID();
+        User driver = User.builder().id(driverId).firstName("Awa").lastName("Kossou")
+                .ratingAvg(BigDecimal.valueOf(4.5)).ratingCount(10).createdAt(Instant.now()).build();
+        when(userRepository.findById(driverId)).thenReturn(Optional.of(driver));
+        when(bookingRepository.getReliabilityStats(driverId)).thenReturn(reliability(0, 0, 0));
+        when(messageRepository.getResponseTimeStats(eq(driverId), any())).thenReturn(responseTime(null, 0));
+        when(userPreferencesRepository.findByUserId(driverId)).thenReturn(Optional.empty());
+
+        assertThat(service.getPublicProfile(driverId, true).lastName()).isEqualTo("K.");
+        assertThat(service.getPublicProfile(driverId, false).lastName()).isEqualTo("Kossou");
+        assertThat(service.getPublicProfile(driverId).lastName()).isEqualTo("Kossou");
+    }
+
     @Test
     void preferences_fallBackToDefaults_whenNoRowStored() {
         UUID driverId = UUID.randomUUID();

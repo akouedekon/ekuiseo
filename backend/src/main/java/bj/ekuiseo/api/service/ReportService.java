@@ -321,8 +321,9 @@ public class ReportService {
     private AdminReportResponse toAdminResponse(Report report) {
         User target = resolveTarget(report);
         long priors = target == null ? 0L : reportRepository.countOthersAgainstTarget(report.getId(), target.getId());
+        // detail jamais null (constat F503) : le front le type en chaine.
         return new AdminReportResponse(report.getId(), ReportReason.valueOf(report.getReasonCode()), report.getStatus(),
-                report.getDetails(), report.getCreatedAt(),
+                report.getDetails() == null ? "" : report.getDetails(), report.getCreatedAt(),
                 toPersonRef(report.getReporter()), toPersonRef(target),
                 report.getReportedTrip() != null ? report.getReportedTrip().getId() : null,
                 report.getBookingId(), report.getResolutionNote(),

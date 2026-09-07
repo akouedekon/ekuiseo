@@ -1,6 +1,7 @@
 package bj.ekuiseo.api.service.kkiapay;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.client.RestClient;
@@ -54,9 +55,11 @@ public class KkiapayHttpGateway implements KkiapayGateway {
                         "Reponse vide de l'API Kkiapay");
             }
             boolean success = "SUCCESS".equalsIgnoreCase(resp.status()) || "SUCCESSFUL".equalsIgnoreCase(resp.status());
+            String operator = resp.sourceCommonName() != null && !resp.sourceCommonName().isBlank()
+                    ? resp.sourceCommonName() : resp.source();
             return new VerificationResult(success, resp.transactionId() != null ? resp.transactionId() : transactionId,
                     resp.amount() != null ? resp.amount() : 0, resp.fees() != null ? resp.fees() : 0,
-                    resp.status(), resp.failureCode(), resp.failureMessage());
+                    resp.status(), resp.failureCode(), resp.failureMessage(), operator);
         } catch (RestClientResponseException ex) {
             log.error("Kkiapay verifyTransaction a repondu {} pour transactionId={} : {}",
                     ex.getStatusCode(), transactionId, ex.getResponseBodyAsString());
@@ -92,11 +95,14 @@ public class KkiapayHttpGateway implements KkiapayGateway {
 
     /**
      * Sous-ensemble mappe de la reponse de {@code POST /api/v1/transactions/status}. Le SDK
-     * officiel documente une reponse plus riche (source, client{fullname,phone,email}, etc.) :
-     * seuls les champs utiles ici sont mappes, le reste est ignore.
+     * officiel documente une reponse plus riche (client{fullname,phone,email}, etc.) :
+     * seuls les champs utiles ici sont mappes, le reste est ignore. {@code source_common_name}
+     * / {@code source} portent l operateur reel du paiement (constat F140).
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     private record StatusApiResponse(String transactionId, String status, Long amount, Long fees,
-                                      String failureCode, String failureMessage) {
+                                      String failureCode, String failureMessage,
+                                      @JsonProperty("source_common_name") String sourceCommonName,
+                                      String source) {
     }
 }

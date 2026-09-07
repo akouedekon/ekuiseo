@@ -52,7 +52,7 @@ public class SecurityConfig {
                         // Apercu de partage (Open Graph) servi aux robots WhatsApp/Facebook (ShareController, constat F341).
                         .requestMatchers(HttpMethod.GET, "/share/trips/*").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/users/*", "/api/v1/users/*/reviews").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/geo/search").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/geo/search", "/api/v1/geo/places").permitAll()
                         // Actuator : health et info restent publics (sondes de disponibilite standard),
                         // le reste (metrics, env, etc.) est reserve au back-office (donnees d'exploitation
                         // sensibles : versions, configuration, metriques internes).

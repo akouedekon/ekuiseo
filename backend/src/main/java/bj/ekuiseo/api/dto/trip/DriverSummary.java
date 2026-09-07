@@ -1,5 +1,7 @@
 package bj.ekuiseo.api.dto.trip;
 
+import bj.ekuiseo.api.common.Masking;
+
 import java.math.BigDecimal;
 import java.util.UUID;
 
@@ -15,4 +17,9 @@ public record DriverSummary(
          * le nombre d'avis (voir extended.ts, PublicUserResponse.identityVerified). */
         boolean identityVerified
 ) {
+    /** Meme conducteur, nom de famille reduit a son initiale pour un appelant anonyme (constat F519). */
+    public DriverSummary anonymized() {
+        return new DriverSummary(id, firstName, Masking.lastNameInitial(lastName), photoUrl, ratingAvg, ratingCount,
+                identityVerified);
+    }
 }

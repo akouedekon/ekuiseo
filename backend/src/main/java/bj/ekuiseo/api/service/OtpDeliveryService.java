@@ -2,6 +2,7 @@ package bj.ekuiseo.api.service;
 
 import bj.ekuiseo.api.common.Masking;
 import bj.ekuiseo.api.common.exception.BadRequestException;
+import bj.ekuiseo.api.dto.auth.OtpChannel;
 import bj.ekuiseo.api.dto.auth.OtpRequestResponse;
 import bj.ekuiseo.api.service.mail.MailGateway;
 import org.springframework.beans.factory.annotation.Value;
@@ -74,10 +75,10 @@ public class OtpDeliveryService {
                             + "Si vous n'etes pas a l'origine de cette demande, ignorez ce message ; si ces envois se "
                             + "repetent, signalez-le en repondant a ce courriel.\n\n"
                             + "Ekuiseo - covoiturage au Benin");
-            return new OtpRequestResponse("EMAIL", maskEmail(email.trim()));
+            return new OtpRequestResponse(OtpChannel.EMAIL, maskEmail(email.trim()));
         }
         smsService.sendOtp(phone, code);
-        return new OtpRequestResponse("SMS", maskPhone(phone));
+        return new OtpRequestResponse(OtpChannel.SMS, maskPhone(phone));
     }
 
     static String maskEmail(String email) {

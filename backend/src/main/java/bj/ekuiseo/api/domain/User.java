@@ -43,7 +43,12 @@ public class User {
     @Column(name = "last_name", nullable = false, length = 100)
     private String lastName;
 
-    @Column(name = "password_hash", nullable = false)
+    /**
+     * Jamais lu depuis le passage au parcours OTP seul (phase 0) : NULL pour les comptes
+     * crees depuis V17, hachage factice sur les comptes anterieurs. Conserve pour les
+     * anciennes lignes et une eventuelle reintroduction d un second facteur.
+     */
+    @Column(name = "password_hash")
     private String passwordHash;
 
     @Column(name = "photo_url")
@@ -119,6 +124,10 @@ public class User {
     /** Dernier export des donnees personnelles (V16, constat F508) : un par 24 h. */
     @Column(name = "last_export_at")
     private Instant lastExportAt;
+
+    /** Derniere verification de code reussie (V17, constats F541/F544), affichee au back-office. */
+    @Column(name = "last_login_at")
+    private Instant lastLoginAt;
 
     /**
      * Abonnement Web Push du navigateur (endpoint + cles), au format standard

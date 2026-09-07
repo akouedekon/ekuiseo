@@ -26,7 +26,7 @@ public class KkiapayStubGateway implements KkiapayGateway {
     @Override
     public VerificationResult verifyTransaction(String transactionId) {
         log.info("[KKIAPAY-STUB] verifyTransaction({}) -> SUCCESS (simule)", transactionId);
-        return new VerificationResult(true, transactionId, 0L, 0L, "SUCCESS", null, null);
+        return new VerificationResult(true, transactionId, 0L, 0L, "SUCCESS", null, null, null);
     }
 
     @Override

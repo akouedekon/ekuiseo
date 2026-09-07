@@ -242,11 +242,21 @@ public class UserService {
      */
     @Transactional(readOnly = true)
     public PublicUserProfileResponse getPublicProfile(UUID userId) {
+        return getPublicProfile(userId, false);
+    }
+
+    /**
+     * Variante selon l appelant (constat F519) : un visiteur anonyme ne voit que l initiale
+     * du nom de famille (« A. »), un utilisateur connecte le nom complet.
+     */
+    @Transactional(readOnly = true)
+    public PublicUserProfileResponse getPublicProfile(UUID userId, boolean anonymousRequester) {
         User user = findUser(userId);
         List<VehicleSummary> vehicles = vehicleRepository.findByOwnerIdAndDeletedAtIsNull(userId).stream()
                 .map(vehicleMapper::toSummary).toList();
         long tripsCompleted = tripRepository.countByDriverIdAndStatus(userId, TripStatus.COMPLETED);
-        return new PublicUserProfileResponse(user.getId(), user.getFirstName(), user.getLastName(), user.getPhotoUrl(),
+        String lastName = anonymousRequester ? Masking.lastNameInitial(user.getLastName()) : user.getLastName();
+        return new PublicUserProfileResponse(user.getId(), user.getFirstName(), lastName, user.getPhotoUrl(),
                 user.getBio(), user.getRatingAvg(), user.getRatingCount(), user.isPhoneVerified(), user.isIdentityVerified(),
                 user.getCreatedAt(), tripsCompleted, vehicles,
                 computeReliabilityRate(userId), computeResponseTimeMinutes(userId), resolvePublicPreferences(userId));
@@ -315,12 +325,13 @@ public class UserService {
                 Map.of("termsVersion", termsPolicy.currentVersion(), "previousVersion", previous == null ? "" : previous));
     }
 
+    /** Champs absents inchanges ; une presentation vide efface la presentation (constat F502). */
     @Transactional
     public UserResponse updateMe(UUID userId, UpdateMeRequest req) {
         User user = findUser(userId);
         if (req.firstName() != null) user.setFirstName(req.firstName());
         if (req.lastName() != null) user.setLastName(req.lastName());
-        if (req.bio() != null) user.setBio(req.bio());
+        if (req.bio() != null) user.setBio(req.bio().isBlank() ? null : req.bio());
         if (req.photoUrl() != null) user.setPhotoUrl(req.photoUrl());
         return userMapper.toResponse(userRepository.save(user));
     }

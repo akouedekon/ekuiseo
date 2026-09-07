@@ -7,7 +7,6 @@ import jakarta.validation.constraints.FutureOrPresent;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;
@@ -24,7 +23,8 @@ public record TripAlertRequest(
          * fenetre d'un seul jour (dateFrom = dateTo = date), voir TripAlertService. */
         @FutureOrPresent LocalDate date,
         @Min(1) @Max(8) int seats,
-        @NotNull TripType tripType,
+        /** Type de trajet recherche ; null = tous les modes (constats F454/F529, colonne nullable de V6). */
+        TripType tripType,
         /** Rayon de correspondance (km), celui de la recherche d origine ; 15 km par defaut (V16, constat F530). */
         @DecimalMin("1.0") @DecimalMax("50.0") Double radiusKm
 ) {

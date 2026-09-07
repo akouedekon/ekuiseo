@@ -21,15 +21,22 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 
 /**
  * Fait vivre les alertes de recherche (regle metier n.13) : des qu un trajet est publie
- * (TripService#createTrip, RecurrenceService#generateFor), les alertes actives qui lui
- * correspondent sont trouvees en UNE requete PostGIS (SearchAlertRepository#findMatching,
- * constat F526 : fenetre de dates, places, type, rayon propre a l alerte, sens, arrets
- * intermediaires) et chacune donne lieu a une notification SEARCH_ALERT_MATCH - in-app, et
- * par e-mail via le routeur (NotificationService / NotificationDispatcher) avec un objet
- * explicite et un lien direct vers le trajet (constat F523).
+ * (TripService#createTrip, RecurrenceService#generateFor) ou deplace (TripService#updateTrip,
+ * constat F535), les alertes actives qui lui correspondent sont trouvees en UNE requete
+ * PostGIS (SearchAlertRepository#findMatching, constat F526 : fenetre de dates, places, type,
+ * rayon propre a l alerte, sens, arrets intermediaires, trajet PUBLISHED avec des places) et
+ * chacune donne lieu a une notification SEARCH_ALERT_MATCH - in-app, et par e-mail via le
+ * routeur (NotificationService / NotificationDispatcher) avec un objet explicite et un lien
+ * direct vers le trajet (constat F523).
+ *
+ * <p>Une alerte n est prevenue qu une fois par trajet, ou par navette pour les occurrences
+ * d un modele (table search_alert_matches, cle (alerte, parent_trip_id ?? trip_id), V17,
+ * constat F533) : la generation nocturne des 14 jours d une navette ne produit plus une
+ * rafale de notifications.</p>
  *
  * <p>Declenche par {@link TripPublishedEvent} apres validation de la transaction de
  * publication, sur l executeur dedie {@code alertExecutor} (constat F527) : une exception
@@ -77,23 +84,37 @@ public class SearchAlertMatchService {
         }
     }
 
-    /** Une requete, une notification par alerte correspondante. Utilisable directement (tests, rattrapage). */
+    /**
+     * Une requete, au plus une notification par alerte correspondante et par trajet (ou
+     * navette). Utilisable directement (tests, rattrapage). Renvoie le nombre d alertes
+     * effectivement notifiees.
+     */
     @Transactional
     public int notifyMatchingAlerts(Trip trip) {
         LocalDate departureDate = trip.getDepartureAt().atZone(Tz.BENIN).toLocalDate();
         List<SearchAlert> matching = searchAlertRepository.findMatching(trip.getId(), trip.getDriver().getId(),
                 departureDate, trip.getSeatsAvailable(), trip.getTripType() != null ? trip.getTripType().name() : null);
+        UUID tripKey = trip.getParentTripId() != null ? trip.getParentTripId() : trip.getId();
+        int notified = 0;
         for (SearchAlert alert : matching) {
+            if (searchAlertRepository.insertMatch(alert.getId(), tripKey) == 0) {
+                continue; // deja prevenue pour ce trajet ou cette navette (constat F533)
+            }
             notificationService.notify(alert.getUser(), NotificationType.SEARCH_ALERT_MATCH,
                     NotificationTemplates.payload("tripId", trip.getId().toString(), "alertId", alert.getId().toString(),
+                            "originLabel", trip.getOriginLabel(),
+                            "destLabel", trip.getDestLabel(),
                             "route", trip.getOriginLabel() + " -> " + trip.getDestLabel(),
                             "departureAt", Objects.toString(trip.getDepartureAt(), ""),
+                            "pricePerSeat", trip.getPricePerSeat(),
                             "pricePerSeatFcfa", trip.getPricePerSeat(),
                             "seatsAvailable", trip.getSeatsAvailable()));
+            notified++;
         }
-        if (!matching.isEmpty()) {
-            log.info("Trajet {} : {} alerte(s) de recherche declenchee(s)", trip.getId(), matching.size());
+        if (notified > 0) {
+            log.info("Trajet {} : {} alerte(s) de recherche declenchee(s) sur {} correspondante(s)",
+                    trip.getId(), notified, matching.size());
         }
-        return matching.size();
+        return notified;
     }
 }

@@ -96,11 +96,52 @@ class BookingServiceDriverCancellationTest {
 
         verify(notificationService, times(2)).notifyCritical(any(User.class), any(), any(), any(String.class));
 
-        ArgumentCaptor<User> driverCaptor = ArgumentCaptor.forClass(User.class);
-        verify(userRepository).save(driverCaptor.capture());
-        assertThat(driverCaptor.getValue().getLateCancellationsCount()).isEqualTo(1);
+        // Constat F147 : increment atomique en base, plus de lecture-modification-ecriture.
+        verify(userRepository).incrementLateCancellations(driverId);
+        verify(userRepository, org.mockito.Mockito.never()).save(any(User.class));
 
         verify(auditService).log(eq(driverId), eq("TRIP_CANCELLED_BY_DRIVER"), eq("trip"), eq(tripId), any());
+    }
+
+    /** Constat F144 : une reservation jamais payee est annulee sans remboursement ni promesse de remboursement. */
+    @Test
+    void pendingPaymentBooking_isCancelledWithoutRefund_andWithoutRefundPromise() {
+        UUID driverId = UUID.randomUUID();
+        UUID tripId = UUID.randomUUID();
+        User driver = User.builder().id(driverId).phone("+22997000001").build();
+        Trip trip = Trip.builder().id(tripId).driver(driver).status(TripStatus.CANCELLED)
+                .originLabel("Cotonou").destLabel("Bohicon")
+                .departureAt(Instant.now().plus(72, ChronoUnit.HOURS)).build();
+        User passenger = User.builder().id(UUID.randomUUID()).phone("+22997000002").build();
+        Booking unpaid = Booking.builder().id(UUID.randomUUID()).trip(trip).passenger(passenger)
+                .seats(1).amount(5000).serviceFee(400).depositAmount(1000).balanceDueOnBoard(4000)
+                .status(BookingStatus.PENDING_PAYMENT).paymentMethod(PaymentMethod.MOMO_DEPOSIT).build();
+
+        BookingRepository bookingRepository = mock(BookingRepository.class);
+        PaymentService paymentService = mock(PaymentService.class);
+        NotificationService notificationService = mock(NotificationService.class);
+        UserRepository userRepository = mock(UserRepository.class);
+        when(bookingRepository.findByTripIdAndStatusIn(eq(tripId), any())).thenReturn(List.of(unpaid));
+
+        BookingService bookingService = new BookingService(bookingRepository, mock(TripRepository.class),
+                mock(bj.ekuiseo.api.repository.TripStopRepository.class), userRepository,
+                mock(DriverSubscriptionRepository.class), mock(MessageRepository.class),
+                mock(bj.ekuiseo.api.repository.ReviewRepository.class), mock(BookingMapper.class),
+                new CancellationPolicy(), new DriverCancellationPolicy(), notificationService, paymentService,
+                mock(AuditService.class), new FeePolicy(0.08, 5, 1000), 20);
+
+        bookingService.cascadeCancelForDriverTripCancellation(trip);
+
+        assertThat(unpaid.getStatus()).isEqualTo(BookingStatus.CANCELLED_BY_DRIVER);
+        verify(paymentService, org.mockito.Mockito.never()).refundBooking(any(), anyLong(), any());
+        ArgumentCaptor<String> sms = ArgumentCaptor.forClass(String.class);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<java.util.Map<String, Object>> payload = ArgumentCaptor.forClass(java.util.Map.class);
+        verify(notificationService).notifyCritical(eq(passenger), eq(bj.ekuiseo.api.domain.enums.NotificationType.BOOKING_CANCELLED),
+                payload.capture(), sms.capture());
+        assertThat(sms.getValue()).doesNotContain("rembourse").contains("Aucun montant");
+        assertThat(payload.getValue()).containsEntry("refundAmountFcfa", 0L);
+        verify(userRepository, org.mockito.Mockito.never()).incrementLateCancellations(any());
     }
 
     @Test
@@ -130,6 +171,7 @@ class BookingServiceDriverCancellationTest {
 
         bookingService.cascadeCancelForDriverTripCancellation(trip);
 
+        verify(userRepository, org.mockito.Mockito.never()).incrementLateCancellations(any());
         verify(userRepository, org.mockito.Mockito.never()).save(any(User.class));
     }
 }

@@ -56,8 +56,20 @@ public interface KkiapayGateway {
     /** Demande le remboursement d'une transaction reussie (les frais Kkiapay ne sont pas rembourses). */
     RefundResult refundTransaction(String transactionId);
 
+    /**
+     * Verdict de Kkiapay sur une transaction. {@code operator} est l operateur reel tel que
+     * renvoye par l API de verification ({@code source_common_name}, sinon {@code source} :
+     * "MTN", "MOOV", "CELTIIS", "CARD"...), ou null si l API ne le donne pas (constat F140) ;
+     * c est lui, et non la declaration du widget, qui alimente {@code payments.channel}.
+     */
     record VerificationResult(boolean success, String transactionId, long amountFcfa, long feesFcfa,
-                               String rawStatus, String failureCode, String failureMessage) {
+                               String rawStatus, String failureCode, String failureMessage, String operator) {
+
+        /** Variante sans operateur (tests, API n exposant pas la source). */
+        public VerificationResult(boolean success, String transactionId, long amountFcfa, long feesFcfa,
+                                  String rawStatus, String failureCode, String failureMessage) {
+            this(success, transactionId, amountFcfa, feesFcfa, rawStatus, failureCode, failureMessage, null);
+        }
     }
 
     record RefundResult(boolean success, String rawStatus, String message) {

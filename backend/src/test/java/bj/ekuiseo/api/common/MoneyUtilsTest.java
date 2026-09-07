@@ -7,42 +7,42 @@ import org.junit.jupiter.params.provider.CsvSource;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+/** Arithmetique pure : le taux de 8 % et le palier de 5 F sont testes sur FeePolicy (seule source des regles metier). */
 class MoneyUtilsTest {
 
-    @ParameterizedTest(name = "amount={0} -> fee attendu={1}")
+    @ParameterizedTest(name = "amount={0}, rate={1}/{2}, step={3} -> fee attendu={4}")
     @CsvSource({
-            "0, 0",
-            "50, 5",
-            "100, 10",
-            "625, 50",   // multiple exact de 5 : pas de sur-arrondi
-            "1234, 100", // 8% = 98.72 -> arrondi a 100
-            "1000, 80",  // 8% = 80 exact
-            "1, 5",      // tres petit montant : minimum 5 FCFA
-            "3000, 240"
+            "0, 8, 100, 5, 0",
+            "50, 8, 100, 5, 5",
+            "625, 8, 100, 5, 50",    // multiple exact de 5 : pas de sur-arrondi
+            "1234, 8, 100, 5, 100",  // 8% = 98.72 -> arrondi a 100
+            "1, 8, 100, 5, 5",       // tres petit montant : minimum un palier
+            "1234, 10, 100, 10, 130" // 10% = 123.4 -> palier de 10 superieur
     })
-    void computeServiceFee_matchesExpectedRounding(long amount, long expectedFee) {
-        assertThat(MoneyUtils.computeServiceFee(amount)).isEqualTo(expectedFee);
+    void computeServiceFee_roundsUpToTheStep(long amount, long num, long den, long step, long expectedFee) {
+        assertThat(MoneyUtils.computeServiceFee(amount, num, den, step)).isEqualTo(expectedFee);
     }
 
     @Test
-    void computeServiceFee_isAlwaysAMultipleOfFive() {
+    void computeServiceFee_isAlwaysAMultipleOfTheStep() {
         for (long amount = 0; amount <= 10_000; amount += 37) {
-            long fee = MoneyUtils.computeServiceFee(amount);
-            assertThat(fee % 5).isZero();
+            assertThat(MoneyUtils.computeServiceFee(amount, 8, 100, 5) % 5).isZero();
         }
     }
 
     @Test
-    void computeServiceFee_rejectsNegativeAmount() {
-        assertThatThrownBy(() -> MoneyUtils.computeServiceFee(-1))
-                .isInstanceOf(IllegalArgumentException.class);
+    void computeServiceFee_rejectsNegativeAmount_andNonPositiveDivisors() {
+        assertThatThrownBy(() -> MoneyUtils.computeServiceFee(-1, 8, 100, 5)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> MoneyUtils.computeServiceFee(100, 8, 0, 5)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> MoneyUtils.computeServiceFee(100, 8, 100, 0)).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void netDriverAmount_isAmountMinusFee() {
-        long amount = 2500;
-        long fee = MoneyUtils.computeServiceFee(amount);
-        assertThat(MoneyUtils.netDriverAmount(amount)).isEqualTo(amount - fee);
+    void ceilDiv_roundsUp() {
+        assertThat(MoneyUtils.ceilDiv(10, 5)).isEqualTo(2);
+        assertThat(MoneyUtils.ceilDiv(11, 5)).isEqualTo(3);
+        assertThat(MoneyUtils.ceilDiv(0, 5)).isZero();
+        assertThatThrownBy(() -> MoneyUtils.ceilDiv(1, 0)).isInstanceOf(IllegalArgumentException.class);
     }
 
     @ParameterizedTest(name = "amount={0}, step={1} -> arrondi attendu={2}")

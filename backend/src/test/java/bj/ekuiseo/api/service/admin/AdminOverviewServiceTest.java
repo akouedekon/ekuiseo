@@ -27,8 +27,9 @@ class AdminOverviewServiceTest {
     private final IdentityVerificationRepository verificationRepository = mock(IdentityVerificationRepository.class);
     private final DriverPayoutRepository payoutRepository = mock(DriverPayoutRepository.class);
     private final PaymentRepository paymentRepository = mock(PaymentRepository.class);
+    private final bj.ekuiseo.api.repository.MessageRepository messageRepository = mock(bj.ekuiseo.api.repository.MessageRepository.class);
     private final AdminOverviewService service = new AdminOverviewService(reportRepository, verificationRepository,
-            payoutRepository, paymentRepository);
+            payoutRepository, paymentRepository, messageRepository);
 
     @Test
     void compute_aggregatesEveryQueue() {
@@ -41,8 +42,13 @@ class AdminOverviewServiceTest {
         when(payoutRepository.countByStatus(PayoutStatus.PENDING)).thenReturn(4L);
         when(payoutRepository.sumAmountByStatus(PayoutStatus.PENDING)).thenReturn(18_400L);
         when(paymentRepository.countByStatusIn(List.of(PaymentStatus.REFUND_PENDING, PaymentStatus.REFUND_MANUAL))).thenReturn(5L);
+        when(messageRepository.countHeavySenders(org.mockito.ArgumentMatchers.any(Instant.class),
+                org.mockito.ArgumentMatchers.eq(AdminOverviewService.HEAVY_SENDER_THRESHOLD))).thenReturn(2L);
 
         AdminOverviewResponse res = service.compute();
+
+        // Constat F555 : comptes ayant envoye plus de 50 messages en 24 h.
+        assertThat(res.heavyMessageSenders()).isEqualTo(2);
 
         assertThat(res.openReports()).isEqualTo(3);
         assertThat(res.inReviewReports()).isEqualTo(1);

@@ -52,6 +52,22 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     /** Messages non lus dans une conversation, envoyes par l'AUTRE participant (jamais mes propres messages). */
     long countByConversationIdAndReadAtIsNullAndSenderIdNot(UUID conversationId, UUID senderId);
 
+    /**
+     * Comptes ayant envoye strictement plus de {@code threshold} messages depuis {@code since}
+     * (indicateur d abus du tableau de bord admin, constat F555). Une seule agregation sur
+     * l index messages(sender_id, created_at) de V15.
+     */
+    @Query(value = """
+            select count(*) from (
+                select m.sender_id
+                from messages m
+                where m.created_at >= :since
+                group by m.sender_id
+                having count(*) > :threshold
+            ) heavy
+            """, nativeQuery = true)
+    long countHeavySenders(@Param("since") Instant since, @Param("threshold") int threshold);
+
     /** Variante par reservation (evite un aller-retour via ConversationRepository, voir BookingDetailResponse.unreadMessages). */
     long countByConversation_Booking_IdAndReadAtIsNullAndSenderIdNot(UUID bookingId, UUID senderId);
 

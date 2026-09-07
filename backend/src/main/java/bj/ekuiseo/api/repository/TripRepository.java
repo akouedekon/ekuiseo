@@ -154,8 +154,9 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
     List<IdCount> countByDriverIds(@Param("ids") List<UUID> ids);
 
     /**
-     * Trajet PUBLISHED correspondant a une alerte de recherche (regle metier n.13) : meme
-     * logique de montee/descente que {@link #search} (constats F115/F409) - les points
+     * Trajet PUBLISHED avec au moins une place (constat F535) correspondant a une alerte de
+     * recherche (regle metier n.13) : meme logique de montee/descente que {@link #search}
+     * (constats F115/F409) - les points
      * candidats sont l origine (position 0), les arrets intermediaires et la destination
      * (position 1 000 000) ; il faut un point de montee dans le rayon de l origine de
      * l alerte ET un point de descente de position strictement superieure dans le rayon de
@@ -173,6 +174,8 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
             )
             select t.* from trips t
             where t.id = :tripId
+              and t.status = 'PUBLISHED'
+              and t.seats_available > 0
               and exists (
                   select 1
                   from pts p1
@@ -478,4 +481,91 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
             """, nativeQuery = true)
     FirstBookingDelayStats getFirstBookingDelayStats(@Param("from") Instant from, @Param("to") Instant to,
                                                      @Param("soldStatuses") List<String> soldStatuses);
+
+    // ------------------------------------------------------------------
+    // KPI de retention (AdminRetentionService, point n.14) : cohortes calculees
+    // en SQL, jamais de conducteurs ni de trajets charges en memoire.
+    // ------------------------------------------------------------------
+
+    /** Cohorte de conducteurs et republications, pour {@link #getDriverRetentionStats}. */
+    interface DriverRetentionStats {
+        long getW1Cohort();
+
+        long getW1Retained();
+
+        long getW4Cohort();
+
+        long getW4Retained();
+    }
+
+    /**
+     * Retention conducteur (constat F449, CLAUDE.md section 2). Une publication est un trajet
+     * cree par son conducteur (hors brouillon et hors occurrence engendree par une navette :
+     * {@code parent_trip_id is null}). La cohorte est l ensemble des conducteurs ayant publie
+     * sur [from, to), ancres a leur premiere publication de la periode ({@code first_at}) :
+     * <ul>
+     *   <li>W1 : a republie entre J+1 et J+7 apres cette ancre ;</li>
+     *   <li>W4 : a republie entre J+22 et J+28.</li>
+     * </ul>
+     * Un conducteur n entre dans le denominateur d une fenetre que si elle est entierement
+     * ecoulee a {@code now} : un conducteur arrive hier n est pas "perdu", il est inobservable.
+     */
+    @Query(value = """
+            with pubs as (
+                select t.driver_id, t.created_at
+                from trips t
+                where t.status <> 'DRAFT' and t.parent_trip_id is null
+            ),
+            cohort as (
+                select p.driver_id, min(p.created_at) as first_at
+                from pubs p
+                where p.created_at >= :from and p.created_at < :to
+                group by p.driver_id
+            )
+            select
+              count(*) filter (where c.first_at + interval '7 days' <= cast(:now as timestamptz)) as w1_cohort,
+              count(*) filter (where c.first_at + interval '7 days' <= cast(:now as timestamptz)
+                                 and exists (select 1 from pubs p where p.driver_id = c.driver_id
+                                             and p.created_at > c.first_at
+                                             and p.created_at <= c.first_at + interval '7 days')) as w1_retained,
+              count(*) filter (where c.first_at + interval '28 days' <= cast(:now as timestamptz)) as w4_cohort,
+              count(*) filter (where c.first_at + interval '28 days' <= cast(:now as timestamptz)
+                                 and exists (select 1 from pubs p where p.driver_id = c.driver_id
+                                             and p.created_at > c.first_at + interval '21 days'
+                                             and p.created_at <= c.first_at + interval '28 days')) as w4_retained
+            from cohort c
+            """, nativeQuery = true)
+    DriverRetentionStats getDriverRetentionStats(@Param("from") Instant from, @Param("to") Instant to,
+                                                 @Param("now") Instant now);
+
+    /** Navettes actives et remplissage moyen des occurrences, pour {@link #getRecurringStats}. */
+    interface RecurringStats {
+        long getActiveTemplates();
+
+        long getOccurrences();
+
+        Double getAvgFilledSeats();
+    }
+
+    /**
+     * Mode quotidien (CLAUDE.md section 2) : navettes (modeles) ayant au moins une occurrence
+     * partie sur [from, to), nombre de ces occurrences et places vendues (statuts donnes) en
+     * moyenne par occurrence. Les occurrences annulees ou en brouillon ne comptent pas.
+     */
+    @Query(value = """
+            select count(distinct t.parent_trip_id) as active_templates,
+                   count(*) as occurrences,
+                   cast(avg(coalesce(bk.seats_sold, 0)) as double precision) as avg_filled_seats
+            from trips t
+            left join lateral (
+                select sum(b.seats) as seats_sold
+                from bookings b
+                where b.trip_id = t.id and b.status in (:soldStatuses)
+            ) bk on true
+            where t.parent_trip_id is not null
+              and t.departure_at >= :from and t.departure_at < :to
+              and t.status not in ('DRAFT', 'CANCELLED')
+            """, nativeQuery = true)
+    RecurringStats getRecurringStats(@Param("from") Instant from, @Param("to") Instant to,
+                                     @Param("soldStatuses") List<String> soldStatuses);
 }

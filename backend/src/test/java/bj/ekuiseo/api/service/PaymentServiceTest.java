@@ -2,22 +2,32 @@ package bj.ekuiseo.api.service;
 
 import bj.ekuiseo.api.common.exception.ForbiddenException;
 import bj.ekuiseo.api.domain.Booking;
+import bj.ekuiseo.api.domain.DriverSubscription;
 import bj.ekuiseo.api.domain.Payment;
 import bj.ekuiseo.api.domain.Trip;
 import bj.ekuiseo.api.domain.User;
 import bj.ekuiseo.api.domain.enums.BookingStatus;
+import bj.ekuiseo.api.domain.enums.PaymentChannel;
 import bj.ekuiseo.api.domain.enums.PaymentMethod;
 import bj.ekuiseo.api.domain.enums.PaymentProvider;
 import bj.ekuiseo.api.domain.enums.PaymentStatus;
+import bj.ekuiseo.api.domain.enums.SubscriptionStatus;
+import bj.ekuiseo.api.dto.payment.InitiatePaymentRequest;
+import bj.ekuiseo.api.dto.payment.InitiatePaymentResponse;
 import bj.ekuiseo.api.dto.payment.KkiapayWebhookPayload;
+import bj.ekuiseo.api.dto.payment.PaymentClientStatus;
 import bj.ekuiseo.api.dto.payment.PaymentStatusResponse;
 import bj.ekuiseo.api.repository.BookingRepository;
 import bj.ekuiseo.api.repository.DriverSubscriptionRepository;
 import bj.ekuiseo.api.repository.PaymentRepository;
 import bj.ekuiseo.api.service.kkiapay.KkiapayGateway;
+import bj.ekuiseo.api.service.kkiapay.KkiapayWebhookParser;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
+import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,13 +38,16 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
  * Confirmation d'un paiement depuis le widget Kkiapay (PaymentService#confirmFromWidget)
  * et traitement du webhook : dans les deux cas, rien n'est cru sur parole - statut ET
- * montant sont reverifies aupres de Kkiapay avant de confirmer la reservation.
+ * montant sont reverifies aupres de Kkiapay avant de confirmer la reservation. Phase 3 :
+ * reutilisation du paiement INITIATED (F019/F149), verrou (F150), montant verifie et
+ * surpaiement (F151), operateur reel (F140), webhook acquitte sans cible (F012).
  */
 class PaymentServiceTest {
 
@@ -54,7 +67,8 @@ class PaymentServiceTest {
     @BeforeEach
     void setUp() {
         service = new PaymentService(paymentRepository, bookingRepository, subscriptionRepository,
-                notificationService, auditService, gateway, refundService, "pk_test", "secret", true);
+                notificationService, auditService, gateway, refundService, new KkiapayWebhookParser(new ObjectMapper()),
+                "pk_test", "secret", true);
         passenger = User.builder().id(UUID.randomUUID()).build();
         User driver = User.builder().id(UUID.randomUUID()).build();
         Trip trip = Trip.builder().id(UUID.randomUUID()).driver(driver).build();
@@ -79,6 +93,7 @@ class PaymentServiceTest {
                 .status(PaymentStatus.INITIATED)
                 .build();
         when(paymentRepository.findById(payment.getId())).thenReturn(Optional.of(payment));
+        when(paymentRepository.findByIdForUpdate(payment.getId())).thenReturn(Optional.of(payment));
         when(paymentRepository.findByProviderAndProviderTxId(eq(PaymentProvider.KKIAPAY), any()))
                 .thenReturn(Optional.empty());
         when(paymentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -89,19 +104,30 @@ class PaymentServiceTest {
         return new KkiapayGateway.VerificationResult(success, "kk_123", amount, 19, raw, null, null);
     }
 
+    private KkiapayWebhookPayload webhook(Object stateData) {
+        return new KkiapayWebhookPayload("transaction.success", "kk_123", true, "22997000000",
+                "Ekuiseo", "MOBILE_MONEY", 1000L, 19L, null, null, stateData);
+    }
+
     @Test
-    void confirmFromWidget_verifiedAndSufficient_confirmsBooking() {
+    void confirmFromWidget_verifiedAndSufficient_confirmsBooking_underLock() {
         when(gateway.verifyTransaction("kk_123")).thenReturn(verified(true, 1000, "SUCCESS"));
 
         PaymentStatusResponse res = service.confirmFromWidget(payment.getId(), passenger.getId(), " kk_123 ");
 
-        assertThat(res.status()).isEqualTo("SUCCEEDED");
+        assertThat(res.status()).isEqualTo(PaymentClientStatus.SUCCEEDED);
         assertThat(res.transactionRef()).isEqualTo("kk_123");
+        assertThat(res.bookingId()).isEqualTo(booking.getId());
+        assertThat(res.subscriptionId()).isNull();
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCEEDED);
         assertThat(payment.getProviderTxId()).isEqualTo("kk_123");
         assertThat(payment.getFee()).isEqualTo(19);
+        assertThat(payment.getVerifiedAmount()).isEqualTo(1000);
         assertThat(booking.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
         verify(bookingRepository).save(booking);
+        // Constat F150 : le paiement est charge sous verrou pessimiste.
+        verify(paymentRepository).findByIdForUpdate(payment.getId());
+        verify(auditService, never()).log(any(), eq("PAYMENT_OVERPAID"), any(), any(), any());
     }
 
     @Test
@@ -111,10 +137,43 @@ class PaymentServiceTest {
 
         PaymentStatusResponse res = service.confirmFromWidget(payment.getId(), passenger.getId(), "kk_123");
 
-        assertThat(res.status()).isEqualTo("FAILED");
+        assertThat(res.status()).isEqualTo(PaymentClientStatus.FAILED);
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.FAILED);
+        assertThat(payment.getVerifiedAmount()).isEqualTo(5);
         assertThat(booking.getStatus()).isEqualTo(BookingStatus.PENDING_PAYMENT);
         verify(bookingRepository, never()).save(any());
+    }
+
+    /** Constat F151 : un surpaiement est accepte et journalise (PAYMENT_OVERPAID), jamais rembourse d office. */
+    @Test
+    void confirmFromWidget_overpayment_confirms_andAudits() {
+        when(gateway.verifyTransaction("kk_123")).thenReturn(verified(true, 1500, "SUCCESS"));
+
+        PaymentStatusResponse res = service.confirmFromWidget(payment.getId(), passenger.getId(), "kk_123");
+
+        assertThat(res.status()).isEqualTo(PaymentClientStatus.SUCCEEDED);
+        assertThat(payment.getVerifiedAmount()).isEqualTo(1500);
+        assertThat(booking.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> details = ArgumentCaptor.forClass(Map.class);
+        verify(auditService).log(eq(null), eq("PAYMENT_OVERPAID"), eq("payment"), eq(payment.getId()), details.capture());
+        assertThat(details.getValue()).containsEntry("expectedAmountFcfa", 1000L)
+                .containsEntry("verifiedAmountFcfa", 1500L)
+                .containsEntry("excessFcfa", 500L);
+        verify(refundService, never()).requestForOrphanPayment(any(), any(), any(), any(Long.class));
+    }
+
+    /** Constat F140 : l operateur reel vient de la verification, pas de la declaration du widget. */
+    @Test
+    void confirmFromWidget_recordsTheRealOperator() {
+        payment.setChannel(PaymentChannel.MOOV); // declare par le passager a l initiation
+        when(gateway.verifyTransaction("kk_123")).thenReturn(new KkiapayGateway.VerificationResult(
+                true, "kk_123", 1000, 19, "SUCCESS", null, null, "MTN"));
+
+        service.confirmFromWidget(payment.getId(), passenger.getId(), "kk_123");
+
+        assertThat(payment.getChannel()).isEqualTo(PaymentChannel.MTN);
+        assertThat(payment.getRawPayload()).containsEntry("operator", "MTN");
     }
 
     @Test
@@ -123,7 +182,8 @@ class PaymentServiceTest {
 
         PaymentStatusResponse res = service.confirmFromWidget(payment.getId(), passenger.getId(), "kk_123");
 
-        assertThat(res.status()).isEqualTo("PROCESSING");
+        assertThat(res.status()).isEqualTo(PaymentClientStatus.PROCESSING);
+        assertThat(res.instruction()).isNotBlank();
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.INITIATED);
         assertThat(payment.getProviderTxId()).isEqualTo("kk_123");
         assertThat(booking.getStatus()).isEqualTo(BookingStatus.PENDING_PAYMENT);
@@ -135,7 +195,7 @@ class PaymentServiceTest {
 
         PaymentStatusResponse res = service.confirmFromWidget(payment.getId(), passenger.getId(), "kk_123");
 
-        assertThat(res.status()).isEqualTo("FAILED");
+        assertThat(res.status()).isEqualTo(PaymentClientStatus.FAILED);
         assertThat(booking.getStatus()).isEqualTo(BookingStatus.PENDING_PAYMENT);
     }
 
@@ -153,23 +213,120 @@ class PaymentServiceTest {
 
         PaymentStatusResponse res = service.confirmFromWidget(payment.getId(), passenger.getId(), "kk_123");
 
-        assertThat(res.status()).isEqualTo("SUCCEEDED");
+        assertThat(res.status()).isEqualTo(PaymentClientStatus.SUCCEEDED);
         verify(gateway, never()).verifyTransaction(any());
     }
 
     @Test
-    void handleWebhook_reusesInitiatedPayment_andConfirms() {
+    void getStatus_exposesTheClientVocabulary_andRealUpdatedAt() {
+        Instant updated = Instant.parse("2026-09-07T10:00:00Z");
+        payment.setStatus(PaymentStatus.REFUND_MANUAL);
+        payment.setUpdatedAt(updated);
+
+        PaymentStatusResponse res = service.getStatus(payment.getId(), passenger.getId());
+
+        assertThat(res.status()).isEqualTo(PaymentClientStatus.REFUND_PENDING);
+        assertThat(res.updatedAt()).isEqualTo(updated);
+        assertThat(res.instruction()).isNull();
+
+        payment.setStatus(PaymentStatus.REFUNDED);
+        assertThat(service.getStatus(payment.getId(), passenger.getId()).status()).isEqualTo(PaymentClientStatus.REFUNDED);
+        payment.setStatus(PaymentStatus.INITIATED);
+        booking.setStatus(BookingStatus.EXPIRED);
+        assertThat(service.getStatus(payment.getId(), passenger.getId()).status()).isEqualTo(PaymentClientStatus.EXPIRED);
+    }
+
+    /** Constat F019 : rouvrir le widget reutilise le paiement INITIATED ; un nouveau n est cree qu apres un FAILED. */
+    @Test
+    void initiate_reusesTheInitiatedPayment_andCreatesANewOneOnlyAfterFailure() {
+        when(bookingRepository.findById(booking.getId())).thenReturn(Optional.of(booking));
+        when(paymentRepository.findFirstByBookingIdAndStatusOrderByCreatedAtDesc(booking.getId(), PaymentStatus.INITIATED))
+                .thenReturn(Optional.of(payment)).thenReturn(Optional.empty());
+
+        InitiatePaymentResponse first = service.initiate(passenger.getId(), new InitiatePaymentRequest(booking.getId()));
+        assertThat(first.paymentId()).isEqualTo(payment.getId());
+        assertThat(first.transactionRef()).isEqualTo(payment.getProviderTxId());
+        assertThat(first.amount()).isEqualTo(1000);
+        verify(paymentRepository, never()).save(any());
+
+        InitiatePaymentResponse second = service.initiate(passenger.getId(), new InitiatePaymentRequest(booking.getId()));
+        assertThat(second.transactionRef()).startsWith("ekuiseo-booking-");
+        verify(paymentRepository, times(1)).save(any());
+    }
+
+    /** Constat F149 : meme reutilisation pour un abonnement. */
+    @Test
+    void initiateSubscriptionPayment_reusesTheInitiatedPayment() {
+        DriverSubscription subscription = DriverSubscription.builder().id(UUID.randomUUID())
+                .driver(User.builder().id(UUID.randomUUID()).build()).priceFcfa(2000)
+                .status(SubscriptionStatus.PENDING_PAYMENT).build();
+        Payment existing = Payment.builder().id(UUID.randomUUID()).subscription(subscription)
+                .providerTxId("ekuiseo-subscription-x").amount(2000).status(PaymentStatus.INITIATED).build();
+        when(paymentRepository.findFirstBySubscriptionIdAndStatusOrderByCreatedAtDesc(subscription.getId(), PaymentStatus.INITIATED))
+                .thenReturn(Optional.of(existing));
+
+        InitiatePaymentResponse res = service.initiateSubscriptionPayment(subscription);
+
+        assertThat(res.paymentId()).isEqualTo(existing.getId());
+        assertThat(res.transactionRef()).isEqualTo("ekuiseo-subscription-x");
+        verify(paymentRepository, never()).save(any());
+    }
+
+    @Test
+    void handleWebhook_reusesInitiatedPayment_andConfirms_withTheRealOperator() {
         when(bookingRepository.findById(booking.getId())).thenReturn(Optional.of(booking));
         when(paymentRepository.findFirstByBookingIdAndStatusOrderByCreatedAtDesc(booking.getId(), PaymentStatus.INITIATED))
                 .thenReturn(Optional.of(payment));
-        when(gateway.verifyTransaction("kk_123")).thenReturn(verified(true, 1000, "SUCCESS"));
+        when(gateway.verifyTransaction("kk_123")).thenReturn(new KkiapayGateway.VerificationResult(
+                true, "kk_123", 1000, 19, "SUCCESS", null, null, "CELTIIS CASH"));
 
-        service.handleWebhook(new KkiapayWebhookPayload("transaction.success", "kk_123", true, "22997000000",
-                "Ekuiseo", "MOBILE_MONEY", 1000L, 19L, null, null, Map.of("bookingId", booking.getId().toString())));
+        service.handleWebhook(webhook(Map.of("bookingId", booking.getId().toString())));
 
         assertThat(payment.getProviderTxId()).isEqualTo("kk_123");
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCEEDED);
+        assertThat(payment.getChannel()).isEqualTo(PaymentChannel.CELTIIS);
+        assertThat(payment.getRawPayload()).containsEntry("declaredMethod", "MOBILE_MONEY");
         assertThat(booking.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
+        verify(paymentRepository).findByIdForUpdate(payment.getId());
+    }
+
+    /** Constat F149 : le webhook d un abonnement reutilise lui aussi le paiement INITIATED. */
+    @Test
+    void handleWebhook_forASubscription_reusesTheInitiatedPayment_andActivatesIt() {
+        DriverSubscription subscription = DriverSubscription.builder().id(UUID.randomUUID())
+                .driver(User.builder().id(UUID.randomUUID()).build()).priceFcfa(2000)
+                .status(SubscriptionStatus.PENDING_PAYMENT).build();
+        Payment existing = Payment.builder().id(UUID.randomUUID()).subscription(subscription)
+                .providerTxId("ekuiseo-subscription-x").amount(2000).status(PaymentStatus.INITIATED).build();
+        when(subscriptionRepository.findById(subscription.getId())).thenReturn(Optional.of(subscription));
+        when(subscriptionRepository.findActive(any(), any())).thenReturn(Optional.empty());
+        when(paymentRepository.findFirstBySubscriptionIdAndStatusOrderByCreatedAtDesc(subscription.getId(), PaymentStatus.INITIATED))
+                .thenReturn(Optional.of(existing));
+        when(paymentRepository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
+        when(gateway.verifyTransaction("kk_123")).thenReturn(verified(true, 2000, "SUCCESS"));
+
+        service.handleWebhook(webhook(Map.of("subscriptionId", subscription.getId().toString())));
+
+        assertThat(existing.getProviderTxId()).isEqualTo("kk_123");
+        assertThat(existing.getStatus()).isEqualTo(PaymentStatus.SUCCEEDED);
+        assertThat(subscription.getStatus()).isEqualTo(SubscriptionStatus.ACTIVE);
+        ArgumentCaptor<Payment> saved = ArgumentCaptor.forClass(Payment.class);
+        verify(paymentRepository).save(saved.capture());
+        assertThat(saved.getValue()).isSameAs(existing);
+    }
+
+    /** Constat F012 : une cible inconnue est acquittee (log) sans verification payante, jamais 404. */
+    @Test
+    void handleWebhook_unknownBookingOrSubscription_isAcknowledgedWithoutVerification() {
+        when(bookingRepository.findById(any())).thenReturn(Optional.empty());
+        when(subscriptionRepository.findById(any())).thenReturn(Optional.empty());
+
+        service.handleWebhook(webhook(Map.of("bookingId", UUID.randomUUID().toString())));
+        service.handleWebhook(webhook(Map.of("subscriptionId", UUID.randomUUID().toString())));
+        service.handleWebhook(webhook(Map.of()));
+
+        verify(gateway, never()).verifyTransaction(any());
+        verify(paymentRepository, never()).save(any());
     }
 
     @Test
@@ -194,8 +351,7 @@ class PaymentServiceTest {
                 .thenReturn(Optional.of(payment));
         when(gateway.verifyTransaction("kk_123")).thenReturn(verified(false, 0, "PENDING"));
 
-        assertThatThrownBy(() -> service.handleWebhook(new KkiapayWebhookPayload("transaction.success", "kk_123", true, null,
-                null, "MOBILE_MONEY", 1000L, 19L, null, null, Map.of("bookingId", booking.getId().toString()))))
+        assertThatThrownBy(() -> service.handleWebhook(webhook(Map.of("bookingId", booking.getId().toString()))))
                 .isInstanceOf(bj.ekuiseo.api.service.kkiapay.KkiapayUnavailableException.class);
 
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.INITIATED);
@@ -213,8 +369,7 @@ class PaymentServiceTest {
             payment.setStatus(terminal);
             when(paymentRepository.findByProviderAndProviderTxId(PaymentProvider.KKIAPAY, "kk_123")).thenReturn(Optional.of(payment));
 
-            service.handleWebhook(new KkiapayWebhookPayload("transaction.success", "kk_123", true, null,
-                    null, "MOBILE_MONEY", 1000L, 19L, null, null, Map.of("bookingId", booking.getId().toString())));
+            service.handleWebhook(webhook(Map.of("bookingId", booking.getId().toString())));
 
             assertThat(payment.getStatus()).isEqualTo(terminal);
         }
@@ -261,11 +416,30 @@ class PaymentServiceTest {
                 .thenReturn(Optional.of(payment));
         when(gateway.verifyTransaction("kk_123")).thenReturn(verified(true, 1000, "SUCCESS"));
 
-        service.handleWebhook(new KkiapayWebhookPayload("transaction.success", "kk_123", true, null,
-                null, "MOBILE_MONEY", 1000L, 19L, null, null, Map.of("bookingId", booking.getId().toString())));
+        service.handleWebhook(webhook(Map.of("bookingId", booking.getId().toString())));
 
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCEEDED); // l'argent a bien ete encaisse
         assertThat(booking.getStatus()).isEqualTo(BookingStatus.CANCELLED_BY_PASSENGER);
         verify(bookingRepository, never()).save(any());
+    }
+
+    /** Constat F019 : le menage des paiements abandonnes delegue a la requete native et renvoie son compte. */
+    @Test
+    void failAbandonedInitiated_delegatesToTheRepository() {
+        Instant before = Instant.now();
+        when(paymentRepository.failAbandonedInitiated(before)).thenReturn(3);
+
+        assertThat(service.failAbandonedInitiated(before)).isEqualTo(3);
+    }
+
+    @Test
+    void parseChannel_recognisesOperatorsAndCards() {
+        assertThat(PaymentService.parseChannel("MTN")).isEqualTo(PaymentChannel.MTN);
+        assertThat(PaymentService.parseChannel("mtn momo")).isEqualTo(PaymentChannel.MTN);
+        assertThat(PaymentService.parseChannel("MOOV MONEY")).isEqualTo(PaymentChannel.MOOV);
+        assertThat(PaymentService.parseChannel("Celtiis")).isEqualTo(PaymentChannel.CELTIIS);
+        assertThat(PaymentService.parseChannel("VISA")).isEqualTo(PaymentChannel.CARD);
+        assertThat(PaymentService.parseChannel("MOBILE_MONEY")).isNull();
+        assertThat(PaymentService.parseChannel(null)).isNull();
     }
 }

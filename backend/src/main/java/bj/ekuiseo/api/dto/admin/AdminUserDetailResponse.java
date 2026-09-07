@@ -17,6 +17,7 @@ import java.util.UUID;
  * (constats F305/F306). Le numero de piece n est jamais expose en entier
  * ({@code identity.documentLast4}) ; les listes paginees (reservations, trajets,
  * paiements) sont servies par les sous-ressources /bookings, /trips, /payments.
+ * {@code emailVerified} et {@code lastLoginAt} (constat F544) servent au support.
  */
 public record AdminUserDetailResponse(
         UUID id,
@@ -37,7 +38,9 @@ public record AdminUserDetailResponse(
         long bookingsMade,
         BigDecimal ratingAvg,
         int lateCancellationsCount,
-        Instant anonymizedAt
+        Instant anonymizedAt,
+        boolean emailVerified,
+        Instant lastLoginAt
 ) {
     /** Dossier d identite (null si jamais soumis). */
     public record Identity(IdentityVerificationStatus status, IdentityDocumentType documentType, String documentLast4) {
