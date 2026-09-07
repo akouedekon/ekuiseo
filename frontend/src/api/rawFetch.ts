@@ -18,7 +18,8 @@ const DEFAULT_TIMEOUT_MS = 20_000
 
 /** Force le rafraichissement du jeton via le client standard ; vrai si un nouveau jeton est disponible. */
 async function refreshThroughClient(previousToken: string | null): Promise<boolean> {
-  if (!authStore.getRefreshToken()) return false
+  // Le refresh token vit dans un cookie HttpOnly : on ne peut pas savoir d avance s il
+  // existe, le client standard tente le rafraichissement et echoue proprement sinon.
   try {
     await apiClient.get<unknown>('/api/v1/me/preferences')
   } catch {

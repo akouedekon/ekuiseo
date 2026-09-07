@@ -55,7 +55,7 @@ describe('subscribePush / unsubscribePush', () => {
   const requestPermission = vi.fn()
 
   beforeEach(() => {
-    authStore.setTokens('access', 'refresh')
+    authStore.setAccessToken('access')
     fetchMock.mockReset()
     getSubscription.mockReset()
     subscribe.mockReset()

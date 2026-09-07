@@ -3,6 +3,7 @@ import { useSyncExternalStore } from 'react'
 import { apiClient, authStore, restoreSession as restoreSessionFromCookie, type AuthChangeReason } from '@/api/client'
 import { TERMS_VERSION } from '@/lib/legal'
 import { clearApiCache, clearPersistedCache, queryClient, readCacheOwner, writeCacheOwner } from '@/lib/queryClient'
+import { unsubscribePush } from '@/lib/push'
 import { toE164 } from '@/lib/validation'
 import type { AuthResponse, OtpRequestResponse, UserResponse } from '@/api/types'
 
@@ -29,6 +30,8 @@ export interface OtpRegisterInput {
  * compte precedent ne doit survivre au suivant.
  */
 export function resetSession(reason: AuthChangeReason = 'logout'): void {
+  // L abonnement Web Push de cet appareil ne doit pas survivre a la session (ne leve jamais).
+  void unsubscribePush()
   authStore.clear(reason)
   queryClient.clear()
   clearPersistedCache()

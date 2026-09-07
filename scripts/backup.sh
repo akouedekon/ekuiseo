@@ -126,10 +126,30 @@ if [[ "${#WEEKLY_FILES[@]}" -gt 4 ]]; then
   done
 fi
 
+# --- Pieces d identite (V20) ---------------------------------------------------
+# Le volume ekuiseo_identity_data contient les fichiers chiffres (AES-256-GCM, cle
+# IDENTITY_STORAGE_KEY du .env, a sauvegarder A PART). Archive tar aux memes retentions
+# que le dump ; ignoree si le volume n existe pas (televersement desactive).
+IDENTITY_VOLUME="$(docker volume ls -q --filter name=ekuiseo_identity_data | head -1 || true)"
+IDENTITY_ARCHIVE=""
+if [[ -n "$IDENTITY_VOLUME" ]]; then
+  IDENTITY_ARCHIVE="$DAILY_DIR/identity_${TIMESTAMP}.tar.gz"
+  if docker run --rm -v "$IDENTITY_VOLUME:/src:ro" -v "$DAILY_DIR:/dest" alpine:3.20        sh -c "tar -czf /dest/identity_${TIMESTAMP}.tar.gz -C /src ." 2>/dev/null; then
+    log "Pieces d identite archivees -> $IDENTITY_ARCHIVE"
+  else
+    log "AVERTISSEMENT : archive des pieces d identite impossible (volume $IDENTITY_VOLUME)."
+    IDENTITY_ARCHIVE=""
+  fi
+  find "$DAILY_DIR" -maxdepth 1 -name "identity_*.tar.gz" -mtime +7 -delete 2>/dev/null || true
+fi
+
 # --- Copie hors site (rclone) -------------------------------------------------
 if [[ -n "$BACKUP_REMOTE" ]]; then
   command -v rclone >/dev/null 2>&1 || die "BACKUP_REMOTE est defini mais rclone est introuvable (apt install rclone, puis rclone config)."
   log "Envoi hors site vers $BACKUP_REMOTE ..."
+  if [[ -n "$IDENTITY_ARCHIVE" ]]; then
+    rclone copyto "$IDENTITY_ARCHIVE" "$BACKUP_REMOTE/daily/$(basename "$IDENTITY_ARCHIVE")" --retries 3 --low-level-retries 5       || log "AVERTISSEMENT : l archive des pieces d identite n a pas ete envoyee hors site."
+  fi
   if ! rclone copyto "$DEST_PATH" "$BACKUP_REMOTE/daily/$FILENAME" --retries 3 --low-level-retries 5; then
     die "l'envoi hors site vers $BACKUP_REMOTE a echoue : la sauvegarde n'existe QUE sur ce serveur."
   fi

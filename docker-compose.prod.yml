@@ -127,6 +127,15 @@ services:
       PAYOUT_ELIGIBILITY_DELAY_HOURS: ${PAYOUT_ELIGIBILITY_DELAY_HOURS:-24}
       REFUND_MAX_ATTEMPTS: ${REFUND_MAX_ATTEMPTS:-5}
       SUBSCRIPTION_PRICE_FCFA: ${SUBSCRIPTION_PRICE_FCFA:-2000}
+      # Web Push (V20) : cles VAPID (npx web-push generate-vapid-keys) ; vides = push desactive.
+      PUSH_VAPID_PUBLIC_KEY: ${PUSH_VAPID_PUBLIC_KEY:-}
+      PUSH_VAPID_PRIVATE_KEY: ${PUSH_VAPID_PRIVATE_KEY:-}
+      PUSH_VAPID_SUBJECT: ${PUSH_VAPID_SUBJECT:-mailto:contact@ekuiseo.com}
+      # Pieces d identite (V20) : chiffrees AES-256-GCM dans le volume ekuiseo_identity_data ;
+      # cle vide = televersement desactive (503 explicite). La cle doit etre sauvegardee A PART.
+      IDENTITY_STORAGE_KEY: ${IDENTITY_STORAGE_KEY:-}
+      IDENTITY_STORAGE_DIR: /app/data/identity
+      IDENTITY_DOCUMENTS_RETENTION_DAYS: ${IDENTITY_DOCUMENTS_RETENTION_DAYS:-30}
       RATE_LIMIT_AUTH_MAX: ${RATE_LIMIT_AUTH_MAX:-60}
       RATE_LIMIT_AUTH_WINDOW_SECONDS: ${RATE_LIMIT_AUTH_WINDOW_SECONDS:-60}
       RATE_LIMIT_WEBHOOK_MAX: ${RATE_LIMIT_WEBHOOK_MAX:-120}
@@ -139,6 +148,9 @@ services:
     # Pas de "ports:" publie : seul Caddy (reseau edge) parle au backend.
     expose:
       - "8080"
+    volumes:
+      # Pieces d identite chiffrees (V20) ; a sauvegarder avec scripts/backup.sh (archive tar).
+      - ekuiseo_identity_data:/app/data/identity
     healthcheck:
       test:
         - "CMD"
@@ -260,5 +272,6 @@ networks:
 
 volumes:
   ekuiseo_postgis_data:
+  ekuiseo_identity_data:
   ekuiseo_caddy_data:
   ekuiseo_caddy_config:
