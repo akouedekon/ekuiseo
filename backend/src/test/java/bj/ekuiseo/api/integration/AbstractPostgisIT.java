@@ -97,7 +97,25 @@ public abstract class AbstractPostgisIT {
      */
     @BeforeEach
     void cleanDatabase() {
-        jdbcTemplate.execute("truncate table users, search_events cascade");
+        // Les executeurs asynchrones (notifications, remboursements) peuvent encore tenir un
+        // verrou du test precedent : le TRUNCATE est retente quelques fois plutot que d echouer
+        // sur un interblocage passager.
+        org.springframework.dao.DataAccessException last = null;
+        for (int attempt = 1; attempt <= 5; attempt++) {
+            try {
+                jdbcTemplate.execute("truncate table users, search_events cascade");
+                return;
+            } catch (org.springframework.dao.DataAccessException ex) {
+                last = ex;
+                try {
+                    Thread.sleep(400L * attempt);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw ex;
+                }
+            }
+        }
+        throw last;
     }
 
     protected User newUser(String firstName, Role role) {
