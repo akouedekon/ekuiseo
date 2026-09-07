@@ -54,3 +54,6 @@ backups/
 
 # --- Configuration locale de l outil (lanceur de previsualisation) ---
 .claude/
+
+# Copies locales du .env de production (jamais versionnees)
+*env-sauvegarde*
