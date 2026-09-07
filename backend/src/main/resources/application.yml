@@ -247,7 +247,10 @@ ekuiseo:
     price-fcfa: ${SUBSCRIPTION_PRICE_FCFA:2000}
   rate-limit:
     auth:
-      max-requests: ${RATE_LIMIT_AUTH_MAX:20}
+      # 60/min : chaque chargement de page fait un POST /auth/refresh (cookie HttpOnly) et les
+      # operateurs mobiles beninois partagent une IP entre de nombreux abonnes (CGNAT). Les
+      # demandes de code ont leur propre quota plus strict (otp: ci-dessous).
+      max-requests: ${RATE_LIMIT_AUTH_MAX:60}
       window-seconds: ${RATE_LIMIT_AUTH_WINDOW_SECONDS:60}
     webhook:
       max-requests: ${RATE_LIMIT_WEBHOOK_MAX:120}
