@@ -145,14 +145,32 @@ jobs:
           retention-days: 7
 
   docker-images:
-    name: Construction des images Docker
-    # Seulement sur la branche principale : valide que les Dockerfiles produisent bien
-    # des images utilisables (le sandbox de generation de ce depot n'a pas d'acces a
-    # Docker Hub / Maven Central, donc ce job n'a JAMAIS ete execute avec succes avant
-    # publication — verifier son premier run avec attention).
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    name: Images Docker (build ; publication sur main)
+    # Construit les deux images a chaque run (une PR valide que les Dockerfiles passent) et
+    # les PUBLIE dans GitHub Container Registry uniquement sur un push de main (constat
+    # F437) : ghcr.io/akouedekon/ekuiseo-{backend,frontend}:<sha> et :main. Le workflow
+    # deploy-prod.yml fait ensuite tirer le tag <sha> par le VPS (scripts/deploy-vps.sh),
+    # qui ne construit plus rien ; le retour arriere relance le tag precedent.
+    #
+    # Reglages GitHub attendus (Settings du depot) :
+    #  - Packages : apres la premiere publication, rendre les deux paquets PUBLICS
+    #    (package settings -> Change visibility) pour que le VPS les tire sans jeton ;
+    #    sinon `docker login ghcr.io` sur le serveur avec un jeton read:packages
+    #    (docs/DEPLOIEMENT.md §14) ;
+    #  - Variables (Settings -> Secrets and variables -> Actions -> Variables) :
+    #    VITE_API_URL (vide en production : API servie sous le meme domaine),
+    #    VITE_MAP_STYLE_URL (fond de carte MapTiler, vide = trace schematique),
+    #    VITE_SUPPORT_EMAIL (adresse de support, contact@ekuiseo.com par defaut).
+    #    Vite fige ces valeurs dans le bundle AU BUILD : une variable absente vaut la
+    #    valeur par defaut ci-dessous, et un changement impose un nouveau build.
     needs: [backend, frontend]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE_NS: ghcr.io/akouedekon
+      PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     steps:
       - name: Recuperer le code
         uses: actions/checkout@v4
@@ -160,27 +178,108 @@ jobs:
       - name: Configurer Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Construire l'image backend
+      # GITHUB_TOKEN suffit pour publier dans le registre du depot ; aucun secret a creer.
+      - name: Se connecter a GitHub Container Registry
+        if: env.PUSH == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Construire (et publier) l'image backend
         uses: docker/build-push-action@v6
         with:
           context: ./backend
-          push: false
-          tags: ekuiseo-backend:ci
+          push: ${{ env.PUSH == 'true' }}
+          tags: |
+            ${{ env.IMAGE_NS }}/ekuiseo-backend:${{ github.sha }}
+            ${{ env.IMAGE_NS }}/ekuiseo-backend:main
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
 
-      - name: Construire l'image frontend
+      - name: Construire (et publier) l'image frontend
         uses: docker/build-push-action@v6
         with:
           context: ./frontend
-          push: false
-          tags: ekuiseo-frontend:ci
+          push: ${{ env.PUSH == 'true' }}
+          tags: |
+            ${{ env.IMAGE_NS }}/ekuiseo-frontend:${{ github.sha }}
+            ${{ env.IMAGE_NS }}/ekuiseo-frontend:main
+          # Lues depuis les variables du depot (voir l'en-tete du job) ; vides sinon,
+          # sauf l'adresse de support qui garde la valeur par defaut du Dockerfile.
           build-args: |
-            VITE_API_URL=
+            VITE_API_URL=${{ vars.VITE_API_URL }}
+            VITE_MAP_STYLE_URL=${{ vars.VITE_MAP_STYLE_URL }}
+            VITE_SUPPORT_EMAIL=${{ vars.VITE_SUPPORT_EMAIL || 'contact@ekuiseo.com' }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
 
-      # Pour publier vers un registre (ex: GHCR) avant deploiement, ajouter ici une
-      # etape docker/login-action puis passer push: true et un tag
-      # ghcr.io/<org>/ekuiseo-backend:${{ github.sha }} — non fait par defaut pour ne
-      # pas presupposer d'un registre ni de secrets deja configures.
+  e2e:
+    name: Tests de bout en bout (Playwright)
+    # Constats F435/F143 (phase 6) : quatre parcours reels (inscription + code, recherche et
+    # reservation en especes, publication, annulation) contre la pile Docker de dev
+    # (docker-compose.yml + docker-compose.e2e.yml : Kkiapay simule, codes de connexion
+    # journalises en clair) et le jeu de demonstration + e2e/seed-e2e.sql.
+    # NON BLOQUANT au premier passage : `continue-on-error: true` a retirer une fois le job
+    # stabilise (deux runs verts consecutifs), pour qu'un parcours casse bloque le deploiement.
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    continue-on-error: true
+    env:
+      COMPOSE_FILES: -f docker-compose.yml -f docker-compose.e2e.yml
+    steps:
+      - name: Recuperer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      # Valeurs de developpement uniquement (cle JWT jetable, mot de passe local) : aucun
+      # secret n'est necessaire, scripts/seed-demo.sh exige simplement un .env.
+      - name: Preparer la configuration de developpement
+        run: cp .env.example .env
+
+      - name: Demarrer la pile (PostGIS, API, Vite)
+        run: docker compose $COMPOSE_FILES up -d --build
+
+      - name: Attendre l'API et le front
+        run: bash e2e/scripts/wait-for-stack.sh
+
+      - name: Charger le jeu de donnees (demo + trajet E2E)
+        run: bash e2e/scripts/seed.sh
+
+      - name: Installer Playwright
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Lancer les parcours
+        working-directory: e2e
+        run: npm test
+
+      - name: Journaux de la pile (diagnostic)
+        if: always()
+        run: docker compose $COMPOSE_FILES logs --no-color --tail=800 > e2e/stack-logs.txt 2>&1 || true
+
+      - name: Publier le rapport et les traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-playwright
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+            e2e/stack-logs.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Arreter la pile
+        if: always()
+        run: docker compose $COMPOSE_FILES down -v --remove-orphans || true

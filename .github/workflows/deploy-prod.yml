@@ -1,9 +1,14 @@
 name: Production (VPS)
 
 # Deploiement automatique sur le VPS a chaque push sur main, UNIQUEMENT si le
-# workflow CI (compilation + tests backend, build frontend) s'est termine avec
-# succes sur ce meme commit. Le serveur reconstruit les images et redemarre la
-# pile derriere son nginx (scripts/deploy-vps.sh, idempotent).
+# workflow CI (compilation + tests backend, build frontend, publication des images)
+# s'est termine avec succes sur ce meme commit. Le serveur ne construit rien : il tire
+# ghcr.io/akouedekon/ekuiseo-{backend,frontend}:<sha> publiees par la CI (constat F437,
+# EKUISEO_TAG) et redemarre la pile derriere son nginx (scripts/deploy-vps.sh,
+# idempotent, retour arriere automatique sur le tag precedent).
+#
+# Lancement manuel (Run workflow) : le commit vise est github.sha ; ses images doivent
+# exister dans le registre, donc la CI doit avoir tourne sur ce commit de main.
 #
 # Secrets / variables du depot (definis via `gh secret set` / `gh variable set`) :
 #   DEPLOY_SSH_KEY      cle privee ed25519 dediee (secret)
@@ -51,12 +56,14 @@ jobs:
           DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
           DEPLOY_USER: ${{ vars.DEPLOY_USER }}
           TARGET_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        # EKUISEO_SHA fige le depot sur le commit teste ; EKUISEO_TAG (meme SHA) fait tirer
+        # les images publiees par la CI au lieu de les reconstruire sur le serveur.
         run: |
           ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o ConnectTimeout=20 \
             "$DEPLOY_USER@$DEPLOY_HOST" \
             "set -e; cd /opt/ekuiseo; git fetch --quiet origin main; \
              git reset --hard --quiet '$TARGET_SHA'; \
-             EKUISEO_BRANCH=main EKUISEO_SHA='$TARGET_SHA' bash scripts/deploy-vps.sh"
+             EKUISEO_BRANCH=main EKUISEO_SHA='$TARGET_SHA' EKUISEO_TAG='$TARGET_SHA' bash scripts/deploy-vps.sh"
 
       - name: Verifier la production
         run: |

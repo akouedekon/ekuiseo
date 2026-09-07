@@ -3,13 +3,25 @@
 # Ekuiseo — deploiement sur un VPS PARTAGE (un nginx occupe deja 80/443)
 # ============================================================
 # A executer SUR le serveur, en tant qu'utilisateur membre du groupe docker :
-#   bash scripts/deploy-vps.sh
+#   bash scripts/deploy-vps.sh                      # mode local : construit les images ici
+#   EKUISEO_TAG=<sha> bash scripts/deploy-vps.sh    # mode registre : tire les images de la CI
 #
 # Idempotent : premier deploiement ou mise a jour, meme commande.
 #  1. clone ou met a jour /opt/ekuiseo depuis GitHub (branche main) ;
 #  2. verifie la presence de .env (ne le cree jamais avec des valeurs faibles) ;
-#  3. construit et (re)demarre la pile Docker derriere le proxy de l'hote ;
-#  4. attend que l'API reponde sur 127.0.0.1:${EKUISEO_HTTP_PORT}.
+#  3. choisit les images (constat F437) :
+#       - EKUISEO_TAG defini (le workflow deploy-prod.yml passe le SHA teste par la CI) :
+#         `docker compose pull` de ghcr.io/akouedekon/ekuiseo-{backend,frontend}:<tag>,
+#         rien n'est construit sur le serveur ;
+#       - sinon (deploiement manuel sans registre) : construction locale depuis le depot
+#         (docker-compose.prod.yml), images retaguees sous le meme espace de noms avec un
+#         tag local-<commit>-<horodatage> pour que la surcouche VPS et le retour arriere
+#         fonctionnent a l'identique dans les deux modes ;
+#  4. (re)demarre la pile Docker derriere le proxy de l'hote ;
+#  5. attend que l'API reponde sur 127.0.0.1:${EKUISEO_HTTP_PORT} ; sinon relance le tag
+#     precedent (fichier .deployed-tag, ou images :previous) ;
+#  6. memorise le tag deploye dans .deployed-tag et purge les images inutilisees de plus
+#     de 7 jours.
 # Le site nginx de l'hote et le certificat TLS sont geres a part (voir
 # deploy/nginx/ekuiseo.com.conf et docs/DEPLOIEMENT.md, section « serveur partage »).
 # ============================================================
@@ -18,6 +30,10 @@ set -euo pipefail
 REPO_URL="${EKUISEO_REPO_URL:-https://github.com/akouedekon/ekuiseo.git}"
 APP_DIR="${EKUISEO_DIR:-/opt/ekuiseo}"
 BRANCH="${EKUISEO_BRANCH:-main}"
+# Espace de noms des images publiees par la CI (.github/workflows/ci.yml, job docker-images).
+IMAGE_NS="${EKUISEO_IMAGE_NS:-ghcr.io/akouedekon}"
+# Tag deploye avec succes en dernier : c'est la cible du retour arriere.
+DEPLOYED_TAG_FILE=".deployed-tag"
 
 log() { printf '\n\033[1;32m[ekuiseo]\033[0m %s\n' "$*"; }
 die() { printf '\n\033[1;31m[ekuiseo] ERREUR :\033[0m %s\n' "$*" >&2; exit 1; }
@@ -85,6 +101,21 @@ fi
 
 COMPOSE="docker compose -f docker-compose.prod.yml -f docker-compose.vps.yml"
 
+# --- Choix des images (constat F437) -----------------------------------------------------
+# docker-compose.vps.yml pointe backend et frontend sur $IMAGE_NS/ekuiseo-*:${EKUISEO_TAG}
+# (section build effacee) : tout ce qui suit, y compris le retour arriere, ne manipule
+# que des tags. EKUISEO_TAG est exporte pour que chaque appel compose interpole le meme.
+if [ -n "${EKUISEO_TAG:-}" ]; then
+  MODE=registre
+  TAG="$EKUISEO_TAG"
+else
+  MODE=local
+  TAG="local-$(git rev-parse --short HEAD)-$(date +%Y%m%d%H%M%S)"
+fi
+export EKUISEO_TAG="$TAG"
+PREVIOUS_TAG="$(cat "$DEPLOYED_TAG_FILE" 2>/dev/null || true)"
+log "Mode $MODE : images $IMAGE_NS/ekuiseo-{backend,frontend}:$TAG (precedent : ${PREVIOUS_TAG:-aucun})"
+
 # Sauvegarde prealable (constat F436) : un deploiement qui migre le schema ne part jamais
 # sans dump frais. Echec = arret, sauf au tout premier deploiement (base absente).
 if docker ps --format '{{.Names}}' | grep -qx ekuiseo-postgis; then
@@ -92,32 +123,57 @@ if docker ps --format '{{.Names}}' | grep -qx ekuiseo-postgis; then
   COMPOSE_FILE=docker-compose.prod.yml ./scripts/backup.sh || die "sauvegarde prealable impossible : deploiement annule."
 fi
 
-# Retour arriere (constat F436) : les images courantes sont retaguees :previous avant le
-# build ; si la pile ne repond pas, on les remet en service sans reconstruire.
+# Retour arriere (constats F436/F437) : les images actuellement EN SERVICE sont retaguees
+# :previous avant tout changement. C'est le secours quand .deployed-tag est absent (premier
+# deploiement avec le registre, images encore nommees ekuiseo-*:latest) ou que son tag a
+# ete purge et n'est plus tirable.
 for img in ekuiseo-backend ekuiseo-frontend; do
-  if docker image inspect "$img:latest" >/dev/null 2>&1; then
-    docker tag "$img:latest" "$img:previous"
+  current="$(docker inspect --format '{{.Config.Image}}' "$img" 2>/dev/null || true)"
+  if [ -n "$current" ] && docker image inspect "$current" >/dev/null 2>&1; then
+    docker tag "$current" "$IMAGE_NS/$img:previous"
   fi
 done
 
 rollback() {
-  log "RETOUR ARRIERE : remise en service des images :previous"
-  docker image inspect ekuiseo-backend:previous >/dev/null 2>&1 || die "aucune image precedente : intervention manuelle (docs/EXPLOITATION.md)."
-  docker tag ekuiseo-backend:previous ekuiseo-backend:latest
-  docker tag ekuiseo-frontend:previous ekuiseo-frontend:latest
-  $COMPOSE up -d --no-build --remove-orphans
-  die "le deploiement a echoue ; la version precedente a ete relancee (les migrations Flyway deja appliquees restent en place : regle expand/contract)."
+  log "RETOUR ARRIERE : la version $TAG ne repond pas"
+  local target=""
+  if [ -n "$PREVIOUS_TAG" ]; then
+    target="$PREVIOUS_TAG"
+    if ! docker image inspect "$IMAGE_NS/ekuiseo-backend:$target" >/dev/null 2>&1; then
+      log "Image $target absente localement : tentative de pull depuis le registre"
+      EKUISEO_TAG="$target" $COMPOSE pull --quiet backend frontend || target=""
+    fi
+  fi
+  if [ -z "$target" ] && docker image inspect "$IMAGE_NS/ekuiseo-backend:previous" >/dev/null 2>&1; then
+    target=previous
+  fi
+  [ -n "$target" ] || die "aucune version precedente disponible : intervention manuelle (docs/EXPLOITATION.md, § Mise a jour)."
+  log "Remise en service du tag $target"
+  EKUISEO_TAG="$target" $COMPOSE up -d --no-build --remove-orphans
+  die "le deploiement de $TAG a echoue ; la version $target a ete relancee (les migrations Flyway deja appliquees restent en place : regle expand/contract)."
 }
 
-log "Construction et demarrage (Caddy sur 127.0.0.1:$PORT, derriere le nginx de l'hote)"
-$COMPOSE up -d --build --remove-orphans || rollback
+if [ "$MODE" = registre ]; then
+  log "Recuperation des images $TAG depuis le registre"
+  $COMPOSE pull --quiet backend frontend \
+    || die "images $TAG introuvables sur $IMAGE_NS : la CI ne les a pas publiees, ou le paquet n'est pas public (docker login ghcr.io requis, voir docs/DEPLOIEMENT.md §14). La pile en service n'a pas ete touchee."
+else
+  log "Construction locale des images depuis le depot (docker-compose.prod.yml)"
+  docker compose -f docker-compose.prod.yml build backend frontend \
+    || die "construction impossible ; la pile en service n'a pas ete touchee."
+  docker tag ekuiseo-backend:latest "$IMAGE_NS/ekuiseo-backend:$TAG"
+  docker tag ekuiseo-frontend:latest "$IMAGE_NS/ekuiseo-frontend:$TAG"
+fi
+
+log "Demarrage (Caddy sur 127.0.0.1:$PORT, derriere le nginx de l'hote)"
+$COMPOSE up -d --no-build --remove-orphans || rollback
 
 # Caddyfile.proxied est monte en bind sur un FICHIER : quand git le remplace (nouvel
 # inode), le conteneur garde l'ancienne version et `caddy reload` relit... l'ancienne.
 # On recree donc Caddy si sa configuration a change (coupure < 2 s, healthcheck actif).
 if ! docker exec ekuiseo-caddy cat /etc/caddy/Caddyfile 2>/dev/null | cmp -s - Caddyfile.proxied; then
   log "Caddyfile.proxied a change : recreation du conteneur Caddy"
-  docker compose -f docker-compose.prod.yml -f docker-compose.vps.yml up -d --force-recreate --no-deps caddy
+  $COMPOSE up -d --force-recreate --no-deps caddy
 fi
 
 log "Attente de l'API (sonde JSON /actuator/health via Caddy, puis un endpoint metier)"
@@ -125,15 +181,21 @@ for i in $(seq 1 40); do
   health="$(curl -sS -o /dev/null -w '%{http_code} %{content_type}' "http://127.0.0.1:$PORT/actuator/health" 2>/dev/null || true)"
   popular="$(curl -sS -o /dev/null -w '%{http_code} %{content_type}' "http://127.0.0.1:$PORT/api/v1/trips/popular" 2>/dev/null || true)"
   case "$health|$popular" in
-    "200 application/"*"|200 application/json"*) ;;
-    *) sleep 5; continue ;;
+    "200 application/"*"|200 application/json"*)
+      log "Ekuiseo repond sur http://127.0.0.1:$PORT (essai $i) : $health ; $popular."
+      $COMPOSE ps
+      # Le tag n'est memorise qu'apres une sonde reussie : en cas d'echec, .deployed-tag
+      # pointe toujours sur la derniere version qui a fonctionne.
+      printf '%s\n' "$TAG" > "$DEPLOYED_TAG_FILE"
+      # Menage : images inutilisees de plus de 7 jours (anciens tags de la CI, builds
+      # locaux). Les images en service et :previous fraichement retaguees sont conservees ;
+      # un tag purge reste tirable depuis le registre pour un retour arriere.
+      log "Purge des images inutilisees de plus de 7 jours"
+      docker image prune -af --filter "until=168h" >/dev/null 2>&1 || log "AVERTISSEMENT : purge des images impossible (sans consequence)."
+      exit 0
+      ;;
+    *) sleep 5 ;;
   esac
-  if true; then
-    log "Ekuiseo repond sur http://127.0.0.1:$PORT (essai $i) : $health ; $popular."
-    docker compose -f docker-compose.prod.yml -f docker-compose.vps.yml ps
-    exit 0
-  fi
-  sleep 5
 done
 log "l'API ne repond pas apres 200 s ; voir : $COMPOSE logs --tail=100 backend caddy"
 rollback

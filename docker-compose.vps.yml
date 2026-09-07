@@ -1,8 +1,8 @@
 # ============================================================
 # Ekuiseo — surcouche « serveur partage » (a combiner avec docker-compose.prod.yml)
 # ============================================================
-# Usage :
-#   docker compose -f docker-compose.prod.yml -f docker-compose.vps.yml up -d --build
+# Usage (via scripts/deploy-vps.sh, qui fixe EKUISEO_TAG) :
+#   EKUISEO_TAG=<sha> docker compose -f docker-compose.prod.yml -f docker-compose.vps.yml up -d
 #
 # Quand un autre service occupe deja les ports 80/443 de l'hote, Caddy n'ecoute
 # que sur l'interface locale, sur un port libre (EKUISEO_HTTP_PORT, 8090 par
@@ -10,11 +10,28 @@
 # TLS pour le domaine et relaie vers ce port. Voir Caddyfile.proxied et
 # deploy/nginx/ekuiseo.com.conf.
 #
+# Les images backend et frontend viennent du registre GitHub (constat F437) : la CI
+# (.github/workflows/ci.yml, job docker-images) publie ghcr.io/akouedekon/ekuiseo-*:<sha>
+# et :main a chaque push sur main ; le serveur ne construit plus rien, il tire le tag
+# EKUISEO_TAG que lui passe scripts/deploy-vps.sh (SHA teste, ou local-<commit>-<date>
+# pour un build manuel). Le retour arriere consiste a relancer avec l'ancien tag.
+#
 # Les noms de conteneurs, reseaux et volumes restent prefixes "ekuiseo" : rien
 # n'entre en collision avec une autre application Docker sur le meme hote.
 # ============================================================
 
 services:
+  backend:
+    image: ghcr.io/akouedekon/ekuiseo-backend:${EKUISEO_TAG:-main}
+    # `!reset null` efface la section build du fichier de base (Compose v2.24 ou plus
+    # recent, deja requis pour `!override` ci-dessous) : `up --build` ne reconstruit
+    # rien ici, l'image est celle du registre.
+    build: !reset null
+
+  frontend:
+    image: ghcr.io/akouedekon/ekuiseo-frontend:${EKUISEO_TAG:-main}
+    build: !reset null
+
   caddy:
     # `!override` remplace la liste de ports du fichier de base (80/443 publics)
     # au lieu de la completer - Compose v2.24 ou plus recent.
