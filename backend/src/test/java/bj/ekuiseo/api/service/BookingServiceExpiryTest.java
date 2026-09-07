@@ -60,13 +60,15 @@ class BookingServiceExpiryTest {
                 .expiresAt(Instant.now().minus(1, ChronoUnit.MINUTES)).build();
         when(bookingRepository.findExpirable(eq(BookingStatus.PENDING_PAYMENT), any())).thenReturn(List.of(stale));
         when(tripRepository.findById(trip.getId())).thenReturn(Optional.of(trip));
+        when(tripRepository.findByIdForUpdate(trip.getId())).thenReturn(Optional.of(trip));
 
         int expired = service.expireStalePendingBookings();
 
         assertThat(expired).isEqualTo(1);
         assertThat(stale.getStatus()).isEqualTo(BookingStatus.EXPIRED);
-        verify(tripRepository).incrementSeats(trip.getId(), 2);
-        verify(tripRepository).updateStatus(trip.getId(), TripStatus.PUBLISHED);
+        assertThat(trip.getSeatsAvailable()).isEqualTo(2);
+        assertThat(trip.getStatus()).isEqualTo(TripStatus.PUBLISHED);
+        verify(tripRepository).save(trip);
         ArgumentCaptor<Map<String, Object>> details = ArgumentCaptor.forClass(Map.class);
         verify(auditService).log(isNull(), eq("BOOKING_EXPIRED"), eq("booking"), eq(stale.getId()), details.capture());
         assertThat(details.getValue()).containsEntry("seatsReleased", 2).containsEntry("ttlMinutes", 20);

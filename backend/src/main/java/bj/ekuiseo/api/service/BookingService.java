@@ -657,29 +657,41 @@ public class BookingService {
             // statut EXPIRED est journalise (acteur : le systeme) et le passager prevenu in-app.
             b.setStatus(BookingStatus.EXPIRED);
             bookingRepository.save(b);
+            // Le trajet et le passager sont lus AVANT releaseSeats : incrementSeats vide le
+            // contexte de persistance (clearAutomatically) et un proxy non initialise
+            // leverait ensuite LazyInitializationException.
             Trip trip = b.getTrip();
+            User passenger = b.getPassenger();
+            Map<String, Object> payload = NotificationTemplates.payload("bookingId", b.getId().toString(),
+                    "tripId", trip.getId().toString(), "seats", b.getSeats(), "ttlMinutes", pendingPaymentTtlMinutes,
+                    "route", trip.getOriginLabel() + " -> " + trip.getDestLabel(),
+                    "departureAt", java.util.Objects.toString(trip.getDepartureAt(), ""));
             releaseSeats(trip.getId(), b.getSeats());
             auditService.log(null, "BOOKING_EXPIRED", "booking", b.getId(),
                     Map.of("tripId", trip.getId().toString(), "seatsReleased", b.getSeats(),
                             "ttlMinutes", pendingPaymentTtlMinutes));
-            notificationService.notify(b.getPassenger(), NotificationType.BOOKING_EXPIRED,
-                    NotificationTemplates.payload("bookingId", b.getId().toString(), "tripId", trip.getId().toString(),
-                            "seats", b.getSeats(), "ttlMinutes", pendingPaymentTtlMinutes,
-                            "route", trip.getOriginLabel() + " -> " + trip.getDestLabel(),
-                            "departureAt", java.util.Objects.toString(trip.getDepartureAt(), "")));
+            notificationService.notify(passenger, NotificationType.BOOKING_EXPIRED, payload);
             log.info("Reservation {} expiree (paiement non recu sous {} min), places liberees",
                     b.getId(), pendingPaymentTtlMinutes);
         }
         return stale.size();
     }
 
-    /** Restitue des places au trajet et le repasse en PUBLISHED s'il etait FULL (jamais s'il est CANCELLED/COMPLETED). */
+    /**
+     * Restitue des places au trajet et le repasse en PUBLISHED s il etait FULL (jamais s il
+     * est CANCELLED/COMPLETED). Le trajet est charge sous verrou pessimiste et modifie en
+     * memoire plutot que par une requete UPDATE en masse : celle-ci viderait le contexte de
+     * persistance (clearAutomatically) et detacherait la reservation, dont les associations
+     * paresseuses (passager, conducteur) sont encore lues ensuite par les appelants.
+     * Le verrou serialise avec decrementSeatsIfAvailable (regle metier n.7).
+     */
     private void releaseSeats(UUID tripId, int seats) {
-        tripRepository.incrementSeats(tripId, seats);
-        Trip trip = tripRepository.findById(tripId).orElseThrow();
+        Trip trip = tripRepository.findByIdForUpdate(tripId).orElseThrow();
+        trip.setSeatsAvailable(Math.min(trip.getSeatsTotal(), trip.getSeatsAvailable() + seats));
         if (trip.getStatus() == TripStatus.FULL) {
-            tripRepository.updateStatus(tripId, TripStatus.PUBLISHED);
+            trip.setStatus(TripStatus.PUBLISHED);
         }
+        tripRepository.save(trip);
     }
 
     void assertParticipant(Booking booking, UUID userId) {

@@ -63,6 +63,7 @@ class BookingServiceLifecycleTest {
         Trip trip = Trip.builder().id(UUID.randomUUID()).driver(driver).status(status).departureAt(departureAt)
                 .originLabel("Cotonou").destLabel("Bohicon").seatsTotal(4).seatsAvailable(3).pricePerSeat(3000).build();
         when(tripRepository.findById(trip.getId())).thenReturn(Optional.of(trip));
+        when(tripRepository.findByIdForUpdate(trip.getId())).thenReturn(Optional.of(trip));
         return trip;
     }
 

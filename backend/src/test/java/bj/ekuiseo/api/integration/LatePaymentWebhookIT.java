@@ -92,7 +92,7 @@ class LatePaymentWebhookIT extends AbstractPostgisIT {
         jdbcTemplate.update("update bookings set expires_at = now() - interval '1 minute' where id = ?", created.id());
         assertThat(bookingService.expireStalePendingBookings()).isEqualTo(1);
         assertThat(bookingRepository.findById(created.id()).orElseThrow().getStatus())
-                .isEqualTo(BookingStatus.CANCELLED_BY_PASSENGER);
+                .isEqualTo(BookingStatus.EXPIRED);
         assertThat(tripRepository.findById(trip.getId()).orElseThrow().getSeatsAvailable()).isEqualTo(3);
 
         // ... puis Kkiapay confirme un encaissement reel du bon montant.
@@ -102,7 +102,7 @@ class LatePaymentWebhookIT extends AbstractPostgisIT {
 
         Booking booking = bookingRepository.findById(created.id()).orElseThrow();
         assertThat(booking.getStatus()).as("jamais reconfirmee : les places ont ete rendues")
-                .isEqualTo(BookingStatus.CANCELLED_BY_PASSENGER);
+                .isEqualTo(BookingStatus.EXPIRED);
         assertThat(tripRepository.findById(trip.getId()).orElseThrow().getSeatsAvailable()).isEqualTo(3);
 
         List<Payment> payments = paymentRepository.findByBookingId(created.id());
