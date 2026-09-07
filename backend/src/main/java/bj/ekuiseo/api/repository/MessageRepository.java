@@ -21,6 +21,31 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     @Query("update Message m set m.body = :body where m.sender.id = :senderId")
     int redactBySender(@Param("senderId") UUID senderId, @Param("body") String body);
 
+    /**
+     * Retention (RetentionScheduler, constat F553) : messages des trajets partis avant la date,
+     * sauf quand un signalement encore ouvert (OPEN / IN_REVIEW) vise le trajet, la
+     * reservation, ou l un des deux participants - la moderation peut avoir besoin de
+     * l echange. Les conversations videes sont supprimees ensuite par
+     * {@link ConversationRepository#deleteEmptyForTripsDepartedBefore}.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+            delete from messages m
+            using conversations c
+            join bookings b on b.id = c.booking_id
+            join trips t on t.id = b.trip_id
+            where m.conversation_id = c.id
+              and t.departure_at < :before
+              and not exists (
+                  select 1 from reports r
+                  where r.status in ('OPEN', 'IN_REVIEW')
+                    and (r.reported_trip_id = t.id
+                         or r.booking_id = b.id
+                         or r.reported_user_id in (b.passenger_id, t.driver_id))
+              )
+            """, nativeQuery = true)
+    int deleteForTripsDepartedBefore(@Param("before") Instant before);
+
     /** Messages non lus dans une conversation, envoyes par l'AUTRE participant (jamais mes propres messages). */
     long countByConversationIdAndReadAtIsNullAndSenderIdNot(UUID conversationId, UUID senderId);
 

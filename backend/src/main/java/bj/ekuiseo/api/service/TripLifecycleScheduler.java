@@ -11,7 +11,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -37,22 +39,29 @@ public class TripLifecycleScheduler {
 
     private final TripRepository tripRepository;
     private final BookingRepository bookingRepository;
+    private final TransactionTemplate transaction;
     private final long completionDelayHours;
 
     public TripLifecycleScheduler(TripRepository tripRepository, BookingRepository bookingRepository,
+                                  PlatformTransactionManager transactionManager,
                                   @Value("${ekuiseo.trip.completion-delay-hours:6}") long completionDelayHours) {
         this.tripRepository = tripRepository;
         this.bookingRepository = bookingRepository;
+        this.transaction = new TransactionTemplate(transactionManager);
         this.completionDelayHours = completionDelayHours;
     }
 
+    /** Une transaction pour la fournee (TransactionTemplate : l appel interne a advance ne passe pas par le proxy), exception absorbee et journalisee (constat F128). */
     @Scheduled(fixedRate = 300_000, initialDelay = 60_000)
-    @Transactional
     public void run() {
-        Result result = advance(Instant.now());
-        if (result.started() > 0 || result.completed() > 0 || result.bookingsCompleted() > 0) {
-            log.info("Cycle de vie : {} trajet(s) en cours, {} termine(s), {} reservation(s) cloturee(s)",
-                    result.started(), result.completed(), result.bookingsCompleted());
+        try {
+            Result result = transaction.execute(status -> advance(Instant.now()));
+            if (result != null && (result.started() > 0 || result.completed() > 0 || result.bookingsCompleted() > 0)) {
+                log.info("Cycle de vie : {} trajet(s) en cours, {} termine(s), {} reservation(s) cloturee(s)",
+                        result.started(), result.completed(), result.bookingsCompleted());
+            }
+        } catch (RuntimeException ex) {
+            log.error("Cycle de vie des trajets : echec de l execution", ex);
         }
     }
 

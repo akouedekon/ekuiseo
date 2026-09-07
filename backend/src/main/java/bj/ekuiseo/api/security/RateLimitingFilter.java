@@ -8,19 +8,22 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.lang.NonNull;
+import org.springframework.lang.Nullable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.Deque;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentMap;
+import java.util.regex.Pattern;
 
 /**
  * Limitation de debit en memoire (regle metier n.14), sans dependance externe
- * (pas de Redis / Bucket4j). Fenetre glissante par cle "prefixe:adresse IP",
+ * (pas de Redis / Bucket4j). Fenetre glissante par cle "prefixe:identifiant",
  * comptant les requetes des N dernieres secondes dans une deque par cle.
  *
  * <p><b>Limites assumees et documentees</b> (voir README "Limitation de debit") :
@@ -29,22 +32,26 @@ import java.util.concurrent.ConcurrentMap;
  *       load-balancer, chaque instance applique sa propre limite (la limite
  *       effective globale est donc multipliee par le nombre de replicas). Pour
  *       une limite strictement globale, il faudrait un compteur partage (Redis).</li>
- *   <li>La cle est l'adresse IP du client (en-tete X-Forwarded-For si present,
- *       sinon l'adresse socket) : un NAT partage (plusieurs utilisateurs derriere
- *       la meme box/proxy) partage donc le meme quota.</li>
+ *   <li>Pour les quotas par IP, la cle est l'adresse du client (X-Real-IP, sinon
+ *       dernier element de X-Forwarded-For, sinon adresse socket) : un NAT partage
+ *       (plusieurs utilisateurs derriere la meme box/proxy) partage donc le meme quota.</li>
+ *   <li>Pour les quotas par utilisateur, la cle est l identifiant porte par le jeton
+ *       d acces (lu sans acces base) ; sans jeton valide, on retombe sur l IP.</li>
  * </ul>
  * </p>
  *
- * <p>Limites par defaut (configurables via application.yml, voir
- * ekuiseo.rate-limit.*) :
+ * <p>Quotas par defaut (configurables via application.yml, ekuiseo.rate-limit.*) :
  * <ul>
- *   <li>/api/v1/auth/** : 20 requetes / 60 secondes / IP (protege /login, /otp/request, etc.
- *       contre le bourrage d'identifiants et le spam SMS).</li>
- *   <li>/api/v1/payments/kkiapay/webhook : 120 requetes / 60 secondes / IP (Kkiapay peut
- *       retenter un webhook plusieurs fois ; cette limite protege seulement contre un abus
- *       massif, pas contre un usage normal de l'agregateur).</li>
+ *   <li>{@code auth:} /api/v1/auth/** : 20 requetes / 60 s / IP (bourrage d'identifiants, spam).</li>
+ *   <li>{@code otp:} /otp/request et /otp/register : 10 / 10 min / IP, en plus du quota auth.</li>
+ *   <li>{@code webhook:} /api/v1/payments/kkiapay/webhook : 120 / 60 s / IP (Kkiapay peut retenter).</li>
+ *   <li>{@code search:} GET /api/v1/trips/search et /api/v1/geo/search : 60 / 60 s / IP
+ *       (endpoints publics, une requete PostGIS chacun - constats F025/F416).</li>
+ *   <li>{@code msg:} POST /api/v1/bookings/{id}/messages : 30 / 10 min / utilisateur (constat F547).</li>
+ *   <li>{@code alert:} POST /api/v1/trip-alerts : 10 / 10 min / utilisateur (constat F524).</li>
  * </ul>
- * </p>
+ * Toute reponse 429 porte {@code Retry-After} : secondes avant que la plus ancienne requete
+ * de la fenetre n en sorte (constat F542).</p>
  */
 @Component
 public class RateLimitingFilter extends OncePerRequestFilter {
@@ -53,7 +60,10 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     private static final String WEBHOOK_PATH = "/api/v1/payments/kkiapay/webhook";
     private static final String AUTH_PREFIX = "/api/v1/auth/";
     /** Demandes de code : envoi reel d e-mails, enumeration de numeros -> quota propre, plus strict. */
-    private static final java.util.Set<String> OTP_PATHS = java.util.Set.of("/api/v1/auth/otp/request", "/api/v1/auth/otp/register");
+    private static final Set<String> OTP_PATHS = Set.of("/api/v1/auth/otp/request", "/api/v1/auth/otp/register");
+    private static final Set<String> SEARCH_PATHS = Set.of("/api/v1/trips/search", "/api/v1/geo/search");
+    private static final Pattern MESSAGES_PATH = Pattern.compile("^/api/v1/bookings/[^/]+/messages$");
+    private static final String ALERTS_PATH = "/api/v1/trip-alerts";
     private static final long IDLE_ENTRY_TTL_MILLIS = 3_600_000L; // 1h : purge des cles inactives
 
     private final int authMaxRequests;
@@ -62,62 +72,124 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     private final long webhookWindowMillis;
     private final int otpMaxRequests;
     private final long otpWindowMillis;
+    private final int searchMaxRequests;
+    private final long searchWindowMillis;
+    private final int messageMaxRequests;
+    private final long messageWindowMillis;
+    private final int alertMaxRequests;
+    private final long alertWindowMillis;
+    /** Null dans les tests unitaires du filtre : les quotas par utilisateur retombent alors sur l IP. */
+    @Nullable
+    private final JwtService jwtService;
 
     private final ConcurrentMap<String, Deque<Long>> hits = new ConcurrentHashMap<>();
 
-    /** Constructeur de test : quotas auth/webhook explicites, quota OTP par defaut (10 / 10 min). */
+    /** Constructeur de test : quotas auth/webhook explicites, autres quotas par defaut. */
     public RateLimitingFilter(int authMaxRequests, long authWindowSeconds, int webhookMaxRequests, long webhookWindowSeconds) {
         this(authMaxRequests, authWindowSeconds, webhookMaxRequests, webhookWindowSeconds, 10, 600);
     }
 
+    /** Constructeur de test : quotas auth/webhook/otp explicites, quotas search/msg/alert par defaut. */
+    public RateLimitingFilter(int authMaxRequests, long authWindowSeconds, int webhookMaxRequests, long webhookWindowSeconds,
+                              int otpMaxRequests, long otpWindowSeconds) {
+        this(null, authMaxRequests, authWindowSeconds, webhookMaxRequests, webhookWindowSeconds, otpMaxRequests, otpWindowSeconds,
+                60, 60, 30, 600, 10, 600);
+    }
+
     @org.springframework.beans.factory.annotation.Autowired
-    public RateLimitingFilter(@Value("${ekuiseo.rate-limit.auth.max-requests:20}") int authMaxRequests,
+    public RateLimitingFilter(@Nullable JwtService jwtService,
+                              @Value("${ekuiseo.rate-limit.auth.max-requests:20}") int authMaxRequests,
                               @Value("${ekuiseo.rate-limit.auth.window-seconds:60}") long authWindowSeconds,
                               @Value("${ekuiseo.rate-limit.webhook.max-requests:120}") int webhookMaxRequests,
                               @Value("${ekuiseo.rate-limit.webhook.window-seconds:60}") long webhookWindowSeconds,
                               @Value("${ekuiseo.rate-limit.otp.max-requests:10}") int otpMaxRequests,
-                              @Value("${ekuiseo.rate-limit.otp.window-seconds:600}") long otpWindowSeconds) {
-        this.otpMaxRequests = otpMaxRequests;
-        this.otpWindowMillis = otpWindowSeconds * 1000L;
+                              @Value("${ekuiseo.rate-limit.otp.window-seconds:600}") long otpWindowSeconds,
+                              @Value("${ekuiseo.rate-limit.search.max-requests:60}") int searchMaxRequests,
+                              @Value("${ekuiseo.rate-limit.search.window-seconds:60}") long searchWindowSeconds,
+                              @Value("${ekuiseo.rate-limit.message.max-requests:30}") int messageMaxRequests,
+                              @Value("${ekuiseo.rate-limit.message.window-seconds:600}") long messageWindowSeconds,
+                              @Value("${ekuiseo.rate-limit.alert.max-requests:10}") int alertMaxRequests,
+                              @Value("${ekuiseo.rate-limit.alert.window-seconds:600}") long alertWindowSeconds) {
+        this.jwtService = jwtService;
         this.authMaxRequests = authMaxRequests;
         this.authWindowMillis = authWindowSeconds * 1000L;
         this.webhookMaxRequests = webhookMaxRequests;
         this.webhookWindowMillis = webhookWindowSeconds * 1000L;
+        this.otpMaxRequests = otpMaxRequests;
+        this.otpWindowMillis = otpWindowSeconds * 1000L;
+        this.searchMaxRequests = searchMaxRequests;
+        this.searchWindowMillis = searchWindowSeconds * 1000L;
+        this.messageMaxRequests = messageMaxRequests;
+        this.messageWindowMillis = messageWindowSeconds * 1000L;
+        this.alertMaxRequests = alertMaxRequests;
+        this.alertWindowMillis = alertWindowSeconds * 1000L;
     }
 
     @Override
     protected boolean shouldNotFilter(@NonNull HttpServletRequest request) {
-        String path = request.getRequestURI();
-        return !(path.startsWith(AUTH_PREFIX) || path.equals(WEBHOOK_PATH));
+        return quotaFor(request) == null;
     }
 
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response,
                                      @NonNull FilterChain filterChain) throws ServletException, IOException {
-        String path = request.getRequestURI();
-        boolean isWebhook = path.equals(WEBHOOK_PATH);
-        int max = isWebhook ? webhookMaxRequests : authMaxRequests;
-        long windowMillis = isWebhook ? webhookWindowMillis : authWindowMillis;
-        String key = (isWebhook ? "webhook:" : "auth:") + clientIp(request);
-
-        boolean limited = !tryAcquire(key, max, windowMillis);
-        if (!limited && OTP_PATHS.contains(path)) {
-            limited = !tryAcquire("otp:" + clientIp(request), otpMaxRequests, otpWindowMillis);
+        Quota quota = quotaFor(request);
+        if (quota == null) {
+            filterChain.doFilter(request, response);
+            return;
         }
-        if (limited) {
+        String path = request.getRequestURI();
+        String key = quota.prefix + quota.subject;
+        long retryAfter = acquire(key, quota.max, quota.windowMillis);
+        if (retryAfter == 0 && quota.prefix.equals("auth:") && OTP_PATHS.contains(path)) {
+            retryAfter = acquire("otp:" + quota.subject, otpMaxRequests, otpWindowMillis);
+            if (retryAfter > 0) {
+                key = "otp:" + quota.subject;
+            }
+        }
+        if (retryAfter > 0) {
             log.warn("Rate limit depasse pour {} sur {}", key, path);
             response.setStatus(429);
             response.setContentType("application/problem+json");
+            response.setHeader("Retry-After", String.valueOf(retryAfter));
             response.getWriter().write(
                     "{\"type\":\"https://ekuiseo.bj/problems/rate-limited\","
                             + "\"title\":\"Trop de requetes\",\"status\":429,"
-                            + "\"detail\":\"Limite de debit atteinte, reessayez plus tard.\"}");
+                            + "\"detail\":\"Limite de debit atteinte, reessayez dans " + retryAfter + " s.\"}");
             return;
         }
         filterChain.doFilter(request, response);
     }
 
-    private boolean tryAcquire(String key, int max, long windowMillis) {
+    /** Quota applicable a la requete, ou null si l endpoint n est pas limite. */
+    @Nullable
+    private Quota quotaFor(HttpServletRequest request) {
+        String path = request.getRequestURI();
+        String method = request.getMethod();
+        if (path.equals(WEBHOOK_PATH)) {
+            return new Quota("webhook:", clientIp(request), webhookMaxRequests, webhookWindowMillis);
+        }
+        if (path.startsWith(AUTH_PREFIX)) {
+            return new Quota("auth:", clientIp(request), authMaxRequests, authWindowMillis);
+        }
+        if ("GET".equals(method) && SEARCH_PATHS.contains(path)) {
+            return new Quota("search:", clientIp(request), searchMaxRequests, searchWindowMillis);
+        }
+        if ("POST".equals(method) && MESSAGES_PATH.matcher(path).matches()) {
+            return new Quota("msg:", userOrIp(request), messageMaxRequests, messageWindowMillis);
+        }
+        if ("POST".equals(method) && path.equals(ALERTS_PATH)) {
+            return new Quota("alert:", userOrIp(request), alertMaxRequests, alertWindowMillis);
+        }
+        return null;
+    }
+
+    /**
+     * Tente d enregistrer une requete pour la cle. Renvoie 0 si elle est acceptee, sinon le
+     * nombre de secondes (arrondi au superieur) avant que la plus ancienne requete de la
+     * fenetre n en sorte - valeur de l en-tete Retry-After.
+     */
+    private long acquire(String key, int max, long windowMillis) {
         long now = System.currentTimeMillis();
         Deque<Long> timestamps = hits.computeIfAbsent(key, k -> new ConcurrentLinkedDeque<>());
         synchronized (timestamps) {
@@ -125,11 +197,29 @@ public class RateLimitingFilter extends OncePerRequestFilter {
                 timestamps.pollFirst();
             }
             if (timestamps.size() >= max) {
-                return false;
+                long millisLeft = timestamps.peekFirst() + windowMillis - now;
+                return Math.max(1, (millisLeft + 999) / 1000);
             }
             timestamps.addLast(now);
-            return true;
+            return 0;
         }
+    }
+
+    /**
+     * Identifiant de l utilisateur porte par le jeton d acces (signature et type verifies,
+     * aucun acces base), prefixe "u:" ; sinon l adresse IP. Un jeton invalide n est pas
+     * rejete ici : la chaine de securite s en charge plus loin.
+     */
+    private String userOrIp(HttpServletRequest request) {
+        String header = request.getHeader("Authorization");
+        if (jwtService != null && header != null && header.startsWith("Bearer ")) {
+            try {
+                return "u:" + jwtService.extractUserIdFromAccessToken(header.substring(7));
+            } catch (RuntimeException ignored) {
+                // JwtException ou IllegalArgumentException : jeton invalide, repli sur l IP.
+            }
+        }
+        return clientIp(request);
     }
 
     /**
@@ -159,14 +249,21 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     /** Purge les cles inactives depuis plus d'une heure pour eviter une fuite memoire lente. */
     @Scheduled(fixedRate = 600_000)
     public void cleanup() {
-        long now = System.currentTimeMillis();
-        hits.entrySet().removeIf(e -> {
-            Deque<Long> d = e.getValue();
-            Long last;
-            synchronized (d) {
-                last = d.peekLast();
-            }
-            return last == null || now - last > IDLE_ENTRY_TTL_MILLIS;
-        });
+        try {
+            long now = System.currentTimeMillis();
+            hits.entrySet().removeIf(e -> {
+                Deque<Long> d = e.getValue();
+                Long last;
+                synchronized (d) {
+                    last = d.peekLast();
+                }
+                return last == null || now - last > IDLE_ENTRY_TTL_MILLIS;
+            });
+        } catch (RuntimeException ex) {
+            log.error("Purge des compteurs de debit : echec de l execution", ex);
+        }
+    }
+
+    private record Quota(String prefix, String subject, int max, long windowMillis) {
     }
 }

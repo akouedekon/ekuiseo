@@ -4,7 +4,10 @@ import bj.ekuiseo.api.domain.Report;
 import bj.ekuiseo.api.domain.enums.ReportStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
 import java.util.List;
@@ -12,6 +15,15 @@ import java.util.UUID;
 
 public interface ReportRepository extends JpaRepository<Report, UUID> {
     Page<Report> findByStatus(ReportStatus status, Pageable pageable);
+
+    /** Vue back-office (ReportService#listForAdmin) : parties chargees en une requete (constat F119). */
+    @EntityGraph(attributePaths = {"reporter", "reportedUser", "reportedTrip", "reportedTrip.driver"})
+    @Query("select r from Report r where r.status = :status")
+    Page<Report> findByStatusWithParties(@Param("status") ReportStatus status, Pageable pageable);
+
+    @EntityGraph(attributePaths = {"reporter", "reportedUser", "reportedTrip", "reportedTrip.driver"})
+    @Query("select r from Report r")
+    Page<Report> findAllWithParties(Pageable pageable);
 
     /** Dedoublonnage (constat F548) : un signalement encore ouvert du meme auteur vers le meme utilisateur. */
     boolean existsByReporterIdAndReportedUserIdAndStatusIn(UUID reporterId, UUID reportedUserId, List<ReportStatus> statuses);

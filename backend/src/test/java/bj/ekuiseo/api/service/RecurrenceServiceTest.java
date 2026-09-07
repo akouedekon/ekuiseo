@@ -37,7 +37,7 @@ class RecurrenceServiceTest {
     private final TripRepository tripRepository = mock(TripRepository.class);
     private final TripStopRepository tripStopRepository = mock(TripStopRepository.class);
     private final SearchAlertMatchService alerts = mock(SearchAlertMatchService.class);
-    private final RecurrenceService service = new RecurrenceService(tripRepository, tripStopRepository, alerts);
+    private final RecurrenceService service = new RecurrenceService(tripRepository, tripStopRepository, alerts, mock(org.springframework.transaction.PlatformTransactionManager.class));
 
     @Test
     void parse_readsByDayCountAndUntil() {

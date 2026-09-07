@@ -160,6 +160,79 @@ class RateLimitingFilterTest {
         assertThat(refreshRes.getStatus()).isEqualTo(200);
     }
 
+    @Test
+    void publicSearch_isLimitedPerIp_andThe429CarriesRetryAfter() throws Exception {
+        // search : 2 / 60 s ; les autres quotas restent larges.
+        RateLimitingFilter filter = new RateLimitingFilter(null, 100, 60, 120, 60, 10, 600, 2, 60, 30, 600, 10, 600);
+        FilterChain chain = mock(FilterChain.class);
+        for (int i = 0; i < 2; i++) {
+            MockHttpServletResponse res = new MockHttpServletResponse();
+            filter.doFilterInternal(searchRequest("/api/v1/trips/search", "41.85.10.9"), res, chain);
+            assertThat(res.getStatus()).isEqualTo(200);
+        }
+        // Les deux endpoints de recherche partagent le meme quota.
+        MockHttpServletResponse third = new MockHttpServletResponse();
+        filter.doFilterInternal(searchRequest("/api/v1/geo/search", "41.85.10.9"), third, chain);
+        assertThat(third.getStatus()).isEqualTo(429);
+        assertThat(third.getHeader("Retry-After")).isNotNull();
+        assertThat(Long.parseLong(third.getHeader("Retry-After"))).isBetween(1L, 60L);
+        assertThat(third.getContentAsString()).contains("reessayez dans");
+
+        // Une autre IP n est pas concernee, et un POST sur /trips ne l est pas non plus.
+        MockHttpServletResponse other = new MockHttpServletResponse();
+        filter.doFilterInternal(searchRequest("/api/v1/trips/search", "41.85.10.10"), other, chain);
+        assertThat(other.getStatus()).isEqualTo(200);
+        assertThat(filter.shouldNotFilter(new MockHttpServletRequest("POST", "/api/v1/trips"))).isTrue();
+    }
+
+    @Test
+    void messages_areLimitedPerAuthenticatedUser_notPerIp() throws Exception {
+        JwtService jwt = new JwtService("cle-de-test-suffisamment-longue-pour-hmac-sha256-0123456789", 60, 30);
+        // msg : 1 / 10 min par utilisateur.
+        RateLimitingFilter filter = new RateLimitingFilter(jwt, 100, 60, 120, 60, 10, 600, 60, 60, 1, 600, 10, 600);
+        FilterChain chain = mock(FilterChain.class);
+        String alice = "Bearer " + jwt.generateAccessToken(java.util.UUID.randomUUID());
+        String bob = "Bearer " + jwt.generateAccessToken(java.util.UUID.randomUUID());
+        String path = "/api/v1/bookings/" + java.util.UUID.randomUUID() + "/messages";
+
+        MockHttpServletResponse first = new MockHttpServletResponse();
+        filter.doFilterInternal(userRequest(path, "10.0.0.7", alice), first, chain);
+        assertThat(first.getStatus()).isEqualTo(200);
+
+        MockHttpServletResponse second = new MockHttpServletResponse();
+        filter.doFilterInternal(userRequest(path, "10.0.0.7", alice), second, chain);
+        assertThat(second.getStatus()).isEqualTo(429);
+        assertThat(second.getHeader("Retry-After")).isNotNull();
+
+        // Meme IP (NAT partage), autre utilisateur : quota independant.
+        MockHttpServletResponse bobRes = new MockHttpServletResponse();
+        filter.doFilterInternal(userRequest(path, "10.0.0.7", bob), bobRes, chain);
+        assertThat(bobRes.getStatus()).isEqualTo(200);
+
+        // Jeton absent : repli sur l IP, sans rejet ici (la chaine de securite s en charge).
+        MockHttpServletResponse anonymous = new MockHttpServletResponse();
+        filter.doFilterInternal(userRequest(path, "10.0.0.8", null), anonymous, chain);
+        assertThat(anonymous.getStatus()).isEqualTo(200);
+
+        // La lecture des messages n est pas limitee.
+        assertThat(filter.shouldNotFilter(new MockHttpServletRequest("GET", path))).isTrue();
+    }
+
+    private MockHttpServletRequest searchRequest(String path, String remoteAddr) {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", path);
+        request.setRemoteAddr(remoteAddr);
+        return request;
+    }
+
+    private MockHttpServletRequest userRequest(String path, String remoteAddr, String authorization) {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", path);
+        request.setRemoteAddr(remoteAddr);
+        if (authorization != null) {
+            request.addHeader("Authorization", authorization);
+        }
+        return request;
+    }
+
     private MockHttpServletRequest authRequest(String remoteAddr) {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/auth/otp/request");
         request.setRemoteAddr(remoteAddr);

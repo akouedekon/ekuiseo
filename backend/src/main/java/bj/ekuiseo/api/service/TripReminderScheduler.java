@@ -11,7 +11,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
@@ -28,6 +29,13 @@ import java.util.Map;
  * scheduler, pour ne jamais rater un trajet entre deux executions) et qui n'ont pas
  * deja recu leur rappel (trips.reminder_sent_at, marque une fois envoye pour ne jamais
  * doubler).
+ *
+ * <p>Constat F128 : une transaction par trajet (TransactionTemplate) et non une seule pour
+ * la fournee, avec {@code reminder_sent_at} pose AVANT l envoi et de facon conditionnelle
+ * ({@code where reminder_sent_at is null}) : un envoi lent ou en echec n empeche pas les
+ * autres trajets d etre rappeles, un second passage (ou une seconde instance) ne double
+ * jamais un SMS. Les envois sortants partent apres validation de la transaction du trajet
+ * (NotificationDispatcher).</p>
  */
 @Component
 public class TripReminderScheduler {
@@ -39,42 +47,61 @@ public class TripReminderScheduler {
     private final TripRepository tripRepository;
     private final BookingRepository bookingRepository;
     private final NotificationService notificationService;
+    private final TransactionTemplate transaction;
 
     public TripReminderScheduler(TripRepository tripRepository, BookingRepository bookingRepository,
-                                  NotificationService notificationService) {
+                                  NotificationService notificationService, PlatformTransactionManager transactionManager) {
         this.tripRepository = tripRepository;
         this.bookingRepository = bookingRepository;
         this.notificationService = notificationService;
+        this.transaction = new TransactionTemplate(transactionManager);
     }
 
-    // Transactionnel ici aussi : l appel interne a la surcharge ne passe pas par le proxy Spring.
     @Scheduled(cron = "0 0 * * * *")
-    @Transactional
     public void sendDueReminders() {
-        sendDueReminders(Instant.now());
+        try {
+            sendDueReminders(Instant.now());
+        } catch (RuntimeException ex) {
+            log.error("Rappels de depart : echec de l execution", ex);
+        }
     }
 
     /** Traitement a un instant donne (separe pour les tests) ; renvoie le nombre de trajets rappeles. */
-    @Transactional
     public int sendDueReminders(Instant now) {
         Instant from = now.plus(23, ChronoUnit.HOURS);
         Instant to = now.plus(25, ChronoUnit.HOURS);
         List<Trip> due = tripRepository.findDueForReminder(from, to);
+        int reminded = 0;
         for (Trip trip : due) {
-            List<Booking> confirmed = bookingRepository.findByTripIdAndStatusIn(trip.getId(), List.of(BookingStatus.CONFIRMED));
-            String when = DEPARTURE_FORMAT.format(trip.getDepartureAt());
-            String route = trip.getOriginLabel() + " -> " + trip.getDestLabel();
-            for (Booking booking : confirmed) {
-                notificationService.notifyCritical(booking.getPassenger(), NotificationType.TRIP_REMINDER,
-                        Map.of("tripId", trip.getId().toString(), "bookingId", booking.getId().toString(),
-                                "route", route, "departureAt", trip.getDepartureAt().toString()),
-                        "Ekuiseo : rappel, votre trajet " + route + " part demain (" + when + "). Bon voyage !");
+            try {
+                Boolean sent = transaction.execute(status -> remind(trip, now));
+                if (Boolean.TRUE.equals(sent)) {
+                    reminded++;
+                }
+            } catch (RuntimeException ex) {
+                log.error("Rappel de depart impossible pour le trajet {}", trip.getId(), ex);
             }
-            tripRepository.markReminderSent(trip.getId(), now);
         }
-        if (!due.isEmpty()) {
-            log.info("Rappels de depart envoyes pour {} trajet(s)", due.size());
+        if (reminded > 0) {
+            log.info("Rappels de depart envoyes pour {} trajet(s)", reminded);
         }
-        return due.size();
+        return reminded;
+    }
+
+    /** Dans la transaction du trajet : marque d abord, envoie ensuite ; false si un autre passage l a deja marque. */
+    private boolean remind(Trip trip, Instant now) {
+        if (tripRepository.markReminderSent(trip.getId(), now) == 0) {
+            return false;
+        }
+        List<Booking> confirmed = bookingRepository.findByTripIdAndStatusIn(trip.getId(), List.of(BookingStatus.CONFIRMED));
+        String when = DEPARTURE_FORMAT.format(trip.getDepartureAt());
+        String route = trip.getOriginLabel() + " -> " + trip.getDestLabel();
+        for (Booking booking : confirmed) {
+            notificationService.notifyCritical(booking.getPassenger(), NotificationType.TRIP_REMINDER,
+                    Map.of("tripId", trip.getId().toString(), "bookingId", booking.getId().toString(),
+                            "route", route, "departureAt", trip.getDepartureAt().toString()),
+                    "Ekuiseo : rappel, votre trajet " + route + " part demain (" + when + "). Bon voyage !");
+        }
+        return true;
     }
 }

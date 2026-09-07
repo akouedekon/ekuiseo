@@ -6,6 +6,7 @@ import bj.ekuiseo.api.security.CurrentUser;
 import bj.ekuiseo.api.service.UserPreferencesService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -34,7 +35,7 @@ public class MePreferencesController {
 
     @Operation(summary = "Modifier mes preferences (PATCH partiel)")
     @PatchMapping
-    public UserPreferencesResponse update(@RequestBody UpdateUserPreferencesRequest req) {
+    public UserPreferencesResponse update(@Valid @RequestBody UpdateUserPreferencesRequest req) {
         return userPreferencesService.update(currentUser.id(), req);
     }
 }

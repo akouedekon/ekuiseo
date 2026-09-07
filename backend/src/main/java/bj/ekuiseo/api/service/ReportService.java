@@ -87,8 +87,8 @@ public class ReportService {
     @Transactional
     public ReportResponse create(UUID reporterId, CreateReportRequest req) {
         User reporter = userRepository.findById(reporterId).orElseThrow(() -> new NotFoundException("Utilisateur introuvable"));
-        ReportReason reason = parseReason(req.reasonCode());
-        Report.ReportBuilder builder = Report.builder().reporter(reporter).reasonCode(req.reasonCode()).details(req.details());
+        ReportReason reason = req.reasonCode();
+        Report.ReportBuilder builder = Report.builder().reporter(reporter).reasonCode(reason.name()).details(req.details());
 
         Booking link;
         if (req.reportedUserId() != null) {
@@ -132,7 +132,7 @@ public class ReportService {
 
         Report report = reportRepository.save(builder.build());
         auditService.log(reporterId, "REPORT_CREATED", "report", report.getId(),
-                Map.of("reasonCode", req.reasonCode(), "bookingId", link != null ? link.getId().toString() : ""));
+                Map.of("reasonCode", reason.name(), "bookingId", link != null ? link.getId().toString() : ""));
         return reportMapper.toResponse(report);
     }
 
@@ -162,12 +162,15 @@ public class ReportService {
      * attend un tableau simple, pas une Page), du plus recent au plus ancien.
      * Plafonnee a ADMIN_LIST_LIMIT plutot que veritablement paginee : la file de
      * moderation est censee rester courte (les signalements traites en sortent au
-     * fil de l'eau).
+     * fil de l'eau). Les parties (signalant, cible, conducteur du trajet signale) sont
+     * chargees avec les signalements (EntityGraph, constat F119) : une requete, pas N+1.
      */
     @Transactional(readOnly = true)
     public List<AdminReportResponse> listForAdmin(ReportStatus status) {
         Pageable pageable = PageRequest.of(0, ADMIN_LIST_LIMIT, Sort.by("createdAt").descending());
-        Page<Report> page = status != null ? reportRepository.findByStatus(status, pageable) : reportRepository.findAll(pageable);
+        Page<Report> page = status != null
+                ? reportRepository.findByStatusWithParties(status, pageable)
+                : reportRepository.findAllWithParties(pageable);
         return page.getContent().stream().map(this::toAdminResponse).toList();
     }
 
@@ -198,7 +201,7 @@ public class ReportService {
     private AdminReportResponse toAdminResponse(Report report) {
         User target = report.getReportedUser() != null ? report.getReportedUser()
                 : (report.getReportedTrip() != null ? report.getReportedTrip().getDriver() : null);
-        return new AdminReportResponse(report.getId(), parseReason(report.getReasonCode()), report.getStatus(),
+        return new AdminReportResponse(report.getId(), ReportReason.valueOf(report.getReasonCode()), report.getStatus(),
                 report.getDetails(), report.getCreatedAt(),
                 toPersonRef(report.getReporter()), toPersonRef(target),
                 report.getReportedTrip() != null ? report.getReportedTrip().getId() : null,
@@ -207,15 +210,5 @@ public class ReportService {
 
     private AdminReportResponse.PersonRef toPersonRef(User user) {
         return user != null ? new AdminReportResponse.PersonRef(user.getId(), user.getFirstName(), user.getLastName()) : null;
-    }
-
-    /** {@code reports.reason_code} reste un texte libre en base (voir Report) ; retombe sur OTHER si non reconnu. */
-    private ReportReason parseReason(String reasonCode) {
-        if (reasonCode == null) return ReportReason.OTHER;
-        try {
-            return ReportReason.valueOf(reasonCode.trim().toUpperCase());
-        } catch (IllegalArgumentException e) {
-            return ReportReason.OTHER;
-        }
     }
 }

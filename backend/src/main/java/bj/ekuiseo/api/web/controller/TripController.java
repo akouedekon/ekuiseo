@@ -19,6 +19,11 @@ import bj.ekuiseo.api.service.TripService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -54,20 +59,27 @@ public class TripController {
         return ResponseEntity.status(HttpStatus.CREATED).body(tripService.createTrip(currentUser.id(), req));
     }
 
-    @Operation(summary = "Rechercher des trajets", description = "Recherche geospatiale : origine ET destination a moins de radiusKm (5 km par defaut) des points donnes, trie par pertinence. originLabel/destLabel (optionnels) ne filtrent rien : ils lisibilisent la trace de recherche conservee pour les indicateurs de liquidite du back-office (table search_events).")
+    /**
+     * Endpoint public, donc borne (constats F025/F416) : coordonnees dans leur plage,
+     * rayon de 1 a 50 km, page de 1 a 50 resultats, 1 a 8 places. Les contraintes sur les
+     * parametres sont appliquees par la validation de methode de Spring MVC (400
+     * "validation-error" via GlobalExceptionHandler), en plus de la limitation de debit
+     * par IP de RateLimitingFilter.
+     */
+    @Operation(summary = "Rechercher des trajets", description = "Recherche geospatiale : origine ET destination a moins de radiusKm (5 km par defaut, 50 km au plus) des points donnes, trie par pertinence, 50 resultats par page au plus. originLabel/destLabel (optionnels) ne filtrent rien : ils lisibilisent la trace de recherche conservee pour les indicateurs de liquidite du back-office (table search_events).")
     @GetMapping("/search")
-    public Page<TripResponse> search(@RequestParam double originLat,
-                                      @RequestParam double originLng,
-                                      @RequestParam double destLat,
-                                      @RequestParam double destLng,
-                                      @RequestParam(required = false) String originLabel,
-                                      @RequestParam(required = false) String destLabel,
+    public Page<TripResponse> search(@RequestParam @DecimalMin("-90") @DecimalMax("90") double originLat,
+                                      @RequestParam @DecimalMin("-180") @DecimalMax("180") double originLng,
+                                      @RequestParam @DecimalMin("-90") @DecimalMax("90") double destLat,
+                                      @RequestParam @DecimalMin("-180") @DecimalMax("180") double destLng,
+                                      @RequestParam(required = false) @Size(max = 255) String originLabel,
+                                      @RequestParam(required = false) @Size(max = 255) String destLabel,
                                       @RequestParam(required = false) LocalDate date,
-                                      @RequestParam(defaultValue = "1") int seats,
-                                      @RequestParam(required = false) Double radiusKm,
+                                      @RequestParam(defaultValue = "1") @Min(1) @Max(8) int seats,
+                                      @RequestParam(required = false) @DecimalMin("1") @DecimalMax("50") Double radiusKm,
                                       @RequestParam(required = false) TripType tripType,
-                                      @RequestParam(defaultValue = "0") int page,
-                                      @RequestParam(defaultValue = "20") int size) {
+                                      @RequestParam(defaultValue = "0") @Min(0) @Max(1000) int page,
+                                      @RequestParam(defaultValue = "20") @Min(1) @Max(50) int size) {
         Pageable pageable = PageRequest.of(page, size);
         // Endpoint public : requesterId est null pour un appelant anonyme (la trace de
         // recherche est alors anonyme elle aussi).
@@ -77,7 +89,7 @@ public class TripController {
 
     @Operation(summary = "Axes les plus proposes", description = "Public. Trajets PUBLISHED a venir avec au moins une place, regroupes par origine/destination, classes par nombre de departs. Alimente les raccourcis de l'accueil.")
     @GetMapping("/popular")
-    public List<PopularRouteResponse> popular(@RequestParam(defaultValue = "4") int limit) {
+    public List<PopularRouteResponse> popular(@RequestParam(defaultValue = "4") @Min(1) @Max(20) int limit) {
         return tripService.popularRoutes(limit);
     }
 

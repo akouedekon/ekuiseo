@@ -85,6 +85,10 @@ public class TripService {
         if (!vehicle.getOwner().getId().equals(driverId)) {
             throw new ForbiddenException("Ce vehicule ne vous appartient pas");
         }
+        if (vehicle.getDeletedAt() != null) {
+            // Suppression logique (V15, constat F124) : la ligne existe encore pour l historique.
+            throw new BadRequestException("Ce vehicule a ete supprime : choisissez ou ajoutez un autre vehicule");
+        }
         if (req.seatsTotal() > vehicle.getSeats()) {
             throw new BadRequestException("Le nombre de places depasse la capacite du vehicule");
         }

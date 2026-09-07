@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
  * defaut). C'est la mise en oeuvre technique de la duree declaree dans
  * docs/CONFORMITE.md, section 3.2 : une trace de recherche est une donnee
  * d'usage, utile pour piloter la liquidite sur quelques mois, sans finalite au-dela.
+ * Les autres purges (codes, notifications, messages, alertes) sont dans RetentionScheduler.
  */
 @Component
 public class SearchEventRetentionScheduler {
@@ -30,9 +31,13 @@ public class SearchEventRetentionScheduler {
     /** Chaque nuit a 03:15 (heure du serveur), hors des pics d'usage. */
     @Scheduled(cron = "0 15 3 * * *")
     public void purgeExpiredSearchEvents() {
-        int deleted = searchEventService.purgeOlderThan(retentionDays);
-        if (deleted > 0) {
-            log.info("{} trace(s) de recherche purgee(s) (conservation : {} jours)", deleted, retentionDays);
+        try {
+            int deleted = searchEventService.purgeOlderThan(retentionDays);
+            if (deleted > 0) {
+                log.info("{} trace(s) de recherche purgee(s) (conservation : {} jours)", deleted, retentionDays);
+            }
+        } catch (RuntimeException ex) {
+            log.error("Purge des traces de recherche : echec de l execution", ex);
         }
     }
 }

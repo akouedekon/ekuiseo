@@ -240,7 +240,7 @@ public class UserService {
     @Transactional(readOnly = true)
     public PublicUserProfileResponse getPublicProfile(UUID userId) {
         User user = findUser(userId);
-        List<VehicleSummary> vehicles = vehicleRepository.findByOwnerId(userId).stream()
+        List<VehicleSummary> vehicles = vehicleRepository.findByOwnerIdAndDeletedAtIsNull(userId).stream()
                 .map(vehicleMapper::toSummary).toList();
         long tripsCompleted = tripRepository.countByDriverIdAndStatus(userId, TripStatus.COMPLETED);
         return new PublicUserProfileResponse(user.getId(), user.getFirstName(), user.getLastName(), user.getPhotoUrl(),
@@ -325,17 +325,21 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public List<VehicleResponse> listVehicles(UUID ownerId) {
-        return vehicleRepository.findByOwnerId(ownerId).stream().map(vehicleMapper::toResponse).toList();
+        return vehicleRepository.findByOwnerIdAndDeletedAtIsNull(ownerId).stream().map(vehicleMapper::toResponse).toList();
     }
 
     /**
      * DELETE /api/v1/me/vehicles/{id}. Refuse (409) si le vehicule est engage sur
-     * un trajet a venir non annule (PUBLISHED ou FULL, departure_at dans le futur) :
-     * le supprimer casserait la reference trip.vehicle_id d'un trajet actif.
+     * un trajet a venir non annule (PUBLISHED ou FULL, departure_at dans le futur).
+     * Sinon suppression logique ({@code deleted_at}, V15, constat F124) : la ligne reste
+     * pour les trajets passes ou annules qui la referencent (plus de violation de FK
+     * traduite en 409 muet), le vehicule disparait des listes et ne peut plus servir a
+     * publier (TripService#createTrip). Un vehicule deja supprime repond 404.
      */
     @Transactional
     public void deleteVehicle(UUID ownerId, UUID vehicleId) {
         Vehicle vehicle = vehicleRepository.findById(vehicleId)
+                .filter(v -> v.getDeletedAt() == null)
                 .orElseThrow(() -> new NotFoundException("Vehicule introuvable"));
         if (!vehicle.getOwner().getId().equals(ownerId)) {
             throw new ForbiddenException("Ce vehicule ne vous appartient pas");
@@ -345,7 +349,8 @@ public class UserService {
         if (engaged) {
             throw new ConflictException("Ce vehicule est engage sur un trajet a venir et ne peut pas etre supprime");
         }
-        vehicleRepository.delete(vehicle);
+        vehicle.setDeletedAt(Instant.now());
+        vehicleRepository.save(vehicle);
     }
 
     private User findUser(UUID id) {

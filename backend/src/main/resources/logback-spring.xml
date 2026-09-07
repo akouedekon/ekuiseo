@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Journaux texte lisibles, enrichis des identifiants de correlation poses dans le MDC
+  (constat F439) : requestId par RequestIdFilter (repris de X-Request-Id ou genere),
+  userId par JwtAuthenticationFilter une fois l appelant authentifie. Un tiret quand
+  la valeur est absente (journaux hors requete : schedulers, demarrage).
+  Sortie console uniquement : Docker collecte stdout (docker logs, rotation dans
+  docker-compose.prod.yml) ; le format reste celui de Spring Boot, la colonne
+  [requestId userId] en plus, pour que grep sur un identifiant retrouve toute la requete.
+-->
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <property name="EKUISEO_PATTERN"
+              value="%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %5p [%15.15t] [%X{requestId:--} %X{userId:--}] %-40.40logger{39} : %m%n%wEx"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${EKUISEO_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>

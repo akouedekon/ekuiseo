@@ -225,14 +225,25 @@ public class PayoutService {
     /** Vue back-office GET /api/v1/admin/payouts (voir AdminPayoutResponse). */
     @Transactional(readOnly = true)
     public List<AdminPayoutResponse> listAllForAdmin() {
-        return driverPayoutRepository.findAll().stream().map(this::toAdminResponse).toList();
+        // Conducteurs charges avec les lots (EntityGraph) et comptes des reservations en une
+        // requete group by (constats F119/F308) : trois requetes au total, quel que soit le nombre de lots.
+        List<DriverPayout> payouts = driverPayoutRepository.findAllWithDriver();
+        if (payouts.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, DriverPayoutItemRepository.PayoutItemStats> stats = new java.util.HashMap<>();
+        for (DriverPayoutItemRepository.PayoutItemStats s : driverPayoutItemRepository.getStatsByPayoutIds(
+                payouts.stream().map(DriverPayout::getId).toList())) {
+            stats.put(s.getPayoutId(), s);
+        }
+        return payouts.stream().map(p -> toAdminResponse(p, stats.get(p.getId()))).toList();
     }
 
-    private AdminPayoutResponse toAdminResponse(DriverPayout payout) {
+    private AdminPayoutResponse toAdminResponse(DriverPayout payout, DriverPayoutItemRepository.PayoutItemStats stats) {
         User driver = payout.getDriver();
-        long tripCount = driverPayoutItemRepository.countByPayoutId(payout.getId());
-        long reversedCount = driverPayoutItemRepository.countByPayoutIdAndReversedAtIsNotNull(payout.getId());
-        long reversedAmount = reversedCount == 0 ? 0 : driverPayoutItemRepository.sumReversedByPayoutId(payout.getId());
+        long tripCount = stats == null ? 0 : stats.getItems();
+        long reversedCount = stats == null ? 0 : stats.getReversedCount();
+        long reversedAmount = stats == null ? 0 : stats.getReversedAmount();
         return new AdminPayoutResponse(payout.getId(), driver.getId(),
                 driver.getFirstName() + " " + driver.getLastName(), payout.getDestinationProvider(),
                 payout.getDestinationMsisdn(), payout.getAmount(), tripCount, payout.getPeriodStart(),

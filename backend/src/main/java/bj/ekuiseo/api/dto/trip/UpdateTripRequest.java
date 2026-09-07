@@ -1,5 +1,7 @@
 package bj.ekuiseo.api.dto.trip;
 
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Future;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -17,23 +19,23 @@ import java.time.Instant;
  * casserait la semantique PATCH pour ces deux champs des qu'ils sont omis ; @Size(min=1)
  * a la place n'est verifiee que si le champ est fourni), et miroitent celles de
  * {@link CreateTripRequest} pour empecher qu'un PATCH n'introduise un prix negatif,
- * un nombre de places hors bornes, ou un libelle vide. Le rejet d'un libelle
- * uniquement compose d'espaces (equivalent a un blanc) est verifie explicitement
- * cote service (voir TripService#updateTrip), la ou l'appartenance null-vs-fourni
- * est deja distinguee.
+ * un nombre de places hors bornes, un libelle vide ou une coordonnee hors plage.
+ * Le rejet d'un libelle uniquement compose d'espaces (equivalent a un blanc) est
+ * verifie explicitement cote service (voir TripService#updateTrip), la ou
+ * l'appartenance null-vs-fourni est deja distinguee.
  */
 public record UpdateTripRequest(
-        @Size(min = 1) String originLabel,
-        Double originLat,
-        Double originLng,
-        @Size(min = 1) String destLabel,
-        Double destLat,
-        Double destLng,
+        @Size(min = 1, max = 255) String originLabel,
+        @DecimalMin("-90") @DecimalMax("90") Double originLat,
+        @DecimalMin("-180") @DecimalMax("180") Double originLng,
+        @Size(min = 1, max = 255) String destLabel,
+        @DecimalMin("-90") @DecimalMax("90") Double destLat,
+        @DecimalMin("-180") @DecimalMax("180") Double destLng,
         @Future Instant departureAt,
         @Min(1) @Max(8) Integer seatsTotal,
         @Positive(message = "Le prix par place doit etre superieur a 0 F") Long pricePerSeat,
         Boolean instantBooking,
-        String luggagePolicy,
-        String description
+        @Size(max = 2000) String luggagePolicy,
+        @Size(max = 2000) String description
 ) {
 }

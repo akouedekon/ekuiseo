@@ -20,6 +20,16 @@ spring:
       hibernate:
         jdbc:
           time_zone: UTC
+        # Associations paresseuses (driver, vehicle, passenger...) chargees par lots de 50
+        # (requetes IN) au lieu d une requete par entite : supprime le N+1 sur la recherche
+        # de trajets et les listes du back-office (constat F117).
+        default_batch_fetch_size: 50
+  task:
+    scheduling:
+      # Trois fils pour les taches planifiees (constat F128) : un rappel SMS lent ne
+      # retarde plus l expiration des reservations impayees ni le cycle de vie des trajets.
+      pool:
+        size: 3
   mail:
     # Relais SMTP pour les codes de connexion (MAIL_MODE=smtp). Sans MAIL_HOST, aucun
     # JavaMailSender n est cree et seul le mode log fonctionne.
@@ -182,6 +192,19 @@ ekuiseo:
     # purgees chaque nuit par SearchEventRetentionScheduler. Duree declaree dans
     # docs/CONFORMITE.md (section 3.2) : la modifier ici impose de l'y mettre a jour.
     retention-days: ${SEARCH_EVENTS_RETENTION_DAYS:180}
+  retention:
+    # Purges nocturnes (RetentionScheduler, 03:30) des donnees a duree de vie limitee.
+    # Durees declarees dans docs/CONFORMITE.md (section 3.2) : les modifier ici impose
+    # de l y mettre a jour.
+    # Codes de connexion : supprimes ce nombre d heures apres leur expiration.
+    otp-hours: ${OTP_RETENTION_HOURS:24}
+    # Notifications in-app, lues ou non, supprimees apres ce nombre de jours.
+    notifications-days: ${NOTIFICATIONS_RETENTION_DAYS:180}
+    # Messages des trajets partis depuis plus de ce nombre de jours, sauf signalement ouvert.
+    messages-days: ${MESSAGES_RETENTION_DAYS:180}
+    # Alertes de recherche : desactivees une fois leur date passee, supprimees quand
+    # inactives et plus vieilles que ce nombre de jours.
+    search-alerts-days: ${SEARCH_ALERTS_RETENTION_DAYS:90}
   payout:
     minimum-threshold-fcfa: ${PAYOUT_MIN_THRESHOLD_FCFA:2000}
     # Une reservation n est reversable qu une fois le depart passe depuis ce delai (heures).
@@ -203,6 +226,18 @@ ekuiseo:
     otp:
       max-requests: ${RATE_LIMIT_OTP_MAX:10}
       window-seconds: ${RATE_LIMIT_OTP_WINDOW_SECONDS:600}
+    # Endpoints publics de recherche (GET /trips/search, /geo/search), par IP (constats F025/F416).
+    search:
+      max-requests: ${RATE_LIMIT_SEARCH_MAX:60}
+      window-seconds: ${RATE_LIMIT_SEARCH_WINDOW_SECONDS:60}
+    # Messages (POST /bookings/{id}/messages), par utilisateur authentifie (constat F547).
+    message:
+      max-requests: ${RATE_LIMIT_MESSAGE_MAX:30}
+      window-seconds: ${RATE_LIMIT_MESSAGE_WINDOW_SECONDS:600}
+    # Alertes de recherche (POST /trip-alerts), par utilisateur authentifie (constat F524).
+    alert:
+      max-requests: ${RATE_LIMIT_ALERT_MAX:10}
+      window-seconds: ${RATE_LIMIT_ALERT_WINDOW_SECONDS:600}
 
 logging:
   level:
