@@ -72,8 +72,12 @@ public class NotificationDispatcher {
                 .orElseGet(() -> UserPreferences.builder().build());
         NotificationTemplates.Rendered rendered = NotificationTemplates.render(type, payload);
 
+        // L e-mail est le seul canal sortant du produit (decision du 2026-09-07 : pas de
+        // fournisseur SMS). Une notification critique (confirmation, annulation, changement
+        // d horaire, rappel) part toujours a l adresse verifiee : elle releve de l execution du
+        // contrat ; les autres respectent la preference notify_by_email (vraie par defaut).
         boolean hasEmail = user.getEmail() != null && !user.getEmail().isBlank();
-        if (prefs.isNotifyByEmail() && user.isEmailVerified() && hasEmail) {
+        if ((critical || prefs.isNotifyByEmail()) && user.isEmailVerified() && hasEmail) {
             try {
                 mailGateway.send(user.getEmail(), rendered.subject(), rendered.body());
             } catch (RuntimeException ex) {

@@ -17,11 +17,15 @@ import { CONTACT_EMAIL, LEGAL_PAGES } from '@/lib/legal'
 import { cn } from '@/lib/cn'
 import type { UserPreferencesResponse } from '@/api/extended'
 
-type ToggleKey = 'notifyBySms' | 'notifyByEmail' | 'smoking' | 'music' | 'pets'
+type ToggleKey = 'notifyByEmail' | 'smoking' | 'music' | 'pets'
 
 const NOTIFICATION_ROWS: { key: ToggleKey; title: string; description: string }[] = [
-  { key: 'notifyBySms', title: 'SMS', description: 'Uniquement les informations critiques' },
-  { key: 'notifyByEmail', title: 'E-mail', description: 'Reçus et récapitulatifs' },
+  {
+    key: 'notifyByEmail',
+    title: 'E-mail',
+    description:
+      'Reçus, rappels et récapitulatifs. Les informations indispensables (confirmation, annulation, changement d’horaire) sont toujours envoyées.',
+  },
 ]
 
 const ONBOARD_ROWS: { key: ToggleKey; title: string; description?: string }[] = [

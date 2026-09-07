@@ -88,7 +88,7 @@ GitHub Actions, cible de déploiement : VPS Hostinger.
   Classement par distance de détour, écart horaire et note du conducteur.
 - Erreurs HTTP en **RFC 7807** (`ProblemDetail`).
 - Migrations Flyway **numérotées à la suite**. Ne jamais modifier une migration déjà
-  écrite — V1 à V17 existent (la prochaine est V18).
+  écrite — V1 à V18 existent (la prochaine est V19).
 - Le front ne recalcule jamais un montant pour une réservation existante : il lit le
   `paymentPlan` renvoyé par l'API. Les estimations locales sont autorisées **avant**
   création, et doivent être affichées comme telles.
@@ -102,7 +102,7 @@ GitHub Actions, cible de déploiement : VPS Hostinger.
 Complet et cohérent de bout en bout : API, interface, back-office d'administration,
 chaîne de déploiement, jeu de démonstration, documentation d'exploitation.
 
-- `backend/` — 17 migrations. Kkiapay (initiation, webhook signé et
+- `backend/` — 18 migrations. Kkiapay (initiation, webhook signé et
   idempotent, vérification serveur, remboursements), codes de connexion par e-mail (SMS en repli) avec limitation de débit,
   géocodage des villes béninoises en base, rôles et back-office, reversements, signalements,
   journal d'audit, alertes de recherche, abonnements, trace des recherches (`search_events`,
@@ -340,21 +340,22 @@ s'interprète pas.
   des options du widget selon la version du script (`key` / `api_key`, les deux sont
   passés) et le format de `stateData` (objet ou chaîne, les deux sont acceptés).
 - Les codes de connexion partent par e-mail (`MailGateway`, relais SMTP à renseigner via
-  `MAIL_MODE=smtp` ; journalisés sinon). Aucun fournisseur SMS réel n est choisi : le SMS
-  (`SmsGateway`) ne sert qu aux notifications critiques et au repli OTP optionnel.
+  `MAIL_MODE=smtp` ; journalisés sinon). **Décision du 7 septembre 2026 : l e-mail est le seul
+  canal sortant**, aucun fournisseur SMS ne sera branché ; les notifications critiques partent
+  toujours à l adresse vérifiée, les autres selon `notify_by_email` (vrai par défaut, V18). Le
+  `SmsGateway` reste en mode `log` et n est pas un canal du produit.
 - Le téléversement de la photo de pièce d'identité n'est pas implémenté (stockage sécurisé
   à décider) ; seul l'état de la vérification existe.
 - Aucun fournisseur de tuiles cartographiques n'est câblé : `RouteMap` dessine un tracé
   schématique tant que `VITE_MAP_STYLE_URL` n'est pas renseignée.
-- Web Push non implémenté ; les notifications critiques passent par e-mail et, si un
-  fournisseur est activé, par SMS.
+- Web Push non implémenté ; les notifications critiques passent par e-mail.
 - Le décaissement effectif des reversements est manuel (référence de virement et échec
   consignés depuis le back-office).
 - Le mode `CASH` confirme immédiatement la réservation sans validation du conducteur ; il
   n est proposé qu avec un conducteur à identité vérifiée. Une validation conducteur
   (accept/decline) reste à concevoir si la commission contournée devient un problème.
-- Actions hors dépôt attendues du fondateur : voir `docs/AUDIT-SUIVI.md` (SMS, sauvegardes
-  hors site, sonde externe, clé MapTiler, rotation des secrets, juriste).
+- Actions hors dépôt attendues du fondateur : voir `docs/AUDIT-SUIVI.md` (sauvegardes hors site,
+  sonde externe, clé MapTiler, rotation des secrets, juriste).
 
 ## Marque
 

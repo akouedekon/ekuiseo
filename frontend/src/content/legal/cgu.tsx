@@ -42,7 +42,7 @@ export function CguContent() {
         <li>
           L'inscription requiert un <strong>numéro de téléphone béninois</strong> et une <strong>adresse e-mail</strong>{' '}
           valides. Il n'existe pas de mot de passe : la connexion se fait par un <strong>code à usage unique</strong>{' '}
-          envoyé par e-mail (ou par SMS en repli). Ce code est personnel ; ne le communiquez à personne.
+          envoyé par e-mail. Ce code est personnel ; ne le communiquez à personne.
         </li>
         <li>
           Le compte est activé lors de la saisie du premier code. Un compte créé mais jamais activé est supprimé

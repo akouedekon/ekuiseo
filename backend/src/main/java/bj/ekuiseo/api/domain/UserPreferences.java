@@ -43,7 +43,7 @@ public class UserPreferences {
 
     @Column(name = "notify_by_email", nullable = false)
     @Builder.Default
-    private boolean notifyByEmail = false;
+    private boolean notifyByEmail = true;
 
     @Column(nullable = false, length = 5)
     @Builder.Default

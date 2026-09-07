@@ -220,8 +220,8 @@ export function ConfidentialiteContent() {
           codes de connexion et des notifications par e-mail (adresse e-mail et contenu du message).
         </li>
         <li>
-          <strong>Prestataire d'envoi de SMS</strong> [à compléter : aucun fournisseur n'est retenu à ce jour] :
-          notifications critiques et code de connexion en repli (numéro de téléphone et contenu du SMS).
+          Aucun SMS n'est envoyé : les codes de connexion et toutes les notifications partent par e-mail. Le numéro de
+          téléphone sert d'identifiant et n'est jamais transmis à un prestataire d'envoi de messages.
         </li>
         <li>
           <strong>OVH</strong> (hébergement) : le service et sa base de données sont hébergés sur un serveur virtuel

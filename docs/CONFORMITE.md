@@ -11,7 +11,7 @@
 > de garantir exact** ; là où un chiffre est nécessaire pour illustrer un raisonnement,
 > il est explicitement marqué comme une hypothèse à valider.
 >
-> Mis à jour le 2026-09-05 à l'issue des phases 0, 1 et 2 de l'audit
+> Mis à jour le 2026-09-07 à l'issue des phases 0 à 7 de l'audit
 > (`docs/AUDIT-COMPLET.md`) : ce document décrit **le système déployé**, pas un
 > système souhaité. Chaque section « État d'implémentation » cite l'endpoint ou le
 > mécanisme qui sert l'obligation, ou dit « non implémenté ».
@@ -67,7 +67,7 @@ sont des propositions à faire valider.
 | Traitement | Finalité | Données concernées | Base légale (proposée) | Destinataires | Durée | Mesures de sécurité |
 |---|---|---|---|---|---|---|
 | Création et gestion de compte | Identification des utilisateurs | Nom, prénom, téléphone (E.164), e-mail, photo, bio, préférences | Exécution du contrat | Interne | Vie du compte (voir 3.2) | Connexion par code à usage unique (aucun mot de passe), sessions révocables, TLS |
-| Codes de connexion (OTP, `otp_codes`) | Authentification, changement d'e-mail, suppression de compte | Téléphone, e-mail de destination, code haché, compteur d'essais | Exécution du contrat | Relais SMTP (sous-traitant) ; SMS en repli si activé | 24 h après expiration, purge nocturne | Code haché, 5 essais, expiration courte, limitation de débit par IP et par numéro, codes masqués dans les journaux |
+| Codes de connexion (OTP, `otp_codes`) | Authentification, changement d'e-mail, suppression de compte | Téléphone, e-mail de destination, code haché, compteur d'essais | Exécution du contrat | Relais SMTP (sous-traitant) | 24 h après expiration, purge nocturne | Code haché, 5 essais, expiration courte, limitation de débit par IP et par numéro, codes masqués dans les journaux |
 | Publication de trajets | Mise en relation | Origine/destination (libellé + coordonnées), arrêts, horaires, prix, véhicule (marque, modèle, couleur, plaque) | Exécution du contrat | Public (fiche de trajet, aperçu de partage), passagers | Vie du compte + prescription (3.2) | — |
 | Réservation et paiement fractionné | Exécution du contrat de transport | Réservation, montants, statut, référence Kkiapay, numéro mobile money du payeur (côté Kkiapay) | Exécution du contrat ; obligations comptables | Kkiapay (sous-traitant), conducteur (prénom, places, solde à bord) | Obligations comptables (3.2) | TLS, webhook signé, idempotence, remboursements tracés |
 | Comptes mobile money des conducteurs (`payment_accounts`) | Reversement des sommes encaissées | Opérateur, numéro, statut de vérification | Exécution du contrat | Interne (back-office), opérateur mobile money lors du virement | Vie du compte ; masqué à l'anonymisation | Numéro vérifié (égal au numéro du compte ou validé par l'administration), plafond 3 comptes |
@@ -79,7 +79,7 @@ sont des propositions à faire valider.
 | Messagerie liée à une réservation (`messages`) | Coordination du jour du trajet | Corps des messages, horodatage | Exécution du contrat | L'autre partie ; modération sur signalement (accès journalisé) | 180 jours après le départ, sauf signalement en cours | Écriture fermée après la fin de la réservation ; accès administrateur journalisé |
 | Avis et notation (`reviews`) | Confiance entre utilisateurs | Note, commentaire, auteur, cible | Intérêt légitime | Public (profil) | Vie du compte cible | Avis possible seulement après un trajet effectué ensemble |
 | Signalements (`reports`) | Modération, sécurité des utilisateurs | Motif, détails, parties, réservation liée, note de résolution | Intérêt légitime | Interne (modération) | Vie du compte + prescription | Réservation commune exigée, plafond, notification d'issue |
-| Notifications (`notifications`) | Information des utilisateurs | Type, charge utile (montants, trajets), état de lecture | Exécution du contrat | Interne ; relais SMTP ; fournisseur SMS pour les critiques | 180 jours, purge nocturne | Préférences respectées (e-mail, SMS) |
+| Notifications (`notifications`) | Information des utilisateurs | Type, charge utile (montants, trajets), état de lecture | Exécution du contrat | Interne ; relais SMTP | 180 jours, purge nocturne | E-mail toujours pour les informations critiques, préférence respectée pour le reste |
 | Journal d'audit (`audit_log`) | Traçabilité des actions sensibles | Acteur, action, entité, détails (données masquées) | Intérêt légitime / obligation de sécurité | Interne | Plusieurs années (à fixer) | Lecture seule, consultation filtrée |
 | Journaux applicatifs et d'accès | Diagnostic, sécurité | Identifiant de requête, identifiant utilisateur, chemin, statut, durée ; adresse IP dans les journaux du proxy | Intérêt légitime | Interne ; hébergeur (disque) | Rotation Docker (3 × 10 Mo par service) ; journaux nginx de l'hôte selon la configuration système | Codes, e-mails et téléphones masqués ; aucun corps de requête |
 | Sauvegardes | Continuité de service | Copie complète de la base | Intérêt légitime | Interne ; stockage hors site si `BACKUP_REMOTE` est configuré | 7 jours (quotidiennes) + 4 semaines (hebdomadaires) ; les données effacées disparaissent donc des sauvegardes sous 35 jours | Disque du serveur ; exercice de restauration mensuel automatisé |
@@ -118,7 +118,7 @@ applicables aux litiges liés au transport.
 | Accès et portabilité | `GET /api/v1/me/export` : fichier JSON de toutes les données du compte (profil, préférences, véhicules, comptes mobile money masqués, identité sans le numéro complet, abonnements, trajets et arrêts, réservations et plans de paiement, paiements, reversements, avis écrits et reçus, messages envoyés, notifications, alertes, signalements déposés) ; bouton « Télécharger mes données » dans les réglages ; 1 export par 24 h | Implémenté en phase 2 |
 | Rectification | Profil modifiable (`PATCH /api/v1/me`), changement d'e-mail en deux temps (`/me/email/request` puis `/confirm`), correction de contact par l'administration après vérification hors ligne (`PATCH /api/v1/admin/users/{id}/contact`, journalisée) | Implémenté |
 | Effacement | Suppression de compte par l'utilisateur, confirmée par un code envoyé à son e-mail (`POST /api/v1/me/delete/request` puis `POST /api/v1/me/delete`), ou anonymisation par l'administration (`POST /api/v1/admin/users/{id}/anonymize`, motif obligatoire, journalisée). La ligne `users` est conservée **anonymisée** (identité remplacée, téléphone factice unique, e-mail supprimé, photo et bio effacées, statut `DELETED`), les comptes mobile money, alertes, notifications, préférences et dossier d'identité sont supprimés, la plaque du véhicule et la destination des reversements sont masquées, le corps des messages est remplacé. Réservations, paiements, reversements et avis sont conservés pour les obligations comptables et l'intégrité des autres comptes. Refusée tant qu'un trajet à venir, une réservation active ou un reversement en attente existent. | Implémenté (lot 1.4) |
-| Opposition | Préférences de notification (e-mail, SMS) respectées par le routeur de notifications ; alertes de recherche supprimables ; aucun traitement marketing | Implémenté |
+| Opposition | Préférence de notification par e-mail respectée par le routeur pour les messages non critiques ; alertes de recherche supprimables ; aucun traitement marketing | Implémenté |
 | Contestation d'une suspension | Motif transmis à l'utilisateur (notification et e-mail) ; adresse de contact affichée sur l'écran de connexion et dans le pied de page | Implémenté (phase 2, pages légales) |
 
 **Canal de dépôt des demandes** : `contact@ekuiseo.com` (`VITE_SUPPORT_EMAIL`), affiché
@@ -139,9 +139,8 @@ Inventaire du système déployé (`docker-compose.prod.yml`, `application.yml`, 
    `noreply@ekuiseo.com`) — reçoit l'adresse e-mail, les codes de connexion, les
    notifications (reçus d'acompte, confirmations, annulations). Localisation et
    conditions du prestataire à documenter.
-3. **Fournisseur SMS** — uniquement si `SMS_MODE=http` est activé (Twilio, Africa's
-   Talking ou SMSPartner selon `SMS_PROVIDER`) ; en production au 2026-09-05,
-   `SMS_MODE=log` : **aucun SMS ne sort**, le SMS n'est pas un canal actif.
+3. **SMS** — aucun : décision du 7 septembre 2026, l e-mail est le seul canal sortant
+   (`SMS_MODE=log`, aucun numéro n est transmis à un prestataire de messages).
 4. **MapTiler** (ou le fournisseur de `VITE_MAP_STYLE_URL`) — les tuiles de carte sont
    chargées par le navigateur, qui envoie son adresse IP et la zone consultée. Non
    activé tant que la variable est vide ; alternative : proxy Caddy ou tuiles
@@ -225,7 +224,6 @@ back-office réservé au rôle ADMIN, actions sensibles avec motif obligatoire.
       inactifs, prescription, audit) et implémenter la purge des comptes inactifs.
 - [ ] Faire valider les textes des pages légales et la formulation des bases légales.
 - [ ] Sécuriser contractuellement la relation avec Kkiapay, le relais SMTP, OVH (et le
-      fournisseur SMS, le fournisseur de cartes et le stockage hors site le jour où ils
-      sont activés).
+      fournisseur de cartes et le stockage hors site le jour où ils sont activés).
 - [ ] Faire trancher la question du statut du covoiturage rémunéré (section 6).
 - [ ] Décider du second facteur ou de la restriction d'accès pour le back-office.

@@ -89,8 +89,9 @@ fuseau, la récurrence et les requêtes de KPI.
    (voir `docs/EXPLOITATION.md`) ; vérifier `backups/last-drill` après le 1er octobre.
 3. **Surveillance** : sonde externe sur `https://ekuiseo.com/actuator/health` avec alerte ;
    éventuellement `VITE_ERROR_REPORT_URL` vers un collecteur.
-4. **SMS** : choisir un fournisseur (`SMS_MODE=http`) si les notifications critiques doivent
-   partir par SMS ; sinon le canal reste l'e-mail.
+4. **Canal sortant** : décision prise le 7 septembre 2026, l e-mail est le seul canal ; aucun
+   fournisseur SMS à choisir (les notifications critiques partent toujours à l adresse vérifiée,
+   V18).
 5. **Cartographie** : restreindre la clé MapTiler aux origines `ekuiseo.com` avant de renseigner
    `VITE_MAP_STYLE_URL`.
 6. **Juridique** : faire valider les pages CGU / confidentialité / mentions légales (projets de

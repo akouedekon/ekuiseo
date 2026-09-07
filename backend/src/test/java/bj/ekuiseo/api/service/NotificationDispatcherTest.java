@@ -62,11 +62,22 @@ class NotificationDispatcherTest {
     }
 
     @Test
-    void email_notSentByDefaultPreferences_norWhenEmailUnverified() {
+    void email_sentByDefault_andCriticalEvenIfOptedOut_neverWhenUnverified() {
+        // Preference absente : e-mail actif par defaut (opt-out, V18).
         when(preferencesRepository.findByUserId(user.getId())).thenReturn(Optional.empty());
         dispatcher.deliver(user.getId(), NotificationType.NEW_MESSAGE, Map.of(), false, null);
-        verify(mailGateway, never()).send(any(), any(), any());
+        verify(mailGateway, org.mockito.Mockito.times(1)).send(any(), any(), any());
 
+        // Preference desactivee : plus de message ordinaire, mais une notification critique
+        // part quand meme (execution du contrat, seul canal sortant).
+        when(preferencesRepository.findByUserId(user.getId()))
+                .thenReturn(Optional.of(UserPreferences.builder().notifyByEmail(false).build()));
+        dispatcher.deliver(user.getId(), NotificationType.NEW_MESSAGE, Map.of(), false, null);
+        verify(mailGateway, org.mockito.Mockito.times(1)).send(any(), any(), any());
+        dispatcher.deliver(user.getId(), NotificationType.BOOKING_CANCELLED, Map.of(), true, "Ekuiseo : annule");
+        verify(mailGateway, org.mockito.Mockito.times(2)).send(any(), any(), any());
+
+        org.mockito.Mockito.clearInvocations(mailGateway);
         user.setEmailVerified(false);
         when(preferencesRepository.findByUserId(user.getId()))
                 .thenReturn(Optional.of(UserPreferences.builder().notifyByEmail(true).build()));
