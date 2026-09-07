@@ -373,8 +373,15 @@ export function AppShell() {
   )
 }
 
+/**
+ * Ecrans ou l'ecran bloquant des CGU ne s'affiche pas : les pages legales (il faut pouvoir
+ * lire ce que l'on accepte) et les ecrans de connexion/inscription. Sur ces derniers, le
+ * formulaire doit terminer sa navigation vers la page demandee : si le blocage le
+ * remplacait des la validation du code, la page resterait sur /login et l'utilisateur
+ * reverrait le formulaire apres avoir accepte. Le blocage apparait donc sur la destination.
+ */
 function isLegalPath(pathname: string): boolean {
-  return LEGAL_PAGES.some((page) => page.path === pathname)
+  return pathname === '/login' || pathname === '/register' || LEGAL_PAGES.some((page) => page.path === pathname)
 }
 
 /**
