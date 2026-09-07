@@ -14,10 +14,11 @@ toute communication publique (réseaux sociaux, presse, affichage physique...).
       connus") sont traités : CORS restreint au(x) domaine(s) réel(s), route
       `GET /api/v1/trips/{id}` ne fuite pas les trajets `DRAFT`, `KKIAPAY_WEBHOOK_SECRET`
       bien configuré et `KKIAPAY_MODE=http`.
-- [ ] `SMS_MODE=http` avec `SMS_HTTP_URL`/`SMS_PROVIDER_KEY` configurés pour un vrai
-      fournisseur, adapté au contrat exact de ce fournisseur (voir la javadoc de
-      `HttpSmsGateway`) — les OTP ne doivent plus être uniquement journalisés en clair
-      dans les logs applicatifs en production.
+- [ ] `MAIL_MODE=smtp` renseigné (relais SMTP réel) : les codes de connexion partent par
+      e-mail ; en mode `log` ils restent dans les journaux applicatifs, ce qui est
+      interdit en production (`MailConfig` refuse d ailleurs `MAIL_MODE=log` avec
+      `KKIAPAY_MODE=http`). `SMS_MODE=http` reste optionnel (notifications critiques et
+      repli OTP) et n est activé qu après le choix d un fournisseur.
 - [ ] Sauvegardes automatiques en place et testées (`docs/EXPLOITATION.md`) —
       **testez une restauration réelle au moins une fois avant le lancement**, pas
       seulement la sauvegarde.
@@ -91,8 +92,10 @@ toute communication publique (réseaux sociaux, presse, affichage physique...).
       les sanctions possibles (suspension de compte).
 - [ ] **Politique de confidentialité** rédigée et publiée, cohérente avec le travail
       fait dans `docs/CONFORMITE.md` : données collectées, finalités, durées de
-      conservation, sous-traitants (Kkiapay, fournisseur SMS, hébergeur), droits des
-      personnes et comment les exercer concrètement (adresse de contact).
+      conservation, sous-traitants (Kkiapay et son widget, relais SMTP, OVH, fournisseur
+      de cartes et fournisseur SMS s ils sont activés — liste alignée sur
+      `docs/CONFORMITE.md` §5), droits des personnes et comment les exercer
+      concrètement (export, suppression de compte, adresse de contact).
 - [ ] Les deux documents sont **rédigés ou validés par un juriste béninois**, pas
       uniquement générés automatiquement.
 - [ ] Un mécanisme d'acceptation explicite (case à cocher à l'inscription, horodatée)

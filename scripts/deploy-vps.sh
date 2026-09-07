@@ -29,6 +29,12 @@ if [ ! -d "$APP_DIR/.git" ]; then
   log "Clonage de $REPO_URL dans $APP_DIR"
   sudo mkdir -p "$APP_DIR" && sudo chown "$USER" "$APP_DIR"
   git clone --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
+elif [ -n "${EKUISEO_SHA:-}" ]; then
+  # Constat F448 : le workflow a deja fige le commit teste par la CI ; on ne fait
+  # jamais avancer le depot au-dela (un push survenu entre-temps n est pas valide).
+  log "Deploiement du commit ${EKUISEO_SHA} (fige par le workflow)"
+  git -C "$APP_DIR" fetch --quiet origin "$BRANCH"
+  git -C "$APP_DIR" checkout --detach --quiet "$EKUISEO_SHA"
 else
   log "Mise a jour de $APP_DIR (branche $BRANCH)"
   git -C "$APP_DIR" fetch --quiet origin "$BRANCH"
@@ -129,5 +135,5 @@ for i in $(seq 1 40); do
   fi
   sleep 5
 done
-log "l'API ne repond pas apres 200 s ; voir :  logs --tail=100 backend caddy"
+log "l'API ne repond pas apres 200 s ; voir : $COMPOSE logs --tail=100 backend caddy"
 rollback

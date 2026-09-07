@@ -56,7 +56,7 @@ jobs:
             "$DEPLOY_USER@$DEPLOY_HOST" \
             "set -e; cd /opt/ekuiseo; git fetch --quiet origin main; \
              git reset --hard --quiet '$TARGET_SHA'; \
-             EKUISEO_BRANCH=main bash scripts/deploy-vps.sh"
+             EKUISEO_BRANCH=main EKUISEO_SHA='$TARGET_SHA' bash scripts/deploy-vps.sh"
 
       - name: Verifier la production
         run: |

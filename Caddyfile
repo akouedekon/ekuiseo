@@ -31,14 +31,27 @@
 		X-Frame-Options "SAMEORIGIN"
 		Permissions-Policy "geolocation=(self), camera=(), microphone=(), payment=(self)"
 
-		# CSP realiste pour une SPA React + MapLibre GL (tuiles de carte) + widget de
-		# paiement Kkiapay. A resserrer des que les domaines exacts des tuiles cartographiques
-		# choisies (MapTiler, OpenStreetMap, ...) sont fixes : remplacer les "https:"
-		# generiques de img-src/connect-src par les hotes precis.
-		Content-Security-Policy "default-src 'self'; script-src 'self' https://cdn.kkiapay.me; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https:; worker-src 'self' blob:; frame-src https://*.kkiapay.me; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests"
+		# CSP (constat F403) : connect-src et img-src limites aux hotes reellement
+		# contactes par le navigateur (API du site, tuiles MapTiler, widget Kkiapay).
+		# Ajouter ici tout futur hote de photos ou de collecte d erreurs.
+		Content-Security-Policy "default-src 'self'; script-src 'self' https://cdn.kkiapay.me; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://api.maptiler.com; font-src 'self' data:; connect-src 'self' https://api.maptiler.com https://*.kkiapay.me; worker-src 'self' blob:; frame-src https://*.kkiapay.me; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests"
 
 		# Retire l'en-tete qui revele la version de Caddy.
 		-Server
+	}
+
+	# --- Apercu de partage (constat F341) : robots WhatsApp/Facebook/Twitter/Telegram
+	# vers la page Open Graph du backend, qui redirige les humains vers /trips/{id}.
+	@sharebots {
+		path /trips/*
+		header_regexp User-Agent (?i)(WhatsApp|facebookexternalhit|Facebot|Twitterbot|TelegramBot|LinkedInBot|Slackbot|Discordbot)
+	}
+	handle @sharebots {
+		rewrite * /share{path}
+		reverse_proxy backend:8080
+	}
+	handle /share/trips/* {
+		reverse_proxy backend:8080
 	}
 
 	# --- API backend ---------------------------------------------------------

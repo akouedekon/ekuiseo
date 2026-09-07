@@ -60,6 +60,9 @@ services:
     image: ekuiseo-backend:latest
     container_name: ekuiseo-backend
     restart: unless-stopped
+    # Durcissement (constat F445) : aucune escalade de privileges, processus bornes.
+    security_opt:
+      - no-new-privileges:true
     # Laisse 30 s a l'arret gracieux de Spring (25 s, server.shutdown=graceful) pour
     # terminer les requetes en vol, dont une confirmation de paiement.
     stop_grace_period: 30s
@@ -84,7 +87,7 @@ services:
       KKIAPAY_SECRET: ${KKIAPAY_SECRET:-}
       KKIAPAY_WEBHOOK_SECRET: ${KKIAPAY_WEBHOOK_SECRET:-}
       KKIAPAY_SANDBOX: ${KKIAPAY_SANDBOX:-false}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-*}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://ekuiseo.com,https://www.ekuiseo.com}
       # Documentation OpenAPI desactivee en production (surface d'API non publique).
       SPRINGDOC_ENABLED: ${SPRINGDOC_ENABLED:-false}
       # Derogation de recette uniquement : MAIL_MODE=log avec KKIAPAY_MODE=http est refuse.
@@ -153,6 +156,7 @@ services:
       resources:
         limits:
           cpus: "1.5"
+          pids: 512
           memory: 1024M
         reservations:
           memory: 384M
@@ -174,6 +178,9 @@ services:
     image: ekuiseo-frontend:latest
     container_name: ekuiseo-frontend
     restart: unless-stopped
+    # Durcissement (constat F445) : aucune escalade de privileges, processus bornes.
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       backend:
         condition: service_healthy
@@ -189,6 +196,7 @@ services:
       resources:
         limits:
           cpus: "0.5"
+          pids: 128
           memory: 128M
         reservations:
           memory: 32M
@@ -200,6 +208,9 @@ services:
     image: caddy:2.8-alpine
     container_name: ekuiseo-caddy
     restart: unless-stopped
+    # Durcissement (constat F445) : aucune escalade de privileges, processus bornes.
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       frontend:
         condition: service_healthy
@@ -217,10 +228,9 @@ services:
       - ekuiseo_caddy_data:/data
       - ekuiseo_caddy_config:/config
     healthcheck:
-      # L'API d'administration de Caddy (localhost:2019) repond toujours, meme si le
-      # binaire n'a pas encore obtenu de certificat : suffisant pour verifier que le
-      # processus est vivant. wget est fourni par busybox dans l'image alpine.
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:2019/config/"]
+      # L API d administration de Caddy est fermee (admin off, constat F445) : on sonde
+      # le port HTTP lui-meme (--spider accepte les 3xx). wget vient de busybox.
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/actuator/health"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -229,6 +239,7 @@ services:
       resources:
         limits:
           cpus: "0.5"
+          pids: 128
           memory: 256M
         reservations:
           memory: 64M

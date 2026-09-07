@@ -1,0 +1,10 @@
+# Constat F444 : l image ne doit embarquer ni les dependances du poste, ni un build
+# precedent, ni des fichiers d environnement locaux.
+node_modules
+dist
+coverage
+.env
+.env.*
+!.env.example
+*.log
+.vite

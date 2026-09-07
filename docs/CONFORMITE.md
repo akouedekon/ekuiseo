@@ -10,13 +10,18 @@
 > de loi n'est cité ici avec un numéro ou un contenu que nous ne sommes pas en mesure
 > de garantir exact** ; là où un chiffre est nécessaire pour illustrer un raisonnement,
 > il est explicitement marqué comme une hypothèse à valider.
+>
+> Mis à jour le 2026-09-05 à l'issue des phases 0, 1 et 2 de l'audit
+> (`docs/AUDIT-COMPLET.md`) : ce document décrit **le système déployé**, pas un
+> système souhaité. Chaque section « État d'implémentation » cite l'endpoint ou le
+> mécanisme qui sert l'obligation, ou dit « non implémenté ».
 
 ## 1. Ce qui est établi
 
 - Le Bénin dispose d'un cadre légal sur la protection des données à caractère
   personnel, avec une autorité de contrôle dédiée : l'**APDP** (Autorité de Protection
   des Données à caractère Personnel). Ekuiseo, en tant qu'opérateur qui collecte et
-  traite des données à caractère personnel (identité, téléphone, localisation,
+  traite des données à caractère personnel (identité, téléphone, e-mail, localisation,
   historique de trajets, moyens de paiement) pour son propre compte, a vocation à être
   qualifié de **responsable de traitement** au sens de ce cadre.
 - La loi n° 2017-20 portant code du numérique du Bénin couvre, entre autres, les
@@ -42,12 +47,12 @@
 1. Identifier si Ekuiseo doit faire l'objet d'une **déclaration simplifiée** ou d'une
    **demande d'autorisation** (le critère dépend généralement de la nature des
    données — ici : géolocalisation, données financières liées aux paiements mobile
-   money — et du volume/type de personnes concernées).
+   money, numéro de pièce d'identité déclaré — et du volume/type de personnes concernées).
 2. Préparer le dossier de déclaration/autorisation : identité du responsable de
    traitement (la structure juridique exploitant Ekuiseo), finalités précises du
    traitement, catégories de données, catégories de destinataires (y compris
-   sous-traitants, voir section 4), durées de conservation envisagées (voir section
-   3), mesures de sécurité mises en œuvre.
+   sous-traitants, voir section 5), durées de conservation (section 3), mesures de
+   sécurité mises en œuvre (section 8).
 3. Déposer le dossier avant le lancement commercial, pas après — un traitement de
    données personnelles non déclaré/autorisé alors qu'il aurait dû l'être expose à des
    sanctions dont la nature et le montant sont à vérifier dans le texte en vigueur.
@@ -56,119 +61,110 @@
 
 ### 3.1 Registre des traitements
 
-Tenir un registre des traitements est une bonne pratique quasi universelle en matière
-de protection des données, indépendamment de son caractère obligatoire précis dans le
-droit béninois (à confirmer). Structure minimale recommandée, une ligne par
-traitement :
+Une ligne par traitement réellement effectué par le système déployé. Les bases légales
+sont des propositions à faire valider.
 
-| Traitement | Finalité | Données concernées | Base légale | Destinataires | Durée de conservation | Mesures de sécurité |
+| Traitement | Finalité | Données concernées | Base légale (proposée) | Destinataires | Durée | Mesures de sécurité |
 |---|---|---|---|---|---|---|
-| Création de compte | Identification des utilisateurs | Nom, téléphone, e-mail, date de naissance | Exécution du contrat | Interne | Voir 3.2 | Mot de passe haché (bcrypt), TLS |
-| Vérification téléphonique (OTP) | Sécurité / lutte anti-fraude | Numéro de téléphone, code OTP haché | Intérêt légitime | Fournisseur SMS (sous-traitant) | Voir 3.2 | Code haché, expiration courte |
-| Réservation et paiement | Exécution du contrat de transport | Trajet, montant, statut de paiement | Exécution du contrat | Kkiapay (sous-traitant) | Voir 3.2 | TLS, idempotence webhook |
-| Géolocalisation des trajets | Recherche et mise en relation | Coordonnées origine/destination | Exécution du contrat | Interne | Voir 3.2 | — |
-| Avis et notation | Confiance entre utilisateurs | Note, commentaire | Intérêt légitime | Public (profil) | Voir 3.2 | — |
-| Trace des recherches de trajets (`search_events`, migration V9) | Pilotage de l'offre : mesurer les recherches sans résultat et les axes à développer | Coordonnées et libellés origine/destination demandés, date, places, mode, nombre de résultats, identifiant de l'utilisateur s'il est connecté | Intérêt légitime | Interne (back-office uniquement, données agrégées) | 180 jours (voir 3.2) | Purge automatique quotidienne ; aucune donnée nominative dans les agrégats servis |
+| Création et gestion de compte | Identification des utilisateurs | Nom, prénom, téléphone (E.164), e-mail, photo, bio, préférences | Exécution du contrat | Interne | Vie du compte (voir 3.2) | Connexion par code à usage unique (aucun mot de passe), sessions révocables, TLS |
+| Codes de connexion (OTP, `otp_codes`) | Authentification, changement d'e-mail, suppression de compte | Téléphone, e-mail de destination, code haché, compteur d'essais | Exécution du contrat | Relais SMTP (sous-traitant) ; SMS en repli si activé | 24 h après expiration, purge nocturne | Code haché, 5 essais, expiration courte, limitation de débit par IP et par numéro, codes masqués dans les journaux |
+| Publication de trajets | Mise en relation | Origine/destination (libellé + coordonnées), arrêts, horaires, prix, véhicule (marque, modèle, couleur, plaque) | Exécution du contrat | Public (fiche de trajet, aperçu de partage), passagers | Vie du compte + prescription (3.2) | — |
+| Réservation et paiement fractionné | Exécution du contrat de transport | Réservation, montants, statut, référence Kkiapay, numéro mobile money du payeur (côté Kkiapay) | Exécution du contrat ; obligations comptables | Kkiapay (sous-traitant), conducteur (prénom, places, solde à bord) | Obligations comptables (3.2) | TLS, webhook signé, idempotence, remboursements tracés |
+| Comptes mobile money des conducteurs (`payment_accounts`) | Reversement des sommes encaissées | Opérateur, numéro, statut de vérification | Exécution du contrat | Interne (back-office), opérateur mobile money lors du virement | Vie du compte ; masqué à l'anonymisation | Numéro vérifié (égal au numéro du compte ou validé par l'administration), plafond 3 comptes |
+| Reversements (`driver_payouts`) | Paiement des conducteurs | Montant, destination (opérateur, numéro), référence de virement, statut | Exécution du contrat ; obligations comptables | Interne ; opérateur mobile money | Obligations comptables | Lots audités, transitions d'état contrôlées |
+| Vérification d'identité (`identity_verifications`) | Confiance, lutte contre la fraude | Type et numéro de pièce déclarés (aucune photo stockée), statut, motif de refus | Intérêt légitime (à confirmer : consentement ?) | Interne (modération) | Jusqu'à la décision puis 4 derniers caractères (3.2) | Numéro masqué dans les journaux et l'audit, resoumission bornée, badge révocable |
+| Géolocalisation des trajets et recherches | Recherche et mise en relation | Coordonnées origine/destination demandées et publiées | Exécution du contrat | Interne | Trajets : vie du compte ; recherches : 180 jours | Aucune position en temps réel : uniquement des points saisis |
+| Trace des recherches (`search_events`, V9) | Pilotage de l'offre (recherches sans résultat, axes en pénurie) | Coordonnées et libellés demandés, date, places, mode, résultats, identifiant utilisateur si connecté | Intérêt légitime | Interne (agrégats du back-office) | 180 jours, purge quotidienne | `user_id` mis à NULL à l'anonymisation ; agrégats sans donnée nominative |
+| Alertes de recherche (`search_alerts`) | Prévenir un passager quand un trajet correspond | Axe, dates, places, rayon, préférence e-mail | Consentement (création volontaire) | Interne ; relais SMTP pour l'e-mail | Désactivation à la date de fin, suppression 90 jours après | Liste et suppression par l'utilisateur, plafond 10 |
+| Messagerie liée à une réservation (`messages`) | Coordination du jour du trajet | Corps des messages, horodatage | Exécution du contrat | L'autre partie ; modération sur signalement (accès journalisé) | 180 jours après le départ, sauf signalement en cours | Écriture fermée après la fin de la réservation ; accès administrateur journalisé |
+| Avis et notation (`reviews`) | Confiance entre utilisateurs | Note, commentaire, auteur, cible | Intérêt légitime | Public (profil) | Vie du compte cible | Avis possible seulement après un trajet effectué ensemble |
+| Signalements (`reports`) | Modération, sécurité des utilisateurs | Motif, détails, parties, réservation liée, note de résolution | Intérêt légitime | Interne (modération) | Vie du compte + prescription | Réservation commune exigée, plafond, notification d'issue |
+| Notifications (`notifications`) | Information des utilisateurs | Type, charge utile (montants, trajets), état de lecture | Exécution du contrat | Interne ; relais SMTP ; fournisseur SMS pour les critiques | 180 jours, purge nocturne | Préférences respectées (e-mail, SMS) |
+| Journal d'audit (`audit_log`) | Traçabilité des actions sensibles | Acteur, action, entité, détails (données masquées) | Intérêt légitime / obligation de sécurité | Interne | Plusieurs années (à fixer) | Lecture seule, consultation filtrée |
+| Journaux applicatifs et d'accès | Diagnostic, sécurité | Identifiant de requête, identifiant utilisateur, chemin, statut, durée ; adresse IP dans les journaux du proxy | Intérêt légitime | Interne ; hébergeur (disque) | Rotation Docker (3 × 10 Mo par service) ; journaux nginx de l'hôte selon la configuration système | Codes, e-mails et téléphones masqués ; aucun corps de requête |
+| Sauvegardes | Continuité de service | Copie complète de la base | Intérêt légitime | Interne ; stockage hors site si `BACKUP_REMOTE` est configuré | 7 jours (quotidiennes) + 4 semaines (hebdomadaires) ; les données effacées disparaissent donc des sauvegardes sous 35 jours | Disque du serveur ; exercice de restauration mensuel automatisé |
 
-Ce tableau est un point de départ à faire valider et compléter (finalités reformulées
-juridiquement, bases légales confirmées) par la personne responsable de la conformité.
+### 3.2 Durées de conservation — valeurs implémentées et hypothèses
 
-### 3.2 Durées de conservation par type de donnée — hypothèses de travail
+**Les durées marquées « implémentée » sont appliquées automatiquement par le
+backend ; les autres sont des hypothèses de travail** à faire confirmer par un juriste
+béninois, notamment au regard des règles comptables (droit OHADA, dont le Bénin est
+membre, qui impose usuellement la conservation des pièces comptables sur plusieurs
+années — durée exacte à vérifier dans l'Acte uniforme en vigueur) et des prescriptions
+applicables aux litiges liés au transport.
 
-**Ces durées sont des hypothèses de travail raisonnables, pas des obligations légales
-citées avec certitude.** Un juriste béninois doit les confirmer, notamment au regard
-des règles comptables (droit OHADA, dont le Bénin est membre, qui impose usuellement la
-conservation des pièces comptables sur une durée de plusieurs années — la durée exacte
-est à vérifier dans l'Acte uniforme relatif au droit comptable et à la présentation des
-états financiers en vigueur) et des prescriptions civiles/commerciales applicables aux
-litiges liés au transport.
-
-| Type de donnée | Durée proposée (à valider) | Justification de départ |
+| Type de donnée | Durée | État |
 |---|---|---|
-| Compte utilisateur actif | Durée de vie du compte | Nécessaire à l'exécution du service |
-| Compte inactif / jamais activé | 2-3 ans après la dernière activité, puis suppression ou anonymisation | Limiter la conservation de données non utilisées |
-| Code OTP (`otp_codes`) | Quelques minutes à quelques heures après expiration/consommation, purge régulière | Donnée strictement transitoire, aucune utilité au-delà |
-| Historique des trajets et réservations | Durée de vie du compte + délai lié à la prescription des litiges commerciaux (à confirmer, souvent plusieurs années) | Preuve en cas de litige, obligations comptables |
-| Données de paiement (`payments`) | Alignée sur les obligations comptables (OHADA) — à confirmer, potentiellement ~10 ans | Obligations comptables et fiscales |
-| Avis/notations (`reviews`) | Durée de vie du compte cible, sauf demande de suppression justifiée | Utilité continue pour la confiance entre utilisateurs |
-| Messagerie entre utilisateurs (`messages`) | Courte (ex. durée du trajet + quelques mois), à réévaluer selon le risque de litige | Minimisation, sauf besoin probatoire |
-| Numéro de pièce d'identité déclaré (`identity_verifications.document_number`, depuis la migration V6) | La plus courte possible une fois la vérification traitée (ex. le numéro purgé/tronqué après APPROVED ou REJECTED, en ne gardant que le statut) — **à confirmer en priorité, donnée particulièrement sensible** | Vérifier l'identité d'un conducteur ; aucune pièce jointe (photo) n'est stockée à ce jour, seuls le type et le numéro déclarés le sont |
-| Journal d'audit (`audit_log`, actions sensibles back-office) | Alignée sur un objectif de sécurité/preuve interne (ex. quelques années), distincte des durées "métier" ci-dessus | Traçabilité des actions d'administration (suspensions, remboursements manuels...) |
-| Journaux techniques/serveur | Quelques semaines à quelques mois (voir aussi `docker-compose.prod.yml`, rotation des logs à 3 fichiers de 10 Mo par service) | Sécurité opérationnelle, pas de finalité au-delà du diagnostic |
-| Trace des recherches de trajets (`search_events`, migration V9) | **180 jours** (valeur par défaut de `SEARCH_EVENTS_RETENTION_DAYS`), **purge automatique quotidienne déjà implémentée** (`SearchEventRetentionScheduler`) — durée à confirmer par le juriste ; la réduire ne demande qu'un changement de variable d'environnement | Mesurer la liquidité (recherches sans résultat, axes en pénurie) sur quelques mois glissants ; aucune finalité au-delà. `user_id` est nullable (recherche anonyme) et passe à NULL si le compte est supprimé (`ON DELETE SET NULL`) : l'anonymisation d'un compte ne laisse aucun lien nominatif |
+| Compte jamais vérifié (`PENDING_VERIFICATION`) | 24 h puis suppression | Implémentée (`AuthHousekeepingScheduler`, `ekuiseo.auth.pending-account-ttl-hours`) |
+| Compte actif | Vie du compte ; anonymisation à la demande (section 4) | Implémentée |
+| Compte inactif | 2-3 ans après la dernière activité, puis anonymisation | Non implémentée (à décider) |
+| Codes OTP | 24 h après expiration | Implémentée (`RetentionScheduler`, `OTP_RETENTION_HOURS`) |
+| Sessions (`refresh_tokens`) | 30 jours glissants, 90 jours absolus, révocation à la déconnexion, à la suspension, au changement de contact | Implémentée (V11) |
+| Trajets, réservations, avis, signalements | Vie du compte + délai de prescription (à confirmer) ; conservés anonymisés après suppression du compte | Hypothèse |
+| Paiements et reversements | Obligations comptables OHADA (potentiellement ~10 ans) | Hypothèse ; conservés anonymisés |
+| Numéro de pièce d'identité | Jusqu'à la décision du modérateur, puis tronqué aux 4 derniers caractères | À vérifier après la phase 2 (`AdminVerificationService`) ; en attendant, supprimé à l'anonymisation |
+| Messages | 180 jours après le départ du trajet, sauf signalement ouvert | Implémentée (`MESSAGES_RETENTION_DAYS`) |
+| Notifications | 180 jours | Implémentée (`NOTIFICATIONS_RETENTION_DAYS`) |
+| Trace des recherches | 180 jours | Implémentée (`SEARCH_EVENTS_RETENTION_DAYS`) |
+| Alertes de recherche | Désactivées à leur date de fin (30 jours par défaut pour une alerte sans date), supprimées 90 jours après | Implémentée |
+| Journal d'audit | Quelques années (objectif de preuve interne) | Hypothèse, aucune purge |
+| Journaux techniques | 3 fichiers de 10 Mo par service (Docker) ; journaux d'accès du nginx de l'hôte selon `logrotate` système | Implémentée (rotation), durée en jours non garantie |
+| Sauvegardes | 7 quotidiennes + 4 hebdomadaires (35 jours au plus) | Implémentée (`scripts/backup.sh`) |
 
-Une fois ces durées validées, elles doivent être **implémentées techniquement**
-(purges automatiques). À ce jour, seule la purge des traces de recherche l'est ; les
-autres restent à ajouter côté backend (hors du périmètre infrastructure de ce dépôt).
+## 4. Droits des personnes — état d'implémentation
 
-## 4. Droits des personnes et comment les exercer techniquement
+| Droit | Mécanisme dans le produit | État |
+|---|---|---|
+| Accès et portabilité | `GET /api/v1/me/export` : fichier JSON de toutes les données du compte (profil, préférences, véhicules, comptes mobile money masqués, identité sans le numéro complet, abonnements, trajets et arrêts, réservations et plans de paiement, paiements, reversements, avis écrits et reçus, messages envoyés, notifications, alertes, signalements déposés) ; bouton « Télécharger mes données » dans les réglages ; 1 export par 24 h | Implémenté en phase 2 |
+| Rectification | Profil modifiable (`PATCH /api/v1/me`), changement d'e-mail en deux temps (`/me/email/request` puis `/confirm`), correction de contact par l'administration après vérification hors ligne (`PATCH /api/v1/admin/users/{id}/contact`, journalisée) | Implémenté |
+| Effacement | Suppression de compte par l'utilisateur, confirmée par un code envoyé à son e-mail (`POST /api/v1/me/delete/request` puis `POST /api/v1/me/delete`), ou anonymisation par l'administration (`POST /api/v1/admin/users/{id}/anonymize`, motif obligatoire, journalisée). La ligne `users` est conservée **anonymisée** (identité remplacée, téléphone factice unique, e-mail supprimé, photo et bio effacées, statut `DELETED`), les comptes mobile money, alertes, notifications, préférences et dossier d'identité sont supprimés, la plaque du véhicule et la destination des reversements sont masquées, le corps des messages est remplacé. Réservations, paiements, reversements et avis sont conservés pour les obligations comptables et l'intégrité des autres comptes. Refusée tant qu'un trajet à venir, une réservation active ou un reversement en attente existent. | Implémenté (lot 1.4) |
+| Opposition | Préférences de notification (e-mail, SMS) respectées par le routeur de notifications ; alertes de recherche supprimables ; aucun traitement marketing | Implémenté |
+| Contestation d'une suspension | Motif transmis à l'utilisateur (notification et e-mail) ; adresse de contact affichée sur l'écran de connexion et dans le pied de page | Implémenté (phase 2, pages légales) |
 
-Droits généralement associés à ce type de cadre (à confirmer précisément dans le texte
-béninois) : accès, rectification, effacement, opposition, et éventuellement
-portabilité. État actuel du backend vis-à-vis de chacun — **constats techniques**,
-établis en lisant le schéma de base (`backend/src/main/resources/db/migration/V1__init.sql`) :
+**Canal de dépôt des demandes** : `contact@ekuiseo.com` (`VITE_SUPPORT_EMAIL`), affiché
+dans le produit. Le délai de réponse engageant est à fixer avec le juriste. Les
+sauvegardes contenant des données effacées expirent sous 35 jours (section 3.2).
 
-- **Droit d'accès** : aucun endpoint d'export des données personnelles d'un utilisateur
-  n'existe aujourd'hui dans l'API (voir README, "Prochaines étapes" — l'endpoint public
-  `GET /api/v1/users/{id}` lui-même n'existe pas encore). À construire : un endpoint (ou
-  une procédure manuelle documentée en attendant) qui exporte l'ensemble des données
-  liées à un compte (`users`, `vehicles`, `trips`, `bookings`, `payments`, `reviews`,
-  `messages` où l'utilisateur est expéditeur).
-- **Droit de rectification** : partiellement possible via les endpoints de profil déjà
-  existants (`PATCH` sur le profil, si présent — voir la documentation Swagger de
-  l'API) ; les champs non modifiables via l'API (ex. téléphone vérifié) nécessitent une
-  procédure manuelle.
-- **Droit à l'effacement** : **techniquement contraint par le schéma actuel**. La table
-  `users` est référencée par `bookings.passenger_id`, `payments` (via `bookings`),
-  `reviews.author_id`/`target_id`, `driver_payouts.driver_id`, sans `ON DELETE CASCADE`
-  sur ces clés étrangères (contrairement à `vehicles.owner_id` et
-  `trip_stops.trip_id`, qui sont en cascade). Concrètement, **une suppression physique
-  (`DELETE`) d'un utilisateur ayant déjà des réservations ou paiements échouera** au
-  niveau de la base (violation de contrainte de clé étrangère). La voie réaliste est
-  une **anonymisation** plutôt qu'une suppression physique : remplacer `first_name`,
-  `last_name`, `email`, `phone`, `photo_url`, `bio` par des valeurs génériques
-  (`"Utilisateur supprimé"`, un numéro de téléphone factice unique pour respecter la
-  contrainte `UNIQUE`), invalider `password_hash`, et conserver la ligne pour
-  l'intégrité référentielle et les obligations comptables. Cette procédure n'est pas
-  automatisée aujourd'hui — à construire avant de promettre ce droit aux utilisateurs
-  dans une politique de confidentialité.
-- **Droit d'opposition** : à mettre en œuvre au cas par cas selon la finalité
-  concernée (ex. opposition à la réception de notifications marketing, si de telles
-  notifications existent).
-- **Droit à la portabilité** : peut réutiliser le même export que le droit d'accès, dans
-  un format structuré (JSON), si ce droit s'applique effectivement dans le cadre
-  béninois — à confirmer.
+## 5. Sous-traitants et tiers recevant des données
 
-**Canal de dépôt des demandes** : tant qu'aucun formulaire dédié n'existe dans le
-produit, prévoir une adresse de contact clairement affichée dans la politique de
-confidentialité (voir `docs/LANCEMENT.md`) et un délai de traitement engageant (à fixer
-avec le juriste, en cohérence avec les délais imposés par le texte béninois s'ils sont
-précisés).
+Inventaire du système déployé (`docker-compose.prod.yml`, `application.yml`, front) :
 
-## 5. Sous-traitants
+1. **Kkiapay** (agrégateur de paiement mobile money, Bénin) — deux flux : les appels
+   serveur (initiation, vérification, remboursement) et le **script tiers**
+   `cdn.kkiapay.me/k.js` avec son iframe `*.kkiapay.me` exécutés dans le navigateur
+   du passager, qui reçoivent le téléphone, le nom et l'e-mail du payeur au moment du
+   paiement. Vérifier : accord de traitement, localisation des serveurs, engagements
+   de conformité.
+2. **Relais SMTP** (`MAIL_MODE=smtp`, en production : Hostinger, boîte
+   `noreply@ekuiseo.com`) — reçoit l'adresse e-mail, les codes de connexion, les
+   notifications (reçus d'acompte, confirmations, annulations). Localisation et
+   conditions du prestataire à documenter.
+3. **Fournisseur SMS** — uniquement si `SMS_MODE=http` est activé (Twilio, Africa's
+   Talking ou SMSPartner selon `SMS_PROVIDER`) ; en production au 2026-09-05,
+   `SMS_MODE=log` : **aucun SMS ne sort**, le SMS n'est pas un canal actif.
+4. **MapTiler** (ou le fournisseur de `VITE_MAP_STYLE_URL`) — les tuiles de carte sont
+   chargées par le navigateur, qui envoie son adresse IP et la zone consultée. Non
+   activé tant que la variable est vide ; alternative : proxy Caddy ou tuiles
+   auto-hébergées.
+5. **OVH** — VPS **partagé avec un autre produit du même exploitant** (voir
+   `docs/DEPLOIEMENT.md`). Cloisonnement : réseau Docker interne pour PostGIS, Caddy
+   exposé uniquement sur `127.0.0.1` derrière le nginx de l'hôte ; l'autre application
+   n'accède pas aux conteneurs Ekuiseo mais partage l'hôte et son administrateur.
+6. **GitHub** (code source, intégration et déploiement continus) — aucune donnée
+   personnelle d'utilisateur, seulement le code et les secrets de déploiement.
+7. **Stockage hors site des sauvegardes** — uniquement si `BACKUP_REMOTE` (rclone) est
+   configuré ; à documenter au moment du choix (fournisseur, chiffrement, localisation).
 
-Trois catégories de sous-traitants (au sens large — prestataires qui traitent des
-données pour le compte d'Ekuiseo) sont déjà identifiables dans l'architecture actuelle :
-
-1. **Kkiapay** (agrégateur de paiement mobile money) — traite les données de paiement
-   et, transitivement, l'identité du payeur et son numéro de téléphone/moyen de
-   paiement. Vérifier : existence d'un contrat/accord de traitement des données avec
-   Kkiapay, localisation de leurs serveurs (transfert de données hors du Bénin ?), et
-   leurs propres engagements de conformité.
-2. **Fournisseur SMS** (à choisir, voir `.env.example` — `SMS_PROVIDER_KEY`) — traite au
-   minimum le numéro de téléphone et le contenu du SMS (code OTP). Mêmes vérifications
-   que pour Kkiapay.
-3. **Hébergeur** (Hostinger, pour le VPS lui-même) — héberge physiquement l'ensemble
-   des données. Vérifier la localisation des datacenters utilisés et les conditions
-   contractuelles d'Hostinger en matière de protection des données.
+Le registrar du domaine n'est pas un sous-traitant de données. Le collecteur d'erreurs
+front (`VITE_ERROR_REPORT_URL`) n'envoie aucune donnée personnelle (message, trace
+tronquée, route, version) ; s'il est branché sur un service externe, l'ajouter ici.
 
 **Pour chacun** : un contrat ou des conditions générales encadrant le traitement des
 données pour le compte d'Ekuiseo devrait exister (obligations de sécurité, limitation
 de l'usage des données aux finalités convenues, notification en cas d'incident). Si un
 de ces prestataires traite des données en dehors du territoire béninois, vérifier si
 le cadre légal béninois impose des conditions particulières au transfert
-transfrontalier de données personnelles (mécanisme fréquent dans ce type de
-législation, modalités précises à confirmer).
+transfrontalier de données personnelles.
 
 ## 6. Question ouverte : statut du covoiturage rémunéré au Bénin
 
@@ -179,45 +175,57 @@ Des questions qui se posent typiquement pour ce type de plateforme, sans répons
 établie dans ce dépôt :
 
 - Le partage de frais entre un conducteur et des passagers sur un trajet qu'il
-  effectue de toute façon (cas du covoiturage "quotidien" domicile-travail) est-il
+  effectue de toute façon (cas du covoiturage « quotidien » domicile-travail) est-il
   traité différemment, sur le plan réglementaire, d'un transport rémunéré de personnes
   au sens du code du transport routier béninois (taxi, transport interurbain agréé) ?
-  Le prix pratiqué (partage de frais réel vs tarif de marché) peut être un critère
-  pertinent selon les juridictions, mais son application au Bénin spécifiquement n'est
-  pas vérifiée ici.
 - Les trajets **interurbains** planifiés par des conducteurs qui ne font pas ce trajet
-  "de toute façon" (ex. un conducteur qui organise spécifiquement un aller-retour
-  Cotonou-Parakou pour transporter des passagers) se rapprochent-ils davantage d'une
-  activité de transport routier de personnes soumise à agrément/licence au Bénin ?
+  « de toute façon » se rapprochent-ils d'une activité de transport routier de
+  personnes soumise à agrément/licence ?
 - Y a-t-il une obligation d'assurance spécifique (responsabilité civile transport de
-  personnes contre rémunération) distincte de l'assurance automobile personnelle
-  classique d'un conducteur particulier ?
+  personnes contre rémunération) distincte de l'assurance automobile personnelle ?
 - Quel est le régime fiscal applicable aux revenus perçus par les conducteurs via la
-  plateforme (revenus occasionnels vs activité commerciale/professionnelle
-  nécessitant une immatriculation) ? Cela peut aussi avoir une incidence sur les
-  obligations d'Ekuiseo elle-même (déclaration de revenus versés à des tiers,
-  éventuelle retenue à la source).
-- La plateforme elle-même (l'entité qui exploite Ekuiseo) a-t-elle des obligations
-  d'immatriculation ou d'agrément spécifiques en tant qu'intermédiaire de mise en
-  relation dans le secteur du transport ?
+  plateforme, et quelles obligations en découlent pour Ekuiseo (déclaration de revenus
+  versés à des tiers, éventuelle retenue à la source) ?
+- La plateforme a-t-elle des obligations d'immatriculation ou d'agrément spécifiques
+  en tant qu'intermédiaire de mise en relation dans le secteur du transport ?
 
 **Recommandation** : traiter ce point avec un cabinet d'avocats béninois compétent en
 droit du numérique et droit des transports avant tout lancement commercial à grande
-échelle, et avant toute communication publique qui présenterait Ekuiseo comme
-pleinement conforme sur ce point. Documenter la réponse obtenue et la date à laquelle
-elle a été obtenue (le cadre réglementaire pouvant évoluer).
+échelle, documenter la réponse obtenue et sa date.
 
-## 7. Ce qu'il reste à faire, en résumé
+## 7. Cadre contractuel dans le produit
 
-- [ ] Confirmer le régime exact (déclaration/autorisation) applicable auprès de l'APDP.
-- [ ] Déposer le dossier auprès de l'APDP avant le lancement commercial.
-- [ ] Faire valider les durées de conservation de la section 3.2 par un juriste et les
-      implémenter techniquement (purges automatiques).
-- [ ] Construire l'export de données personnelles (droit d'accès/portabilité) et la
-      procédure d'anonymisation (droit à l'effacement) décrits en section 4.
-- [ ] Sécuriser contractuellement la relation avec Kkiapay, le fournisseur SMS et
-      Hostinger (section 5).
-- [ ] Faire trancher la question du statut du covoiturage rémunéré (section 6) avant
-      tout lancement commercial à grande échelle.
-- [ ] Rédiger une politique de confidentialité et des CGU reflétant les réponses
-      obtenues ci-dessus (voir `docs/LANCEMENT.md`).
+- Pages `/cgu`, `/confidentialite` et `/mentions-legales` servies par le front
+  (contenu versionné dans `frontend/src/content/legal/`), **rédigées comme projets de
+  texte à valider par un juriste** et affichées avec cet avertissement.
+- Acceptation horodatée à l'inscription : case obligatoire, version de texte
+  (`ekuiseo.terms.version`, `users.terms_version`, `users.terms_accepted_at`, V16) ;
+  quand la version change, l'application bloque l'utilisateur sur un écran
+  d'acceptation (`GET /api/v1/me` → `termsAcceptanceRequired`, `PATCH /api/v1/me/terms`).
+- Le barème d'annulation et le paiement fractionné décrits dans les CGU sont ceux de
+  `CancellationPolicy` et `FeePolicy` (règles métier de `CLAUDE.md`).
+
+## 8. Mesures de sécurité (résumé pour le dossier APDP)
+
+Authentification par code à usage unique envoyé à l'e-mail vérifié, sans mot de passe ;
+sessions à jetons courts avec rafraîchissement enregistré, rotation et révocation ;
+limitation de débit par adresse IP réelle et par numéro ; TLS de bout en bout (nginx de
+l'hôte, HSTS) ; en-têtes de sécurité et politique de contenu ; base de données
+accessible uniquement depuis le réseau interne Docker ; masquage des codes, e-mails,
+téléphones et numéros de pièce dans les journaux et le journal d'audit ; journal
+d'audit des actions d'administration ; sauvegardes quotidiennes vérifiées et exercice
+de restauration mensuel ; mises à jour de dépendances suivies (Dependabot) ; accès au
+back-office réservé au rôle ADMIN, actions sensibles avec motif obligatoire.
+
+## 9. Ce qu'il reste à faire, en résumé
+
+- [ ] Confirmer le régime exact (déclaration/autorisation) applicable auprès de l'APDP
+      et déposer le dossier avant le lancement commercial.
+- [ ] Faire valider par un juriste les durées « hypothèse » de la section 3.2 (comptes
+      inactifs, prescription, audit) et implémenter la purge des comptes inactifs.
+- [ ] Faire valider les textes des pages légales et la formulation des bases légales.
+- [ ] Sécuriser contractuellement la relation avec Kkiapay, le relais SMTP, OVH (et le
+      fournisseur SMS, le fournisseur de cartes et le stockage hors site le jour où ils
+      sont activés).
+- [ ] Faire trancher la question du statut du covoiturage rémunéré (section 6).
+- [ ] Décider du second facteur ou de la restriction d'accès pour le back-office.

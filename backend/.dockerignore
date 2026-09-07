@@ -1,0 +1,5 @@
+# Constat F444 : le build Maven se fait dans l image, jamais depuis un target/ local.
+target
+*.log
+.env
+.env.*
