@@ -59,7 +59,7 @@ public class IdentityDocument {
     private String storageKey;
 
     /** Empreinte SHA-256 (hexadecimal) du contenu en clair : controle d integrite a la relecture. */
-    @Column(nullable = false, length = 64, columnDefinition = "char(64)")
+    @Column(nullable = false, length = 64)
     private String sha256;
 
     @CreationTimestamp

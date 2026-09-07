@@ -29,7 +29,7 @@ CREATE TABLE identity_documents (
     content_type     VARCHAR(50) NOT NULL,
     size_bytes       INT NOT NULL,
     storage_key      VARCHAR(100) NOT NULL,
-    sha256           CHAR(64) NOT NULL,
+    sha256           VARCHAR(64) NOT NULL,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT chk_identity_documents_side CHECK (side IN ('FRONT', 'BACK', 'SELFIE')),
     CONSTRAINT uq_identity_documents_verification_side UNIQUE (verification_id, side)
