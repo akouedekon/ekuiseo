@@ -24,9 +24,9 @@ export function StatusBanners({ className }: { className?: string }) {
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="overflow-hidden bg-[var(--ocre-soft)]"
+            className="overflow-hidden bg-accent-soft"
           >
-            <div className="mx-auto flex max-w-6xl items-center gap-2 px-4 py-2 text-[13px] font-medium text-[var(--ocre-ink)]">
+            <div className="mx-auto flex max-w-6xl items-center gap-2 px-4 py-2 text-label font-medium text-accent-ink">
               <CloudOff className="size-4 shrink-0" aria-hidden />
               <span className="min-w-0 flex-1">
                 Hors ligne — vous consultez les données enregistrées. Réservations, messages et publications

@@ -8,7 +8,7 @@ import type { MessageResponse } from '@/api/types'
 export function useMessages(bookingId: string | undefined) {
   return useQuery<MessageResponse[]>({
     queryKey: ['bookings', bookingId, 'messages'],
-    queryFn: () => apiClient.get<MessageResponse[]>(`/api/v1/bookings/${bookingId}/messages`),
+    queryFn: ({ signal }) => apiClient.get<MessageResponse[]>(`/api/v1/bookings/${bookingId}/messages`, { signal }),
     enabled: !!bookingId,
     refetchInterval: 15_000,
   })
@@ -18,7 +18,7 @@ export function useMessages(bookingId: string | undefined) {
 export function useConversations(enabled = true) {
   return useQuery<ConversationSummary[]>({
     queryKey: ['me', 'conversations'],
-    queryFn: () => apiClient.get<ConversationSummary[]>('/api/v1/me/conversations'),
+    queryFn: ({ signal }) => apiClient.get<ConversationSummary[]>('/api/v1/me/conversations', { signal }),
     refetchInterval: 30_000,
     enabled,
   })

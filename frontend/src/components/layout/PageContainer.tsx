@@ -55,7 +55,10 @@ export function PageHeader({
         </button>
       ) : null}
       <div className="min-w-0 flex-1 pt-1">
-        <h1 className="headline text-[28px] sm:text-display-lg">{title}</h1>
+        {/* Focalisable par script apres une transition d'ecran (AppShell), sans entrer dans l'ordre de tabulation. */}
+        <h1 tabIndex={-1} className="headline text-display sm:text-display-lg outline-none">
+          {title}
+        </h1>
         {subtitle ? <p className="mt-1.5 text-body text-muted">{subtitle}</p> : null}
       </div>
       {actions ? <div className="flex shrink-0 items-center gap-2 pt-1">{actions}</div> : null}

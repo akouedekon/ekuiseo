@@ -1,9 +1,10 @@
 import { AnimatePresence, m } from 'motion/react'
-import { MapPin, X } from 'lucide-react'
+import { History, MapPin, X } from 'lucide-react'
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { FieldError } from '@/components/ui/input'
 import { cn } from '@/lib/cn'
 import { useCitySuggestions } from '@/hooks/useGeo'
-import { normalize, type CityOption } from '@/lib/cities'
+import { normalize, shortName, type CityOption } from '@/lib/cities'
 
 interface CityAutocompleteProps {
   label: string
@@ -17,10 +18,12 @@ interface CityAutocompleteProps {
 }
 
 /**
- * Champ ville avec autocompletion : referentiel serveur (GET /api/v1/geo/search)
- * complete par la liste locale (lib/cities.ts), qui sert seule hors ligne.
- * Combobox conforme WAI-ARIA : navigation flechee, Entree pour valider,
- * Echap pour fermer, `aria-activedescendant` sur l'option survolee.
+ * Champ ville avec autocompletion sur le referentiel serveur (GET
+ * /api/v1/geo/places, charge une fois et persiste ; repli local hors ligne).
+ * Champ vide : dernieres villes recherchees puis villes principales. Quartier :
+ * « Agla — Cotonou » (audit F422). Combobox conforme WAI-ARIA : navigation
+ * flechee, Entree pour valider, Echap pour fermer, `aria-activedescendant` sur
+ * l'option survolee, surbrillance lisible au clavier (audit F322).
  */
 export function CityAutocomplete({
   label,
@@ -38,12 +41,12 @@ export function CityAutocomplete({
   const [highlight, setHighlight] = useState(0)
   const rootRef = useRef<HTMLDivElement>(null)
 
-  // Referentiel serveur + liste locale (voir useCitySuggestions) : on ne propose pas A -> A.
-  const candidates = useCitySuggestions(query, 8)
+  const { suggestions: candidates, recentCount } = useCitySuggestions(query, 8)
   const suggestions = useMemo(
     () => (exclude ? candidates.filter((city) => city.label !== exclude.label) : candidates).slice(0, 7),
     [candidates, exclude],
   )
+  const recentShown = query.trim() ? 0 : Math.min(recentCount, suggestions.filter((c) => candidates.indexOf(c) < recentCount).length)
 
   // Saisie laissee sans selection : on la garde affichee, avec une erreur explicite.
   const [unresolved, setUnresolved] = useState(false)
@@ -68,13 +71,15 @@ export function CityAutocomplete({
       return
     }
     const q = normalize(query)
-    const exact = suggestions.find((city) => normalize(city.label) === q)
+    const exact = suggestions.find((city) => normalize(city.label) === q || normalize(shortName(city)) === q)
     const pick = exact ?? (suggestions.length === 1 ? suggestions[0] : undefined)
     if (pick) select(pick)
     else setUnresolved(true)
   }
   const commitRef = useRef(commit)
-  commitRef.current = commit
+  useEffect(() => {
+    commitRef.current = commit
+  })
 
   // Fermeture au clic exterieur : le champ ne doit jamais rester ouvert « dans le vide ».
   useEffect(() => {
@@ -91,7 +96,7 @@ export function CityAutocomplete({
 
   return (
     <div ref={rootRef} className="relative flex flex-col gap-1.5">
-      <label htmlFor={inputId} className="text-[13px] font-medium text-ink-2">
+      <label htmlFor={inputId} className="text-label font-medium text-ink-2">
         {label}
       </label>
       <div className="relative flex items-center">
@@ -152,18 +157,14 @@ export function CityAutocomplete({
               setUnresolved(false)
               setOpen(false)
             }}
-            className="absolute right-1 flex size-10 items-center justify-center rounded-[var(--radius-control)] text-muted transition-colors hover:text-ink"
+            className="absolute right-0.5 flex size-11 items-center justify-center rounded-[var(--radius-control)] text-muted transition-colors hover:text-ink"
           >
             <X className="size-4" aria-hidden />
           </button>
         ) : null}
       </div>
 
-      {shownError ? (
-        <p role="alert" className="text-[12px] font-medium text-[var(--vermillon)]">
-          {shownError}
-        </p>
-      ) : null}
+      {shownError ? <FieldError>{shownError}</FieldError> : null}
 
       <AnimatePresence>
         {open && suggestions.length > 0 ? (
@@ -177,25 +178,41 @@ export function CityAutocomplete({
             transition={{ duration: 0.14 }}
             className="scroll-thin absolute top-full z-30 mt-1 max-h-72 w-full overflow-y-auto rounded-[var(--radius-card)] border border-rule bg-surface p-1 shadow-e3"
           >
-            {suggestions.map((city, index) => (
-              <li key={city.label} id={`${listId}-${index}`} role="option" aria-selected={index === highlight}>
-                <button
-                  type="button"
-                  onMouseEnter={() => setHighlight(index)}
-                  // Le champ garde le focus : pas de blur (donc pas de fermeture) avant le clic, y compris sur iOS.
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => select(city)}
-                  className={cn(
-                    'flex min-h-11 w-full items-center gap-2.5 rounded-[6px] px-2.5 text-left transition-colors',
-                    index === highlight ? 'bg-[var(--surface-calm)]' : '',
-                  )}
-                >
-                  <MapPin className="size-4 shrink-0 text-muted" aria-hidden />
-                  <span className="min-w-0 flex-1 truncate text-[14px] font-medium">{city.label}</span>
-                  <span className="shrink-0 text-[12px] text-muted">{city.region}</span>
-                </button>
-              </li>
-            ))}
+            {suggestions.map((city, index) => {
+              const recent = index < recentShown
+              return (
+                <li key={city.id ?? city.label} id={`${listId}-${index}`} role="option" aria-selected={index === highlight}>
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onMouseEnter={() => setHighlight(index)}
+                    // Le champ garde le focus : pas de blur (donc pas de fermeture) avant le clic, y compris sur iOS.
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => select(city)}
+                    className={cn(
+                      'flex min-h-11 w-full items-center gap-2.5 rounded-[6px] px-2.5 text-left transition-colors',
+                      index === highlight && 'bg-primary-soft text-primary-ink shadow-[inset_0_0_0_2px_var(--focus-ring)]',
+                    )}
+                  >
+                    {recent ? (
+                      <History className="size-4 shrink-0 text-muted" aria-label="Recherche récente" />
+                    ) : (
+                      <MapPin className="size-4 shrink-0 text-muted" aria-hidden />
+                    )}
+                    <span className="min-w-0 flex-1 truncate text-body font-medium">
+                      {city.parentName ? (
+                        <>
+                          {shortName(city)} <span className="font-normal text-muted">— {city.parentName}</span>
+                        </>
+                      ) : (
+                        city.label
+                      )}
+                    </span>
+                    <span className="shrink-0 text-caption text-muted">{recent ? 'Récent' : city.region}</span>
+                  </button>
+                </li>
+              )
+            })}
           </m.ul>
         ) : null}
       </AnimatePresence>

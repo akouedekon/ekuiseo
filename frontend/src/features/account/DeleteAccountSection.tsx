@@ -79,7 +79,7 @@ export function DeleteAccountSection({ email }: { email: string | null }) {
           Impossible tant qu'un trajet publié ou une réservation est en cours. Un code de confirmation vous sera
           envoyé{email ? ` à ${email}` : ' par e-mail'}.
         </p>
-        <Button variant="ghost" className="mt-3 text-[var(--vermillon)]" onClick={() => setStep('explain')}>
+        <Button variant="ghost" className="mt-3 text-danger-ink" onClick={() => setStep('explain')}>
           <Trash2 className="size-4" aria-hidden />
           Supprimer mon compte
         </Button>
@@ -115,7 +115,7 @@ export function DeleteAccountSection({ email }: { email: string | null }) {
               disabled={confirm.isPending}
             />
             {codeError ? (
-              <p role="alert" className="text-center text-[13px] font-medium text-[var(--vermillon)]">
+              <p role="alert" className="text-center text-label font-medium text-danger-ink">
                 {codeError}
               </p>
             ) : null}

@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/misc'
 import { OtpInput } from '@/components/ui/otp-input'
 import { PageContainer } from '@/components/layout/PageContainer'
+import { PageMeta } from '@/components/layout/PageMeta'
 import { Logo } from '@/components/layout/Logo'
 import { ApiError } from '@/api/client'
 import type { OtpRequestResponse } from '@/api/types'
@@ -206,12 +207,13 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
 
   return (
     <PageContainer width="sm" className="flex min-h-[calc(100dvh-8rem)] flex-col justify-center">
+      <PageMeta title={mode === 'register' ? 'Créer un compte' : 'Connexion'} noindex />
       <div className="mb-8 text-center">
         <Logo size={48} variant="mark" className="justify-center drop-shadow-[0_8px_16px_rgb(14_124_74/0.28)]" />
-        <h1 className="headline mt-5 text-[28px] sm:text-display-lg">
+        <h1 tabIndex={-1} className="headline mt-5 text-display outline-none sm:text-display-lg">
           {mode === 'register' ? 'Créer un compte' : 'Bienvenue sur Ekuiseo'}
         </h1>
-        <p className="mt-1.5 text-[14px] text-muted">
+        <p className="mt-1.5 text-body text-muted">
           {step === 'phone'
             ? mode === 'register'
               ? 'Quelques informations, puis un code envoyé sur votre e-mail pour ouvrir la session.'
@@ -268,7 +270,7 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
                   hint="Bénin : +229 suivi des 10 chiffres (01 …). Togo et Nigéria acceptés."
                   leading={<Phone />}
                   placeholder="+229 01 97 00 00 00"
-                  className="tnum text-[17px] font-semibold"
+                  className="tnum text-title font-semibold"
                 />
                 {mode === 'register' ? (
                   <>
@@ -295,7 +297,7 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
                           aria-invalid={errors.acceptTerms ? true : undefined}
                           className="mt-0.5"
                         />
-                        <span className="text-[13px] leading-snug text-ink-2">
+                        <span className="text-label leading-snug text-ink-2">
                           J'ai lu et j'accepte les{' '}
                           <Link to={cgu?.path ?? '/cgu'} target="_blank" rel="noopener" className="font-medium text-primary-ink underline underline-offset-2">
                             conditions générales d'utilisation
@@ -308,7 +310,7 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
                         </span>
                       </label>
                       {errors.acceptTerms ? (
-                        <p role="alert" className="mt-1.5 text-[12px] font-medium text-[var(--vermillon)]">
+                        <p role="alert" className="mt-1.5 text-caption font-medium text-danger-ink">
                           {errors.acceptTerms}
                         </p>
                       ) : null}
@@ -319,21 +321,21 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
                   {mode === 'register' && !existingAccount ? 'Créer mon compte' : 'Recevoir le code'}
                 </Button>
                 {existingAccount ? (
-                  <p className="text-center text-[13px] text-muted">
+                  <p className="text-center text-label text-muted">
                     Ce numéro a déjà un compte : « Recevoir le code » vous connecte directement, sans recréer de compte.
                   </p>
                 ) : null}
               </form>
 
-              <p className="mt-4 flex items-start gap-2 text-[12px] leading-relaxed text-muted">
+              <p className="mt-4 flex items-start gap-2 text-caption leading-relaxed text-muted">
                 <ShieldCheck className="mt-0.5 size-4 shrink-0" aria-hidden />
                 Votre numéro n'est jamais affiché publiquement. Il sert à vous identifier et à joindre le conducteur
                 le jour du trajet.
               </p>
               {mode === 'login' ? (
-                <p className="mt-2 text-[12px] leading-relaxed text-muted">
+                <p className="mt-2 text-caption leading-relaxed text-muted">
                   Vous n'avez plus accès à l'adresse e-mail de votre compte ? Écrivez à{' '}
-                  <a href={`mailto:${SUPPORT_EMAIL}`} className="font-medium text-[var(--indigo)] underline-offset-4 hover:underline">
+                  <a href={`mailto:${SUPPORT_EMAIL}`} className="font-medium text-primary-ink underline-offset-4 hover:underline">
                     {SUPPORT_EMAIL}
                   </a>{' '}
                   depuis une autre adresse en indiquant votre numéro : après vérification de votre identité, nous
@@ -342,13 +344,13 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
               ) : null}
             </Card>
 
-            <p className="mt-4 text-center text-[14px] text-muted">
+            <p className="mt-4 text-center text-body text-muted">
               {mode === 'register' ? (
                 <>
                   Vous avez déjà un compte ?{' '}
                   <Link
                     to={`/login${searchParams.get('next') ? `?next=${encodeURIComponent(redirectTo)}` : ''}`}
-                    className="font-semibold text-[var(--indigo)] underline-offset-4 hover:underline"
+                    className="font-semibold text-primary-ink underline-offset-4 hover:underline"
                   >
                     Se connecter
                   </Link>
@@ -358,7 +360,7 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
                   Première visite ?{' '}
                   <Link
                     to={`/register${searchParams.get('next') ? `?next=${encodeURIComponent(redirectTo)}` : ''}`}
-                    className="font-semibold text-[var(--indigo)] underline-offset-4 hover:underline"
+                    className="font-semibold text-primary-ink underline-offset-4 hover:underline"
                   >
                     Créer un compte
                   </Link>
@@ -375,14 +377,14 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
             transition={{ duration: 0.22 }}
           >
             <Card className="p-5">
-              <div className="mb-4 flex items-center gap-2 text-[13px] font-medium text-ink-2">
-                <MessageSquareLock className="size-4 text-[var(--indigo)]" aria-hidden />
+              <div className="mb-4 flex items-center gap-2 text-label font-medium text-ink-2">
+                <MessageSquareLock className="size-4 text-primary-ink" aria-hidden />
                 Saisissez le code à 6 chiffres
               </div>
 
               {delivery?.channel !== 'SMS' ? (
-                <p className="mb-4 flex items-start gap-2 rounded-lg bg-[var(--surface-2)] p-3 text-[12px] leading-relaxed text-muted">
-                  <MailCheck className="mt-0.5 size-4 shrink-0 text-[var(--indigo)]" aria-hidden />
+                <p className="mb-4 flex items-start gap-2 rounded-lg bg-surface-2 p-3 text-caption leading-relaxed text-muted">
+                  <MailCheck className="mt-0.5 size-4 shrink-0 text-primary-ink" aria-hidden />
                   L'e-mail peut mettre une minute à arriver. Vérifiez aussi le dossier « Spam » ou « Indésirables ».
                 </p>
               ) : null}
@@ -399,7 +401,7 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
               />
 
               {codeError ? (
-                <p role="alert" className="mt-2 text-center text-[13px] font-medium text-[var(--vermillon)]">
+                <p role="alert" className="mt-2 text-center text-label font-medium text-danger-ink">
                   {codeError}
                 </p>
               ) : null}
@@ -416,7 +418,7 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
               </Button>
 
               {/* Renvoi avec minuterie : evite le matraquage du fournisseur d'e-mail ou de SMS. Toujours un code de connexion, jamais une nouvelle inscription. */}
-              <div className="mt-4 text-center text-[13px]">
+              <div className="mt-4 text-center text-label">
                 {resendIn > 0 ? (
                   <span className="tnum text-muted">Renvoyer le code dans {formatCountdown(resendIn)}</span>
                 ) : (
@@ -424,7 +426,7 @@ export function LoginPage({ mode = 'login' }: { mode?: 'login' | 'register' }) {
                     type="button"
                     disabled={sending}
                     onClick={requestLoginCode}
-                    className="font-semibold text-[var(--indigo)] underline-offset-4 hover:underline disabled:opacity-60"
+                    className="font-semibold text-primary-ink underline-offset-4 hover:underline disabled:opacity-60"
                   >
                     Renvoyer le code
                   </button>

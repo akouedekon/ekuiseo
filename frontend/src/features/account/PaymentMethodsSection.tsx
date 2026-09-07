@@ -11,6 +11,7 @@ import { Sheet } from '@/components/ui/sheet'
 import { EmptyState, ErrorState } from '@/components/ui/states'
 import { SectionTitle } from '@/components/layout/PageContainer'
 import { useAddPaymentMethod, useDeletePaymentMethod, useMyPaymentMethods } from '@/hooks/useAccount'
+import { describeError } from '@/lib/errors'
 import { formatPhone } from '@/lib/format'
 import { listContainer, listItem } from '@/lib/motion'
 import { providerLabel } from '@/lib/payments'
@@ -30,7 +31,7 @@ export function PaymentMethodsSection({ defaultPhone }: { defaultPhone: string }
     if (!toDelete) return
     deleteMethod.mutate(toDelete.id, {
       onSuccess: () => toast.success('Compte mobile money retiré'),
-      onError: () => toast.error("Le compte n'a pas pu être retiré. Réessayez."),
+      onError: (error) => toast.error(describeError(error, "Le compte n'a pas pu être retiré. Réessayez.")),
       onSettled: () => setToDelete(null),
     })
   }
@@ -67,7 +68,7 @@ export function PaymentMethodsSection({ defaultPhone }: { defaultPhone: string }
           {list.map((method) => (
             <m.li key={method.id} variants={listItem}>
               <Card className="flex items-center gap-3 p-4">
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-[var(--indigo-soft)] text-[var(--indigo)]">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-primary-soft text-primary-ink">
                   <Smartphone className="size-5" aria-hidden />
                 </span>
                 <div className="min-w-0 flex-1">
@@ -85,7 +86,7 @@ export function PaymentMethodsSection({ defaultPhone }: { defaultPhone: string }
                   size="icon"
                   aria-label={`Retirer le compte ${formatPhone(method.phone)}`}
                   onClick={() => setToDelete(method)}
-                  className="text-muted hover:bg-[var(--vermillon-soft)] hover:text-[var(--vermillon)]"
+                  className="text-muted hover:bg-danger-soft hover:text-danger-ink"
                 >
                   <Trash2 className="size-4" aria-hidden />
                 </Button>
@@ -119,7 +120,7 @@ export function PaymentMethodsSection({ defaultPhone }: { defaultPhone: string }
                 setAddOpen(false)
                 toast.success('Compte mobile money ajouté')
               },
-              onError: () => toast.error("Le compte n'a pas pu être ajouté. Réessayez."),
+              onError: (error) => toast.error(describeError(error, "Le compte n'a pas pu être ajouté. Réessayez.")),
             })
           }
         />

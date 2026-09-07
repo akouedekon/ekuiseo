@@ -1,61 +1,106 @@
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useSyncExternalStore } from 'react'
 import { apiClient } from '@/api/client'
-import { searchCities, type CityOption } from '@/lib/cities'
 import type { GeoPlaceResponse } from '@/api/extended'
+import { FALLBACK_PLACES, SAME_PLACE_KM, haversineKm, normalize, searchPlaces, shortName, type CityOption } from '@/lib/cities'
+import { readRecentPlaces } from '@/lib/recentPlaces'
 
-const DEBOUNCE_MS = 250
-const MIN_QUERY_LENGTH = 2
+/** Cle persistee (racine `geo`, liste blanche de lib/queryClient.ts) : le referentiel survit au redemarrage hors ligne. */
+export const GEO_PLACES_KEY = ['geo', 'places'] as const
 
-/** Valeur retardee : l'API n'est interrogee qu'apres un court silence de saisie. */
-function useDebouncedValue<T>(value: T, delay: number): T {
-  const [debounced, setDebounced] = useState(value)
-  useEffect(() => {
-    const id = window.setTimeout(() => setDebounced(value), delay)
-    return () => window.clearTimeout(id)
-  }, [value, delay])
-  return debounced
-}
-
-function toCityOption(place: GeoPlaceResponse): CityOption {
+/** Libelle transmis a l'API et affiche : « Agla — Cotonou » pour un quartier, la ville seule sinon (audit F422). */
+export function toCityOption(place: GeoPlaceResponse): CityOption {
+  const parentName = place.parentName ?? null
   return {
-    label: place.name,
+    id: place.id,
+    label: parentName ? `${place.name} — ${parentName}` : place.name,
     lat: place.lat,
     lng: place.lng,
-    region: place.region ?? (place.countryCode === 'BJ' ? 'Bénin' : place.countryCode),
+    region: place.region ?? (place.countryCode && place.countryCode !== 'BJ' ? place.countryCode : 'Bénin'),
+    kind: place.kind,
+    parentName,
   }
 }
 
 /**
- * Suggestions de villes/quartiers pour l'autocompletion : le referentiel du
- * serveur (GET /api/v1/geo/search, migration V3) en premier, complete par la
- * liste locale (lib/cities.ts) qui reste la seule source hors ligne ou si
- * l'API ne repond pas. Jamais de doublon : un lieu connu des deux cotes n'est
- * propose qu'une fois, avec les coordonnees du serveur.
+ * Referentiel complet des lieux (GET /api/v1/geo/places, public, cacheable 24 h) :
+ * charge une fois, persiste, et seule source des villes de l'autocompletion
+ * (audit F411). Tant qu'il n'est pas arrive (premiere ouverture hors ligne), la
+ * liste de repli de lib/cities.ts sert a sa place.
  */
-export function useCitySuggestions(query: string, limit = 7): CityOption[] {
-  const trimmed = query.trim()
-  const debounced = useDebouncedValue(trimmed, DEBOUNCE_MS)
-
-  const remote = useQuery({
-    queryKey: ['geo', 'search', debounced.toLowerCase()],
-    queryFn: () =>
-      apiClient.get<GeoPlaceResponse[]>(`/api/v1/geo/search?q=${encodeURIComponent(debounced)}`, { auth: false }),
-    enabled: debounced.length >= MIN_QUERY_LENGTH,
-    staleTime: 10 * 60_000,
-    // Une suggestion en retard ne sert a rien : pas de reessai, la liste locale prend le relais.
-    retry: false,
+export function useGeoPlaces() {
+  return useQuery<GeoPlaceResponse[], Error, CityOption[]>({
+    queryKey: GEO_PLACES_KEY,
+    queryFn: ({ signal }) => apiClient.get<GeoPlaceResponse[]>('/api/v1/geo/places', { auth: false, signal }),
+    select: (places) => places.map(toCityOption),
+    staleTime: 24 * 60 * 60 * 1000,
+    gcTime: 7 * 24 * 60 * 60 * 1000,
   })
+}
 
-  const local = useMemo(() => searchCities(trimmed, limit), [trimmed, limit])
+/** Deux suggestions sont le meme lieu : meme identifiant serveur, ou meme nom normalise a moins de 500 m. */
+function samePlace(a: CityOption, b: CityOption): boolean {
+  if (a.id && b.id) return a.id === b.id
+  return normalize(shortName(a)) === normalize(shortName(b)) && haversineKm(a.lat, a.lng, b.lat, b.lng) < SAME_PLACE_KM
+}
+
+export function dedupePlaces(candidates: CityOption[]): CityOption[] {
+  const kept: CityOption[] = []
+  for (const candidate of candidates) {
+    if (!kept.some((existing) => samePlace(existing, candidate))) kept.push(candidate)
+  }
+  return kept
+}
+
+/*
+ * Historique des dernieres villes recherchees (localStorage). Le composant se
+ * re-rend quand `rememberPlace` a ecrit (evenement `storage` entre onglets, et
+ * un evenement maison dans le meme onglet) ; en pratique la liste est relue a
+ * chaque ouverture du champ.
+ */
+function subscribeRecents(onChange: () => void) {
+  window.addEventListener('storage', onChange)
+  window.addEventListener('ekuiseo:recent-places', onChange)
+  return () => {
+    window.removeEventListener('storage', onChange)
+    window.removeEventListener('ekuiseo:recent-places', onChange)
+  }
+}
+let recentsSnapshot: { raw: string; value: CityOption[] } = { raw: '', value: [] }
+function getRecentsSnapshot(): CityOption[] {
+  let raw = ''
+  try {
+    raw = localStorage.getItem('ekuiseo.recentPlaces') ?? ''
+  } catch {
+    raw = ''
+  }
+  if (raw !== recentsSnapshot.raw) recentsSnapshot = { raw, value: readRecentPlaces() }
+  return recentsSnapshot.value
+}
+const NO_RECENTS: CityOption[] = []
+
+export function useRecentPlaces(): CityOption[] {
+  return useSyncExternalStore(subscribeRecents, getRecentsSnapshot, () => NO_RECENTS)
+}
+
+/**
+ * Suggestions de villes et quartiers pour l'autocompletion, calculees localement
+ * sur le referentiel serveur (instantane, hors ligne compris) : champ vide ->
+ * dernieres villes recherchees puis villes principales ; saisie -> recherche
+ * tolerante (accents, alias, ville de rattachement). Jamais de doublon (audit F411).
+ */
+export function useCitySuggestions(query: string, limit = 7): { suggestions: CityOption[]; recentCount: number } {
+  const places = useGeoPlaces()
+  const recents = useRecentPlaces()
+  const trimmed = query.trim()
+  const source = places.data ?? FALLBACK_PLACES
 
   return useMemo(() => {
-    const fromApi = (remote.data ?? []).map(toCityOption)
-    const seen = new Set(fromApi.map((c) => c.label.toLowerCase()))
-    const merged = [...fromApi]
-    for (const city of local) {
-      if (!seen.has(city.label.toLowerCase())) merged.push(city)
+    if (!trimmed) {
+      const recentOnes = dedupePlaces(recents).slice(0, limit)
+      const rest = dedupePlaces([...recentOnes, ...searchPlaces(source, '', limit)]).slice(0, limit)
+      return { suggestions: rest, recentCount: Math.min(recentOnes.length, rest.length) }
     }
-    return merged.slice(0, limit)
-  }, [remote.data, local, limit])
+    return { suggestions: dedupePlaces(searchPlaces(source, trimmed, limit + 2)).slice(0, limit), recentCount: 0 }
+  }, [trimmed, source, recents, limit])
 }

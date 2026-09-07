@@ -1,3 +1,4 @@
+import * as RadioGroupPrimitive from '@radix-ui/react-radio-group'
 import * as TabsPrimitive from '@radix-ui/react-tabs'
 import { forwardRef, type ComponentPropsWithoutRef, type ElementRef } from 'react'
 import { cn } from '@/lib/cn'
@@ -20,6 +21,7 @@ export const TabsList = forwardRef<
   )
 })
 
+/** Onglet : 44 px de haut, cible tactile de la charte (audit F324). */
 export const TabsTrigger = forwardRef<
   ElementRef<typeof TabsPrimitive.Trigger>,
   ComponentPropsWithoutRef<typeof TabsPrimitive.Trigger>
@@ -28,7 +30,7 @@ export const TabsTrigger = forwardRef<
     <TabsPrimitive.Trigger
       ref={ref}
       className={cn(
-        'inline-flex h-9 flex-1 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[7px] px-3 text-label font-semibold text-ink-2 transition-[background-color,color,box-shadow] duration-150 hover:text-ink',
+        'inline-flex min-h-11 flex-1 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[7px] px-3 text-label font-semibold text-ink-2 transition-[background-color,color,box-shadow] duration-150 hover:text-ink',
         'data-[state=active]:bg-surface data-[state=active]:text-ink data-[state=active]:shadow-e1',
         className,
       )}
@@ -47,7 +49,8 @@ export const TabsContent = forwardRef<
 /**
  * Bascule majeure a deux etats (Interurbain / Quotidien) : plus grande que
  * l'onglet standard, avec un curseur plein qui glisse — c'est le choix
- * structurant de l'ecran d'accueil, il doit se voir.
+ * structurant de l'ecran d'accueil, il doit se voir. Construite sur le groupe
+ * radio Radix : tabindex tournant et fleches du clavier fournis (audit F321).
  */
 export function SegmentedToggle<T extends string>({
   value,
@@ -63,21 +66,20 @@ export function SegmentedToggle<T extends string>({
   className?: string
 }) {
   return (
-    <div
-      role="radiogroup"
+    <RadioGroupPrimitive.Root
+      value={value}
+      onValueChange={(next) => onValueChange(next as T)}
       aria-label={label}
+      orientation="horizontal"
       className={cn('grid gap-1 rounded-[12px] bg-surface-2 p-1', className)}
       style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
     >
       {options.map((option) => {
         const active = option.value === value
         return (
-          <button
+          <RadioGroupPrimitive.Item
             key={option.value}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            onClick={() => onValueChange(option.value)}
+            value={option.value}
             className={cn(
               'flex min-h-12 flex-col items-center justify-center rounded-[9px] px-2 py-1.5 text-center transition-[background-color,color,box-shadow,transform] duration-200 active:scale-[0.985]',
               active ? 'bg-surface text-ink shadow-e2' : 'text-ink-2 hover:text-ink',
@@ -85,9 +87,9 @@ export function SegmentedToggle<T extends string>({
           >
             <span className="font-display text-body font-bold tracking-[-0.01em]">{option.label}</span>
             {option.hint ? <span className="text-caption leading-tight text-muted">{option.hint}</span> : null}
-          </button>
+          </RadioGroupPrimitive.Item>
         )
       })}
-    </div>
+    </RadioGroupPrimitive.Root>
   )
 }

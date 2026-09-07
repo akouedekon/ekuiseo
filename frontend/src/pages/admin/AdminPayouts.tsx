@@ -14,7 +14,7 @@ import { providerLabel } from '@/lib/payments'
 import { PaymentAccountsToVerify } from '@/features/admin/PaymentAccountsToVerify'
 import { useAdminPayouts, useFailPayout, useRunPayoutBatch, useSettlePayout } from '@/hooks/useAdmin'
 import { describeError } from '@/lib/errors'
-import { formatDateTime, formatDayShort, formatFcfa, formatPhone } from '@/lib/format'
+import { formatDayShort, formatFcfa, formatPhone } from '@/lib/format'
 import type { AdminPayoutResponse, PayoutStatus } from '@/api/extended'
 
 const STATUS: Record<PayoutStatus, { label: string; tone: 'warning' | 'indigo' | 'success' | 'danger'; order: number }> = {
@@ -26,8 +26,8 @@ const STATUS: Record<PayoutStatus, { label: string; tone: 'warning' | 'indigo' |
 }
 
 const ACCENT: Partial<Record<PayoutStatus, string>> = {
-  PENDING: 'var(--ocre)',
-  FAILED: 'var(--vermillon)',
+  PENDING: 'var(--accent)',
+  FAILED: 'var(--danger)',
 }
 
 /** Lots qui attendent encore un virement : a verser, en cours, ou a relancer apres echec. */
@@ -66,7 +66,7 @@ const COLUMNS: DataTableColumn<AdminPayoutResponse>[] = [
     cell: (payout) => (
       <span className="tnum block text-label text-ink-2">
         {payout.provider ? <span className="block">{providerLabel(payout.provider)}</span> : null}
-        <span className={payout.phone ? 'block whitespace-nowrap text-muted' : 'block text-[var(--vermillon)]'}>
+        <span className={payout.phone ? 'block whitespace-nowrap text-muted' : 'block text-danger-ink'}>
           {payout.phone ? formatPhone(payout.phone) : 'Aucun compte enregistré'}
         </span>
       </span>
@@ -101,7 +101,7 @@ const COLUMNS: DataTableColumn<AdminPayoutResponse>[] = [
       <span className="font-display font-bold text-ink">
         {formatFcfa(payout.amount)}
         {payout.reversedCount > 0 ? (
-          <span className="block text-[12px] font-normal text-[var(--vermillon)]">
+          <span className="block text-caption font-normal text-danger-ink">
             −{formatFcfa(payout.reversedAmount)} à déduire ({payout.reversedCount} remboursement
             {payout.reversedCount > 1 ? 's' : ''})
           </span>
@@ -117,12 +117,23 @@ const COLUMNS: DataTableColumn<AdminPayoutResponse>[] = [
     cell: (payout) => <Badge tone={STATUS[payout.status]?.tone ?? 'neutral'}>{STATUS[payout.status]?.label ?? payout.status}</Badge>,
   },
   {
+    id: 'settledAt',
+    header: 'Versé le',
+    align: 'right',
+    mobile: 'value',
+    sortValue: (payout) => payout.settledAt ?? payout.paidAt ?? null,
+    // Date reelle du virement (audit F504), a rapprocher du releve de l'operateur.
+    cell: (payout) => {
+      const settledAt = payout.settledAt ?? payout.paidAt
+      return settledAt ? <span className="tnum whitespace-nowrap text-ink-2">{formatDayShort(settledAt)}</span> : <span className="text-muted">—</span>
+    },
+  },
+  {
     id: 'settlement',
     header: 'Règlement',
     mobile: 'meta',
     className: 'hidden lg:table-cell max-w-[260px]',
     cell: (payout) => {
-      const settledAt = payout.settledAt ?? payout.paidAt
       if (isSettled(payout)) {
         return (
           <span className="block text-label text-ink-2">
@@ -130,15 +141,15 @@ const COLUMNS: DataTableColumn<AdminPayoutResponse>[] = [
               <span className="tnum block truncate" title={payout.externalReference}>
                 Réf. {payout.externalReference}
               </span>
-            ) : null}
-            {settledAt ? <span className="tnum block text-muted">{formatDateTime(settledAt)}</span> : null}
-            {!payout.externalReference && !settledAt ? <span className="text-muted">—</span> : null}
+            ) : (
+              <span className="text-muted">Sans référence</span>
+            )}
           </span>
         )
       }
       if (payout.status === 'FAILED' && payout.failureReason) {
         return (
-          <span className="block text-label text-[var(--vermillon)]" title={payout.failureReason}>
+          <span className="block text-label text-danger-ink" title={payout.failureReason}>
             {payout.failureReason}
           </span>
         )
@@ -256,7 +267,7 @@ export function AdminPayouts() {
       />
 
       <Card className="mb-4 flex items-center gap-3 p-4">
-        <span className="flex size-11 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-[var(--ocre-soft)] text-[var(--ocre-ink)]">
+        <span className="flex size-11 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-accent-soft text-accent-ink">
           <Wallet className="size-5" aria-hidden />
         </span>
         <div>
@@ -294,7 +305,7 @@ export function AdminPayouts() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="text-[var(--vermillon)]"
+                    className="text-danger-ink"
                     onClick={() => setFailing({ payout, reason: '' })}
                   >
                     <CircleX className="size-4" aria-hidden />

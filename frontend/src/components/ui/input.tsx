@@ -9,7 +9,7 @@ export const Label = forwardRef<
   return (
     <LabelPrimitive.Root
       ref={ref}
-      className={cn('text-[13px] font-medium text-ink-2', className)}
+      className={cn('text-label font-medium text-ink-2', className)}
       {...props}
     />
   )
@@ -18,7 +18,24 @@ export const Label = forwardRef<
 /* Anatomie commune des champs : voir .ek-field dans index.css (repos, survol, focus, erreur, desactive). */
 const controlBase = 'ek-field w-full rounded-[var(--radius-control)] px-3 text-base placeholder:text-muted'
 
-export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
+/** Message d'erreur sous un champ : encre danger (6,5:1 sur surface), jamais la teinte pleine (audit F314). */
+export function FieldError({ id, children }: { id?: string; children: ReactNode }) {
+  return (
+    <p id={id} role="alert" className="text-caption font-medium text-danger-ink">
+      {children}
+    </p>
+  )
+}
+
+export function FieldHint({ id, children }: { id?: string; children: ReactNode }) {
+  return (
+    <p id={id} className="text-caption text-muted">
+      {children}
+    </p>
+  )
+}
+
+interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string
   hint?: string
   error?: string
@@ -54,20 +71,12 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         />
         {trailing ? <span className="absolute right-3 text-muted [&>svg]:size-[18px]">{trailing}</span> : null}
       </div>
-      {error ? (
-        <p id={`${inputId}-error`} role="alert" className="text-[12px] font-medium text-[var(--vermillon)]">
-          {error}
-        </p>
-      ) : hint ? (
-        <p id={`${inputId}-hint`} className="text-[12px] text-muted">
-          {hint}
-        </p>
-      ) : null}
+      {error ? <FieldError id={`${inputId}-error`}>{error}</FieldError> : hint ? <FieldHint id={`${inputId}-hint`}>{hint}</FieldHint> : null}
     </div>
   )
 })
 
-export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
+interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   label?: string
   hint?: string
   error?: string
@@ -89,13 +98,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
         className={cn(controlBase, 'min-h-24 resize-y py-2.5 leading-relaxed', className)}
         {...props}
       />
-      {error ? (
-        <p role="alert" className="text-[12px] font-medium text-[var(--vermillon)]">
-          {error}
-        </p>
-      ) : hint ? (
-        <p className="text-[12px] text-muted">{hint}</p>
-      ) : null}
+      {error ? <FieldError>{error}</FieldError> : hint ? <FieldHint>{hint}</FieldHint> : null}
     </div>
   )
 })

@@ -4,7 +4,6 @@ import { cn } from '@/lib/cn'
 
 export const DropdownMenu = DropdownMenuPrimitive.Root
 export const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger
-export const DropdownMenuGroup = DropdownMenuPrimitive.Group
 
 export const DropdownMenuContent = forwardRef<
   ElementRef<typeof DropdownMenuPrimitive.Content>,
@@ -34,8 +33,11 @@ export const DropdownMenuItem = forwardRef<
     <DropdownMenuPrimitive.Item
       ref={ref}
       className={cn(
-        'flex min-h-11 cursor-pointer select-none items-center gap-2.5 rounded-[6px] px-2.5 text-[14px] outline-none transition-colors data-[highlighted]:bg-[var(--surface-calm)] data-[disabled]:opacity-50 [&>svg]:size-4 [&>svg]:shrink-0',
-        tone === 'danger' ? 'text-[var(--vermillon)]' : 'text-ink',
+        // Surbrillance clavier lisible (audit F322) : fond pale + anneau interieur de la teinte de focus.
+        'flex min-h-11 cursor-pointer select-none items-center gap-2.5 rounded-[6px] px-2.5 text-body outline-none transition-colors data-[highlighted]:shadow-[inset_0_0_0_2px_var(--focus-ring)] data-[disabled]:opacity-50 [&>svg]:size-4 [&>svg]:shrink-0',
+        tone === 'danger'
+          ? 'text-danger-ink data-[highlighted]:bg-danger-soft'
+          : 'text-ink data-[highlighted]:bg-primary-soft data-[highlighted]:text-primary-ink',
         className,
       )}
       {...props}
@@ -50,7 +52,7 @@ export const DropdownMenuLabel = forwardRef<
   return (
     <DropdownMenuPrimitive.Label
       ref={ref}
-      className={cn('px-2.5 py-1.5 text-[12px] font-semibold uppercase tracking-wide text-muted', className)}
+      className={cn('px-2.5 py-1.5 text-caption font-semibold uppercase tracking-wide text-muted', className)}
       {...props}
     />
   )

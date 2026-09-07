@@ -28,8 +28,9 @@ function searchPath(alert: TripAlertResponse): string {
     toLat: String(alert.destLat),
     toLng: String(alert.destLng),
     seats: String(alert.seats),
-    type: alert.tripType,
   })
+  // Alerte « tous les modes » : la recherche part sans `type`.
+  if (alert.tripType) params.set('type', alert.tripType)
   if (alert.date) params.set('date', alert.date)
   return `/search?${params.toString()}`
 }
@@ -95,19 +96,20 @@ export function AlertsSection() {
         <m.ul variants={listContainer} initial="hidden" animate="show" className="space-y-2">
           {list.map((alert) => (
             <m.li key={alert.id} variants={listItem}>
-              <Card className={alert.active ? 'p-4' : 'p-4 opacity-70'}>
+              <Card className={alert.active ? 'border-l-[3px] border-l-primary p-4' : 'border-l-[3px] border-l-rule-strong p-4'}>
                 <div className="flex items-start gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="flex min-w-0 items-center gap-1.5 font-display text-base font-bold">
-                      <CircleDot className="size-3.5 shrink-0 text-[var(--indigo)]" aria-hidden />
+                      <CircleDot className="size-3.5 shrink-0 text-primary-ink" aria-hidden />
                       <span className="truncate">{alert.originLabel}</span>
                       <span aria-hidden className="text-muted">→</span>
-                      <Flag className="size-3.5 shrink-0 text-[var(--vermillon)]" aria-hidden />
+                      <Flag className="size-3.5 shrink-0 text-danger-ink" aria-hidden />
                       <span className="truncate">{alert.destLabel}</span>
                     </p>
                     <p className="tnum mt-1 text-label text-muted">
                       {alert.date ? formatDayShort(alert.date) : 'Toutes dates'} · {alert.seats} place
-                      {alert.seats > 1 ? 's' : ''} · {alert.tripType === 'QUOTIDIEN' ? 'quotidien' : 'interurbain'} ·
+                      {alert.seats > 1 ? 's' : ''} ·{' '}
+                      {alert.tripType === 'QUOTIDIEN' ? 'quotidien' : alert.tripType === 'INTERURBAIN' ? 'interurbain' : 'tous modes'} ·
                       rayon {alert.radiusKm} km
                     </p>
                     <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -125,7 +127,7 @@ export function AlertsSection() {
                     size="icon"
                     aria-label={`Supprimer l'alerte ${alert.originLabel} → ${alert.destLabel}`}
                     onClick={() => setToDelete(alert)}
-                    className="text-muted hover:bg-[var(--vermillon-soft)] hover:text-[var(--vermillon)]"
+                    className="text-muted hover:bg-danger-soft hover:text-danger-ink"
                   >
                     <Trash2 className="size-4" aria-hidden />
                   </Button>

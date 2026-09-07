@@ -1,8 +1,8 @@
 import { useId } from 'react'
-import { Label } from '@/components/ui/input'
+import { FieldError, FieldHint, Label } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
-export interface SelectOption<T extends string> {
+interface SelectOption<T extends string> {
   value: T
   label: string
 }
@@ -48,7 +48,7 @@ export function SelectField<T extends string>({
           id={fieldId}
           aria-invalid={error ? true : undefined}
           aria-describedby={describedBy}
-          className={error ? 'border-[var(--vermillon)]' : undefined}
+          className={error ? 'border-danger' : undefined}
         >
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
@@ -60,15 +60,7 @@ export function SelectField<T extends string>({
           ))}
         </SelectContent>
       </Select>
-      {error ? (
-        <p id={`${fieldId}-error`} role="alert" className="text-caption font-medium text-[var(--vermillon)]">
-          {error}
-        </p>
-      ) : hint ? (
-        <p id={`${fieldId}-hint`} className="text-caption text-muted">
-          {hint}
-        </p>
-      ) : null}
+      {error ? <FieldError id={`${fieldId}-error`}>{error}</FieldError> : hint ? <FieldHint id={`${fieldId}-hint`}>{hint}</FieldHint> : null}
     </div>
   )
 }

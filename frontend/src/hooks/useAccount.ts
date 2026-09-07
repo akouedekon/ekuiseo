@@ -18,7 +18,7 @@ import { toE164 } from '@/lib/validation'
 export function useMyVehicles(enabled = true) {
   return useQuery<VehicleResponse[]>({
     queryKey: ['me', 'vehicles'],
-    queryFn: () => apiClient.get<VehicleResponse[]>('/api/v1/me/vehicles'),
+    queryFn: ({ signal }) => apiClient.get<VehicleResponse[]>('/api/v1/me/vehicles', { signal }),
     enabled,
   })
 }
@@ -59,11 +59,14 @@ export function useDeleteVehicle() {
 
 /* ------------------------------------------------------------- Profil */
 
+/**
+ * PATCH /api/v1/me : `photoUrl` n'est pas envoye (400 tant qu'aucun stockage de
+ * photo n'existe) ; `bio: ''` efface la presentation.
+ */
 export interface UpdateProfileInput {
   firstName?: string
   lastName?: string
-  bio?: string | null
-  photoUrl?: string | null
+  bio?: string
 }
 
 /** PATCH /api/v1/me (l'e-mail se change par useRequestEmailChange / useConfirmEmailChange). */
@@ -128,7 +131,7 @@ export function useConfirmAccountDeletion() {
 export function useMyPreferences(enabled = true) {
   return useQuery<UserPreferencesResponse>({
     queryKey: ['me', 'preferences'],
-    queryFn: () => apiClient.get<UserPreferencesResponse>('/api/v1/me/preferences'),
+    queryFn: ({ signal }) => apiClient.get<UserPreferencesResponse>('/api/v1/me/preferences', { signal }),
     enabled,
   })
 }
@@ -163,7 +166,7 @@ export function useUpdatePreferences() {
 export function useMyPaymentMethods(enabled = true) {
   return useQuery<PaymentMethodResponse[]>({
     queryKey: ['me', 'payment-methods'],
-    queryFn: () => apiClient.get<PaymentMethodResponse[]>('/api/v1/me/payment-methods'),
+    queryFn: ({ signal }) => apiClient.get<PaymentMethodResponse[]>('/api/v1/me/payment-methods', { signal }),
     enabled,
   })
 }
@@ -196,7 +199,7 @@ export function useDeletePaymentMethod() {
 export function useIdentityVerification(enabled = true) {
   return useQuery<IdentityVerificationResponse>({
     queryKey: ['me', 'identity'],
-    queryFn: () => apiClient.get<IdentityVerificationResponse>('/api/v1/me/identity'),
+    queryFn: ({ signal }) => apiClient.get<IdentityVerificationResponse>('/api/v1/me/identity', { signal }),
     enabled,
   })
 }
@@ -209,7 +212,8 @@ export function useSubmitIdentity() {
       apiClient.post<IdentityVerificationResponse>('/api/v1/me/identity', input),
     onSuccess: (identity) => {
       queryClient.setQueryData<IdentityVerificationResponse>(['me', 'identity'], identity)
-      queryClient.invalidateQueries({ queryKey: ['me'] })
+      // Le profil (badge « identite ») seulement : pas tout l'espace « me » (vehicules, reversements…), audit F153.
+      queryClient.invalidateQueries({ queryKey: ['me'], exact: true })
     },
   })
 }
@@ -220,7 +224,7 @@ export function useSubmitIdentity() {
 export function useDriverBalance(enabled = true) {
   return useQuery<DriverBalanceResponse>({
     queryKey: ['me', 'payouts', 'balance'],
-    queryFn: () => apiClient.get<DriverBalanceResponse>('/api/v1/me/payouts/balance'),
+    queryFn: ({ signal }) => apiClient.get<DriverBalanceResponse>('/api/v1/me/payouts/balance', { signal }),
     enabled,
   })
 }
@@ -229,7 +233,7 @@ export function useDriverBalance(enabled = true) {
 export function useMyPayouts(enabled = true) {
   return useQuery<PayoutResponse[]>({
     queryKey: ['me', 'payouts'],
-    queryFn: () => apiClient.get<PayoutResponse[]>('/api/v1/me/payouts'),
+    queryFn: ({ signal }) => apiClient.get<PayoutResponse[]>('/api/v1/me/payouts', { signal }),
     enabled,
   })
 }
@@ -240,7 +244,7 @@ export function useMyPayouts(enabled = true) {
 export function useMySubscription(enabled = true) {
   return useQuery<SubscriptionResponse>({
     queryKey: ['me', 'subscription'],
-    queryFn: () => apiClient.get<SubscriptionResponse>('/api/v1/me/subscription'),
+    queryFn: ({ signal }) => apiClient.get<SubscriptionResponse>('/api/v1/me/subscription', { signal }),
     enabled,
   })
 }

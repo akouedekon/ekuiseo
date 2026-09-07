@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/api/client'
 import { isTransientError } from '@/lib/errors'
 import { estimatePaymentPlan } from '@/lib/payments'
+import { invalidateTripListings } from '@/hooks/useTrips'
 import type {
   BookingDetailResponse,
   BookingQuoteRequest,
@@ -10,13 +11,13 @@ import type {
   PaymentPlanResponse,
   PaymentStatusResponse,
 } from '@/api/extended'
-import type { BookingResponse, ConfirmPaymentRequest, CreateBookingRequest, InitiatePaymentResponse } from '@/api/types'
+import type { BookingResponse, CreateBookingRequest, InitiatePaymentResponse } from '@/api/types'
 
 /** GET /api/v1/bookings : reservations de l'utilisateur, enrichies du trajet et du plan de paiement. */
 export function useMyBookings(enabled = true) {
   return useQuery<BookingDetailResponse[]>({
     queryKey: ['bookings'],
-    queryFn: () => apiClient.get<BookingDetailResponse[]>('/api/v1/bookings'),
+    queryFn: ({ signal }) => apiClient.get<BookingDetailResponse[]>('/api/v1/bookings', { signal }),
     enabled,
   })
 }
@@ -29,7 +30,7 @@ export function useMyBookings(enabled = true) {
 export function useBooking(id: string | undefined, options: { refetchInterval?: number | false } = {}) {
   return useQuery<BookingDetailResponse>({
     queryKey: ['bookings', id],
-    queryFn: () => apiClient.get<BookingDetailResponse>(`/api/v1/bookings/${id}`),
+    queryFn: ({ signal }) => apiClient.get<BookingDetailResponse>(`/api/v1/bookings/${id}`, { signal }),
     enabled: !!id,
     refetchInterval: options.refetchInterval ?? false,
   })
@@ -47,6 +48,8 @@ export function useCreateBooking(tripId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bookings'] })
       queryClient.invalidateQueries({ queryKey: ['trips', tripId] })
+      // Les places affichees dans les resultats de recherche viennent de changer (audit F153).
+      invalidateTripListings(queryClient)
     },
   })
 }
@@ -74,6 +77,7 @@ export function useCancelBooking() {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['bookings'] })
+      invalidateTripListings(queryClient)
     },
   })
 }
@@ -92,14 +96,14 @@ export function useBookingQuote(
   const total = input.unitPrice * input.seats
   return useQuery<{ plan: PaymentPlanResponse; estimated: boolean }>({
     queryKey: ['trips', tripId, 'quote', input.seats, input.dropoffStopId ?? '', input.paymentMode, total],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const body: BookingQuoteRequest = {
         seats: input.seats,
         dropoffStopId: input.dropoffStopId,
         paymentMode: input.paymentMode,
       }
       try {
-        const plan = await apiClient.post<PaymentPlanResponse>(`/api/v1/trips/${tripId}/booking-quote`, body)
+        const plan = await apiClient.post<PaymentPlanResponse>(`/api/v1/trips/${tripId}/booking-quote`, body, { signal })
         return { plan, estimated: false }
       } catch (error) {
         if (isTransientError(error)) {
@@ -121,30 +125,17 @@ export function useInitiateDeposit(bookingId: string | undefined) {
   })
 }
 
-/**
- * POST /api/v1/payments/{paymentId}/confirm { transactionId } : confirmation
- * immediate apres l'evenement "success" du widget Kkiapay. Le serveur
- * reverifie la transaction (statut, montant) avant de confirmer ; en cas
- * d'echec reseau ici, le sondage et le webhook prennent le relais.
+/*
+ * La confirmation immediate apres l'evenement « success » du widget
+ * (POST /api/v1/payments/{paymentId}/confirm) vit dans hooks/useKkiapayCheckout.ts,
+ * partagee entre la reservation et l'abonnement (audit F243).
  */
-export function useConfirmPayment(paymentId: string | undefined) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (input: ConfirmPaymentRequest) =>
-      apiClient.post<PaymentStatusResponse>(`/api/v1/payments/${paymentId}/confirm`, input),
-    onSuccess: (status) => {
-      // Le sondage lit la meme cle : l'ecran bascule sans attendre le prochain tick.
-      queryClient.setQueryData<PaymentStatusResponse>(['payments', paymentId], status)
-      queryClient.invalidateQueries({ queryKey: ['bookings'] })
-    },
-  })
-}
 
 /** GET /api/v1/payments/{paymentId} : sonde toutes les 3 s tant que le paiement n'est pas tranche. */
 export function usePaymentStatus(paymentId: string | undefined) {
   return useQuery<PaymentStatusResponse>({
     queryKey: ['payments', paymentId],
-    queryFn: () => apiClient.get<PaymentStatusResponse>(`/api/v1/payments/${paymentId}`),
+    queryFn: ({ signal }) => apiClient.get<PaymentStatusResponse>(`/api/v1/payments/${paymentId}`, { signal }),
     enabled: !!paymentId,
     refetchInterval: (query) => {
       const status = query.state.data?.status

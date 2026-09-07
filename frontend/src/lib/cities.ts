@@ -1,44 +1,47 @@
-/** Villes/quartiers courants pour le covoiturage au Benin (et Lome, transfrontalier). */
+/*
+ * Geographie cote client. Le referentiel des lieux est celui du serveur
+ * (`geo_places`, GET /api/v1/geo/places, voir hooks/useGeo.ts) : la liste
+ * ci-dessous n'est qu'un REPLI minimal, servi tant que ce referentiel n'est pas
+ * charge (premiere ouverture hors ligne). Elle reprend les villes de la migration
+ * V3, memes libelles et memes coordonnees, sans les quartiers.
+ */
+
+export type PlaceKind = 'CITY' | 'DISTRICT' | 'STATION'
+
 export interface CityOption {
+  /** Identifiant serveur ; absent pour une entree du repli ou un point saisi par ailleurs. */
+  id?: string
+  /** Libelle affiche et transmis a l'API (« Agla — Cotonou » pour un quartier). */
   label: string
   lat: number
   lng: number
   /** Departement ou pays, affiche en second plan dans l'autocompletion. */
   region: string
+  kind?: PlaceKind
+  /** Ville de rattachement d'un quartier ou d'une gare. */
+  parentName?: string | null
   /** Formes alternatives saisies par les usagers (sans accents, surnoms). */
   aliases?: string[]
 }
 
-export const BENIN_CITIES: CityOption[] = [
-  { label: 'Cotonou', region: 'Littoral', lat: 6.3703, lng: 2.3912, aliases: ['coto'] },
-  { label: 'Cotonou — Dantokpa', region: 'Littoral', lat: 6.3654, lng: 2.4278, aliases: ['dantokpa', 'tokpa'] },
-  { label: 'Cotonou — Godomey', region: 'Atlantique', lat: 6.3667, lng: 2.3333, aliases: ['godomey'] },
-  { label: 'Cotonou — Fidjrosse', region: 'Littoral', lat: 6.3567, lng: 2.3608, aliases: ['fidjrosse'] },
-  { label: 'Abomey-Calavi', region: 'Atlantique', lat: 6.4489, lng: 2.3556, aliases: ['calavi'] },
-  { label: 'Porto-Novo', region: 'Oueme', lat: 6.4969, lng: 2.6289, aliases: ['portonovo', 'hogbonou'] },
-  { label: 'Seme-Podji', region: 'Oueme', lat: 6.3667, lng: 2.6333, aliases: ['seme'] },
-  { label: 'Ouidah', region: 'Atlantique', lat: 6.3667, lng: 2.0853 },
-  { label: 'Allada', region: 'Atlantique', lat: 6.6656, lng: 2.1514 },
-  { label: 'Bohicon', region: 'Zou', lat: 7.1782, lng: 2.0667 },
-  { label: 'Abomey', region: 'Zou', lat: 7.1826, lng: 1.9912 },
-  { label: 'Covè', region: 'Zou', lat: 7.2214, lng: 2.3406, aliases: ['cove'] },
-  { label: 'Lokossa', region: 'Mono', lat: 6.6389, lng: 1.7167 },
-  { label: 'Comè', region: 'Mono', lat: 6.4056, lng: 1.8817, aliases: ['come'] },
-  { label: 'Aplahoué', region: 'Couffo', lat: 6.9333, lng: 1.6833, aliases: ['aplahoue'] },
-  { label: 'Dassa-Zoumè', region: 'Collines', lat: 7.7503, lng: 2.1836, aliases: ['dassa', 'dassa-zoume'] },
-  { label: 'Savalou', region: 'Collines', lat: 7.9281, lng: 1.9756 },
-  { label: 'Savè', region: 'Collines', lat: 8.0342, lng: 2.4864, aliases: ['save'] },
-  { label: 'Parakou', region: 'Borgou', lat: 9.3372, lng: 2.6303 },
-  { label: 'Tchaourou', region: 'Borgou', lat: 8.8867, lng: 2.5975 },
-  { label: 'Nikki', region: 'Borgou', lat: 9.9401, lng: 3.2108 },
-  { label: 'Djougou', region: 'Donga', lat: 9.7086, lng: 1.6661 },
-  { label: 'Natitingou', region: 'Atacora', lat: 10.3042, lng: 1.3792, aliases: ['nati'] },
-  { label: 'Tanguiéta', region: 'Atacora', lat: 10.6222, lng: 1.2653, aliases: ['tanguieta'] },
-  { label: 'Kandi', region: 'Alibori', lat: 11.1342, lng: 2.9386 },
-  { label: 'Malanville', region: 'Alibori', lat: 11.8681, lng: 3.3831 },
-  { label: 'Lomé (Togo)', region: 'Togo', lat: 6.1319, lng: 1.2228, aliases: ['lome', 'togo'] },
-  { label: 'Lagos (Nigéria)', region: 'Nigéria', lat: 6.5244, lng: 3.3792, aliases: ['lagos', 'nigeria'] },
-  { label: 'Niamey (Niger)', region: 'Niger', lat: 13.5116, lng: 2.1254, aliases: ['niamey', 'niger'] },
+export const FALLBACK_PLACES: CityOption[] = [
+  { label: 'Cotonou', region: 'Littoral', lat: 6.3703, lng: 2.3912, kind: 'CITY', aliases: ['coto'] },
+  { label: 'Porto-Novo', region: 'Ouémé', lat: 6.4969, lng: 2.6289, kind: 'CITY', aliases: ['portonovo', 'hogbonou'] },
+  { label: 'Abomey-Calavi', region: 'Atlantique', lat: 6.4489, lng: 2.3556, kind: 'CITY', aliases: ['calavi'] },
+  { label: 'Bohicon', region: 'Zou', lat: 7.1781, lng: 2.0672, kind: 'CITY' },
+  { label: 'Abomey', region: 'Zou', lat: 7.1826, lng: 1.991, kind: 'CITY' },
+  { label: 'Parakou', region: 'Borgou', lat: 9.3372, lng: 2.6303, kind: 'CITY' },
+  { label: 'Natitingou', region: 'Atacora', lat: 10.3042, lng: 1.3796, kind: 'CITY', aliases: ['nati'] },
+  { label: 'Djougou', region: 'Donga', lat: 9.7085, lng: 1.6663, kind: 'CITY' },
+  { label: 'Lokossa', region: 'Mono', lat: 6.6389, lng: 1.7169, kind: 'CITY' },
+  { label: 'Ouidah', region: 'Atlantique', lat: 6.3626, lng: 2.0852, kind: 'CITY' },
+  { label: 'Kandi', region: 'Alibori', lat: 11.1342, lng: 2.9386, kind: 'CITY' },
+  { label: 'Malanville', region: 'Alibori', lat: 11.8636, lng: 3.3862, kind: 'CITY' },
+  { label: 'Savalou', region: 'Collines', lat: 7.9285, lng: 1.9739, kind: 'CITY' },
+  { label: 'Comè', region: 'Mono', lat: 6.4056, lng: 1.8836, kind: 'CITY', aliases: ['come'] },
+  { label: 'Grand-Popo', region: 'Mono', lat: 6.2833, lng: 1.8167, kind: 'CITY' },
+  { label: 'Lomé', region: 'Togo', lat: 6.1319, lng: 1.2228, kind: 'CITY', aliases: ['lome', 'togo'] },
+  { label: 'Lagos', region: 'Nigéria', lat: 6.5244, lng: 3.3792, kind: 'CITY', aliases: ['nigeria'] },
 ]
 
 /** Normalise pour comparer sans accents ni casse (saisie mobile rapide). */
@@ -50,27 +53,34 @@ export function normalize(value: string): string {
     .trim()
 }
 
-/** Recherche tolerante : prefixe prioritaire, puis inclusion, puis alias. */
-export function searchCities(query: string, limit = 6): CityOption[] {
-  const q = normalize(query)
-  if (!q) return BENIN_CITIES.slice(0, limit)
-  const scored = BENIN_CITIES.map((city) => {
-    const label = normalize(city.label)
-    const aliasHit = city.aliases?.some((a) => normalize(a).startsWith(q)) ?? false
-    let score = -1
-    if (label.startsWith(q)) score = 0
-    else if (aliasHit) score = 1
-    else if (label.includes(q)) score = 2
-    else if (normalize(city.region).startsWith(q)) score = 3
-    return { city, score }
-  }).filter((entry) => entry.score >= 0)
-  scored.sort((a, b) => a.score - b.score || a.city.label.localeCompare(b.city.label, 'fr'))
-  return scored.slice(0, limit).map((entry) => entry.city)
+/** Nom court d'un lieu (sans la ville de rattachement), pour le classement et le dedoublonnage. */
+export function shortName(city: CityOption): string {
+  return city.parentName ? city.label.replace(new RegExp(` — ${city.parentName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`), '') : city.label
 }
 
-export function findCityByLabel(label: string): CityOption | undefined {
-  const target = normalize(label)
-  return BENIN_CITIES.find((city) => normalize(city.label) === target)
+/**
+ * Recherche tolerante dans une liste de lieux : prefixe prioritaire, puis
+ * alias, puis inclusion, puis departement ou ville de rattachement. Sans
+ * saisie, renvoie les premieres entrees (villes principales).
+ */
+export function searchPlaces(places: readonly CityOption[], query: string, limit = 6): CityOption[] {
+  const q = normalize(query)
+  if (!q) return places.slice(0, limit)
+  const scored = places
+    .map((city) => {
+      const name = normalize(shortName(city))
+      const aliasHit = city.aliases?.some((a) => normalize(a).startsWith(q)) ?? false
+      let score = -1
+      if (name.startsWith(q)) score = 0
+      else if (aliasHit) score = 1
+      else if (name.includes(q)) score = 2
+      else if (normalize(city.region).startsWith(q) || (city.parentName && normalize(city.parentName).startsWith(q))) score = 3
+      // Une ville passe avant ses quartiers a score egal.
+      return { city, score: score < 0 ? score : score * 2 + (city.kind === 'CITY' || !city.kind ? 0 : 1) }
+    })
+    .filter((entry) => entry.score >= 0)
+  scored.sort((a, b) => a.score - b.score || a.city.label.localeCompare(b.city.label, 'fr'))
+  return scored.slice(0, limit).map((entry) => entry.city)
 }
 
 /** Distance orthodromique en km — sert au prix conseille et a la duree estimee. */
@@ -84,20 +94,27 @@ export function haversineKm(aLat: number, aLng: number, bLat: number, bLng: numb
   return 2 * R * Math.asin(Math.sqrt(h))
 }
 
+/** Deux lieux sont confondus (meme point) en deca de cette distance : un doublon, pas deux suggestions. */
+export const SAME_PLACE_KM = 0.5
+
 /** En deca, l'axe est urbain (Cotonou - Abomey-Calavi : 9,6 km) : rayon serre. */
-export const URBAN_AXIS_KM = 30
-export const URBAN_SEARCH_RADIUS_KM = 5
-export const INTERCITY_SEARCH_RADIUS_KM = 15
+const URBAN_AXIS_KM = 30
+const URBAN_SEARCH_RADIUS_KM = 5
+const INTERCITY_SEARCH_RADIUS_KM = 15
+/** Un quartier ou une gare designe un point precis : rayon plus serre qu'une ville entiere (audit F422). */
+const PRECISE_PLACE_RADIUS_KM = 4
 
 /**
- * Rayon de recherche envoye au serveur, adapte a la longueur de l'axe : 5 km en
- * urbain, 15 km en interurbain, et jamais plus de la moitie de la distance
+ * Rayon de recherche envoye au serveur, adapte a la longueur de l'axe et a la
+ * nature des lieux : 4 km quand une extremite est un quartier ou une gare, 5 km
+ * en urbain, 15 km en interurbain, et jamais plus de la moitie de la distance
  * origine-destination. Sans ce plafond, sur un axe court (Cotonou - Calavi), les
  * deux points cherches tombent dans le rayon des deux points de chaque trajet et
  * la recherche renvoie aussi les trajets en sens inverse (audit F408).
  */
-export function searchRadiusKm(axisKm: number): number {
-  const base = axisKm < URBAN_AXIS_KM ? URBAN_SEARCH_RADIUS_KM : INTERCITY_SEARCH_RADIUS_KM
+export function searchRadiusKm(axisKm: number, kinds: { origin?: PlaceKind; destination?: PlaceKind } = {}): number {
+  const precise = [kinds.origin, kinds.destination].some((kind) => kind === 'DISTRICT' || kind === 'STATION')
+  const base = precise ? PRECISE_PLACE_RADIUS_KM : axisKm < URBAN_AXIS_KM ? URBAN_SEARCH_RADIUS_KM : INTERCITY_SEARCH_RADIUS_KM
   const capped = Math.min(base, axisKm / 2)
   // Au dixieme de km inferieur (le plafond reste strict), et jamais nul : deux lieux confondus gardent un rayon minimal.
   return Math.max(0.5, Math.floor(capped * 10) / 10)
@@ -116,11 +133,11 @@ export function suggestPricePerSeat(distanceKm: number): number {
 /** Sinuosite moyenne du reseau : la route fait ~15 % de plus que l'orthodromie. */
 const ROAD_FACTOR = 1.15
 /** Vitesse moyenne en zone urbaine (embouteillages de Cotonou, zemidjans, feux). */
-export const URBAN_SPEED_KMH = 25
+const URBAN_SPEED_KMH = 25
 /** Vitesse moyenne sur les routes nationales bitumees. */
-export const INTERCITY_SPEED_KMH = 55
+const INTERCITY_SPEED_KMH = 55
 /** Formalites a un poste frontiere (Hillacondji, Kraké, Malanville). */
-export const BORDER_CROSSING_MINUTES = 45
+const BORDER_CROSSING_MINUTES = 45
 
 /**
  * Vrai si un point est hors du Benin : en dessous de 7° N, le pays s'etend de
@@ -146,21 +163,4 @@ export function estimateDurationMinutes(distanceKm: number, options: { crossBord
   const speed = distanceKm < URBAN_AXIS_KM ? URBAN_SPEED_KMH : INTERCITY_SPEED_KMH
   const minutes = (roadKm / speed) * 60 + (options.crossBorder ? BORDER_CROSSING_MINUTES : 0)
   return Math.max(15, Math.round(minutes))
-}
-
-/** Heure d'arrivee estimee (ISO) d'un trajet, a partir de ses coordonnees et de son depart. */
-export function estimateArrivalIso(trip: {
-  originLat: number
-  originLng: number
-  originLabel?: string
-  destLat: number
-  destLng: number
-  destLabel?: string
-  departureAt: string
-}): string {
-  const km = haversineKm(trip.originLat, trip.originLng, trip.destLat, trip.destLng)
-  const crossBorder =
-    isOutsideBenin(trip.originLat, trip.originLng, trip.originLabel) !==
-    isOutsideBenin(trip.destLat, trip.destLng, trip.destLabel)
-  return new Date(new Date(trip.departureAt).getTime() + estimateDurationMinutes(km, { crossBorder }) * 60_000).toISOString()
 }

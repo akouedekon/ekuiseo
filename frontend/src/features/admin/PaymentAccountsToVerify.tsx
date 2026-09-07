@@ -48,7 +48,7 @@ export function PaymentAccountsToVerify() {
         {list.map((account) => (
           <li key={account.id}>
             <Card className="flex flex-wrap items-center gap-3 p-4">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-[var(--ocre-soft)] text-[var(--ocre-ink)]">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-accent-soft text-accent-ink">
                 <Smartphone className="size-5" aria-hidden />
               </span>
               <div className="min-w-0 flex-1">
@@ -69,7 +69,7 @@ export function PaymentAccountsToVerify() {
           </li>
         ))}
       </ul>
-      <p className="mt-2 text-[12px] leading-relaxed text-muted">
+      <p className="mt-2 text-caption leading-relaxed text-muted">
         Un numéro différent du numéro de connexion ne reçoit aucun reversement tant qu'il n'est pas vérifié : appelez
         l'utilisateur au numéro connu, confirmez qu'il possède bien ce compte, puis attestez ici (journalisé).
       </p>

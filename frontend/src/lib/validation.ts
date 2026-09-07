@@ -1,4 +1,6 @@
+import { fromZonedTime, toZonedTime } from 'date-fns-tz'
 import { z } from 'zod'
+import { BENIN_TIME_ZONE } from '@/lib/format'
 
 /*
  * Schemas de validation partages (React Hook Form + Zod).
@@ -6,7 +8,7 @@ import { z } from 'zod'
  * « Indiquez votre prénom », pas « firstName is required ».
  */
 
-export function phoneDigits(value: string): string {
+function phoneDigits(value: string): string {
   return value.replace(/\D/g, '')
 }
 
@@ -73,7 +75,7 @@ export const profileSchema = z.object({
 })
 export type ProfileValues = z.infer<typeof profileSchema>
 
-export const COMFORT_LEVELS = ['BASIC', 'COMFORT', 'PREMIUM'] as const
+const COMFORT_LEVELS = ['BASIC', 'COMFORT', 'PREMIUM'] as const
 
 export const vehicleSchema = z.object({
   brand: z.string().trim().min(1, 'Indiquez la marque').max(40, '40 caractères maximum'),
@@ -89,7 +91,7 @@ export const vehicleSchema = z.object({
 })
 export type VehicleValues = z.infer<typeof vehicleSchema>
 
-export const PAYMENT_PROVIDERS = ['MTN_MOMO', 'MOOV_MONEY', 'CELTIIS_CASH'] as const
+const PAYMENT_PROVIDERS = ['MTN_MOMO', 'MOOV_MONEY', 'CELTIIS_CASH'] as const
 
 export const momoSchema = z.object({
   provider: z.enum(PAYMENT_PROVIDERS),
@@ -97,7 +99,7 @@ export const momoSchema = z.object({
 })
 export type MomoValues = z.infer<typeof momoSchema>
 
-export const DOCUMENT_TYPES = ['CNI', 'PASSPORT', 'DRIVER_LICENSE'] as const
+const DOCUMENT_TYPES = ['CNI', 'PASSPORT', 'DRIVER_LICENSE'] as const
 
 export const identitySchema = z.object({
   documentType: z.enum(DOCUMENT_TYPES),
@@ -114,16 +116,20 @@ export type IdentityValues = z.infer<typeof identitySchema>
 /** Un depart ne se publie ni ne se deplace a moins de 15 minutes (regle F225, alignee sur le serveur). */
 export const MIN_DEPARTURE_LEAD_MS = 15 * 60 * 1000
 
-/** Date locale « AAAA-MM-JJ » + heure « HH:MM » -> Date, ou null si l'un des deux est invalide. */
+/**
+ * Date « AAAA-MM-JJ » + heure « HH:MM » saisies EN HEURE DU BENIN -> instant, ou
+ * null si l'un des deux est invalide (audit F424 : jamais le fuseau de l'appareil).
+ */
 export function departureFromFields(date: string, time: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) return null
-  const value = new Date(`${date}T${time}:00`)
+  const value = fromZonedTime(`${date}T${time}:00`, BENIN_TIME_ZONE)
   return Number.isNaN(value.getTime()) ? null : value
 }
 
-/** Prochaine demi-heure ronde apres `from` + 15 min : valeur initiale honnete du champ heure. */
+/** Prochaine demi-heure ronde apres `from` + 15 min, en heure du Benin : valeur initiale honnete du champ heure. */
 export function nextHalfHour(from: Date = new Date()): { date: string; time: string } {
-  const d = new Date(from.getTime() + MIN_DEPARTURE_LEAD_MS)
+  // Horloge murale du Benin : les champs date/heure sont exprimes dans ce fuseau.
+  const d = toZonedTime(new Date(from.getTime() + MIN_DEPARTURE_LEAD_MS), BENIN_TIME_ZONE)
   d.setSeconds(0, 0)
   const minutes = d.getMinutes()
   if (minutes === 0 || minutes === 30) {

@@ -10,9 +10,9 @@
 export const CHART = {
   // Volume en graphite : le vert est reserve au revenu et au bon signe.
   indigo: 'var(--ink-2)',
-  vert: 'var(--vert)',
-  ocre: 'var(--ocre)',
-  vermillon: 'var(--vermillon)',
+  vert: 'var(--success)',
+  ocre: 'var(--accent)',
+  vermillon: 'var(--danger)',
   rule: 'var(--rule)',
   muted: 'var(--muted)',
 }
@@ -39,4 +39,15 @@ export function relativeDelta(current: number, previous: number): number {
 /** Variation en points entre deux taux deja exprimes en %. */
 export function pointsDelta(current: number, previous: number): number {
   return Math.round((current - previous) * 10) / 10
+}
+
+/** « 42,5 % » a partir d'une fraction 0..1 ; « — » quand la cohorte est vide (null). */
+export function formatRatio(value: number | null | undefined, digits = 1): string {
+  return value == null ? '—' : formatPercent(value * 100, digits)
+}
+
+/** Variation en points entre deux fractions 0..1 ; null si l'une manque. */
+export function ratioDelta(current: number | null | undefined, previous: number | null | undefined): number | null {
+  if (current == null || previous == null) return null
+  return pointsDelta(current * 100, previous * 100)
 }

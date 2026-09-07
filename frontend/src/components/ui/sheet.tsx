@@ -60,7 +60,7 @@ export function Sheet({ open, onOpenChange, title, description, children, footer
                       {title}
                     </DialogPrimitive.Title>
                     {description ? (
-                      <DialogPrimitive.Description className="mt-0.5 text-[13px] text-muted">
+                      <DialogPrimitive.Description className="mt-0.5 text-label text-muted">
                         {description}
                       </DialogPrimitive.Description>
                     ) : (
@@ -71,7 +71,7 @@ export function Sheet({ open, onOpenChange, title, description, children, footer
                   </div>
                   <DialogPrimitive.Close
                     aria-label="Fermer"
-                    className="-mr-1 -mt-1 flex size-11 shrink-0 items-center justify-center rounded-[var(--radius-control)] text-muted transition-colors hover:bg-[var(--surface-calm)] hover:text-ink"
+                    className="-mr-1 -mt-1 flex size-11 shrink-0 items-center justify-center rounded-[var(--radius-control)] text-muted transition-colors hover:bg-surface-2 hover:text-ink"
                   >
                     <X className="size-5" aria-hidden />
                   </DialogPrimitive.Close>

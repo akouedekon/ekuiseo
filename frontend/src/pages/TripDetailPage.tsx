@@ -1,5 +1,6 @@
 import { m } from 'motion/react'
 import {
+  ArrowLeftRight,
   BadgeCheck,
   Briefcase,
   ChevronRight,
@@ -10,8 +11,8 @@ import {
   Snowflake,
   Users,
 } from 'lucide-react'
-import { useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { useMemo, useState } from 'react'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { ReportDialog } from '@/components/feedback/ReportDialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -19,21 +20,57 @@ import { Card } from '@/components/ui/card'
 import { Avatar, RatingStars, Separator, Skeleton } from '@/components/ui/misc'
 import { ErrorState, OfflineState, isOfflineWithoutData } from '@/components/ui/states'
 import { PageContainer, PageHeader, SectionTitle } from '@/components/layout/PageContainer'
-import { RouteMap } from '@/components/trip/RouteMap'
+import { PageMeta } from '@/components/layout/PageMeta'
+import { StickyActionBar, stickyClearanceClass } from '@/components/layout/StickyActionBar'
+import { RouteMap, type RouteMapPoint } from '@/components/trip/RouteMap'
 import { RouteTimeline } from '@/components/trip/RouteTimeline'
 import { ShareTripButton } from '@/components/trip/ShareTripButton'
-import { buildRoutePoints } from '@/lib/route'
+import { buildRoutePoints, estimateArrival } from '@/lib/route'
 import { estimatePaymentPlan } from '@/lib/payments'
 import { useIsAuthenticated, useMe } from '@/hooks/useAuth'
 import { usePublicUser, useUserReviews } from '@/hooks/useReviews'
 import { useTrip, useTripStops } from '@/hooks/useTrips'
-import { format, parseISO } from 'date-fns'
 import { useIsDesktop } from '@/hooks/useMediaQuery'
-import { estimateArrivalIso } from '@/lib/cities'
-import { formatDuration, formatFcfa, formatFromNow, formatRelativeDay } from '@/lib/format'
+import { describeError, isDefinitiveError } from '@/lib/errors'
+import {
+  BENIN_TIME_HINT,
+  deviceClockDiffersFromBenin,
+  formatDuration,
+  formatFcfa,
+  formatFromNow,
+  formatRelativeDay,
+  toInputDate,
+} from '@/lib/format'
+import { COMFORT_LABEL } from '@/lib/labels'
+import type { TripResponse } from '@/api/types'
+
+/** Recherche equivalente a un trajet (retour depuis un lien partage) ou son inverse (« Trajet retour »). */
+function searchPath(trip: TripResponse, seats: number, reverse = false): string {
+  const from = reverse
+    ? { label: trip.destLabel, lat: trip.destLat, lng: trip.destLng }
+    : { label: trip.originLabel, lat: trip.originLat, lng: trip.originLng }
+  const to = reverse
+    ? { label: trip.originLabel, lat: trip.originLat, lng: trip.originLng }
+    : { label: trip.destLabel, lat: trip.destLat, lng: trip.destLng }
+  const params = new URLSearchParams({
+    from: from.label,
+    fromLat: String(from.lat),
+    fromLng: String(from.lng),
+    to: to.label,
+    toLat: String(to.lat),
+    toLng: String(to.lng),
+    seats: String(seats),
+    type: trip.tripType,
+  })
+  // Le retour se cherche a partir du jour du depart, jamais dans le passe.
+  const departureDay = toInputDate(trip.departureAt)
+  params.set('date', reverse ? (departureDay < toInputDate(new Date()) ? toInputDate(new Date()) : departureDay) : departureDay)
+  return `/search?${params.toString()}`
+}
 
 export function TripDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const trip = useTrip(id)
   const stops = useTripStops(id)
@@ -44,62 +81,66 @@ export function TripDetailPage() {
   const driverId = trip.data?.driver.id
   const driver = usePublicUser(driverId)
   const reviews = useUserReviews(driverId)
+  // Places demandees a la recherche, propagees jusqu'a la reservation (audit F249).
+  const requestedSeats = Math.max(1, Math.min(8, Number(searchParams.get('seats')) || 1))
+  const clockDiffers = deviceClockDiffersFromBenin()
+
+  const data = trip.data
+  const stopList = stops.data
+  /* Points de la carte : une nouvelle reference a chaque rendu recreerait la carte MapLibre (audit F241). */
+  const mapPoints = useMemo<RouteMapPoint[]>(() => {
+    if (!data) return []
+    return [
+      { label: data.originLabel, lat: data.originLat, lng: data.originLng, kind: 'origin' },
+      ...(stopList ?? []).map((s) => ({ label: s.label, lat: s.lat, lng: s.lng, kind: 'stop' as const })),
+      { label: data.destLabel, lat: data.destLat, lng: data.destLng, kind: 'destination' },
+    ]
+  }, [data, stopList])
 
   if (isOfflineWithoutData(trip))
     return (
       <PageContainer width="md">
+        <PageMeta title="Trajet" />
         <OfflineState
+          headingLevel="h1"
           description="Ce trajet n'a pas encore été enregistré sur cet appareil. Il s'affichera dès que la connexion reviendra."
           onRetry={() => trip.refetch()}
         />
       </PageContainer>
     )
   if (trip.isPending) return <TripDetailSkeleton />
-  if (trip.isError || !trip.data)
+  if (trip.isError || !data) {
+    const final = isDefinitiveError(trip.error)
     return (
       <PageContainer width="md">
+        <PageMeta title="Trajet introuvable" noindex />
         <ErrorState
-          title="Trajet introuvable"
-          description="Ce trajet a peut-être été retiré. Revenez aux résultats de recherche."
-          onRetry={() => trip.refetch()}
+          headingLevel="h1"
+          title={final ? 'Trajet introuvable' : 'Chargement impossible'}
+          description={final ? 'Ce trajet a été retiré ou n’existe pas. Revenez aux résultats de recherche.' : describeError(trip.error)}
+          onRetry={final ? undefined : () => trip.refetch()}
         />
+        {final ? (
+          <div className="mt-2 flex justify-center">
+            <Button asChild variant="secondary">
+              <Link to="/">Nouvelle recherche</Link>
+            </Button>
+          </div>
+        ) : null}
       </PageContainer>
     )
+  }
 
-  const data = trip.data
-  // Arrivee et duree sont des ESTIMATIONS du front (modele a deux vitesses, lib/cities.ts).
-  const arrival = estimateArrivalIso(data)
-  const durationMin = Math.round((new Date(arrival).getTime() - new Date(data.departureAt).getTime()) / 60_000)
-  const stopList = stops.data ?? []
+  // Arrivee et duree sont des ESTIMATIONS du front (modele a deux vitesses, lib/route.ts).
+  const { arrivalIso, durationMinutes } = estimateArrival(data)
+  const stopsShown = stopList ?? []
   /*
    * Retour depuis un lien partage (WhatsApp) : pas d'historique dans l'application.
    * On reconstruit la recherche correspondante plutot que d'envoyer vers /search sans
    * parametres, soit l'ecran « Recherche incomplete » (audit F220).
    */
-  const backTo = `/search?${new URLSearchParams({
-    from: data.originLabel,
-    fromLat: String(data.originLat),
-    fromLng: String(data.originLng),
-    to: data.destLabel,
-    toLat: String(data.destLat),
-    toLng: String(data.destLng),
-    date: format(parseISO(data.departureAt), 'yyyy-MM-dd'),
-    seats: '1',
-    type: data.tripType,
-  }).toString()}`
-  const points = buildRoutePoints(
-    data.originLabel,
-    data.destLabel,
-    data.departureAt,
-    arrival,
-    data.pricePerSeat,
-    stopList,
-  )
-  const mapPoints = [
-    { label: data.originLabel, lat: data.originLat, lng: data.originLng, kind: 'origin' as const },
-    ...stopList.map((s) => ({ label: s.label, lat: s.lat, lng: s.lng, kind: 'stop' as const })),
-    { label: data.destLabel, lat: data.destLat, lng: data.destLng, kind: 'destination' as const },
-  ]
+  const backTo = searchPath(data, requestedSeats)
+  const points = buildRoutePoints(data.originLabel, data.destLabel, data.departureAt, arrivalIso, data.pricePerSeat, stopsShown)
   const full = data.seatsAvailable === 0
   const cancelled = data.status === 'CANCELLED'
   // Un trajet parti (statut serveur ou heure locale depassee) ne se reserve plus (constat F035).
@@ -111,8 +152,9 @@ export function TripDetailPage() {
   // Regle metier n.8 : un conducteur ne reserve pas sur son propre trajet.
   const isOwnTrip = me.data?.id === data.driver.id
   const driverData = driver.data
-  const reviewList = (reviews.data ?? []).slice(0, 4)
+  const reviewList = (reviews.data ?? []).filter((review) => review.role === 'DRIVER').slice(0, 4)
   const shareText = `${data.originLabel} → ${data.destLabel}, ${formatRelativeDay(data.departureAt).toLowerCase()} — ${formatFcfa(data.pricePerSeat)} par place sur Ekuiseo`
+  const bookHref = `/book/${data.id}${requestedSeats > 1 ? `?seats=${requestedSeats}` : ''}`
   const primaryLabel = isOwnTrip
     ? 'Votre trajet'
     : cancelled
@@ -122,14 +164,21 @@ export function TripDetailPage() {
         : full
           ? 'Complet'
           : 'Réserver'
+  const subtitle = `${formatRelativeDay(data.departureAt)} · ≈ ${formatDuration(durationMinutes)} de route (estimation)${
+    clockDiffers ? ` · ${BENIN_TIME_HINT}` : ''
+  }`
 
   return (
     <>
-      <PageContainer width="lg" className="pb-32 md:pb-10">
-
+      <PageMeta
+        title={`${data.originLabel} → ${data.destLabel} · ${formatRelativeDay(data.departureAt)}`}
+        description={`${formatFcfa(data.pricePerSeat)} par place, ${data.seatsAvailable} place${data.seatsAvailable > 1 ? 's' : ''} disponible${data.seatsAvailable > 1 ? 's' : ''}. Acompte en mobile money, solde en espèces à bord.`}
+      />
+      {/* Sous `lg`, la barre d'action et la navigation basse recouvrent le bas de page : on reserve leur hauteur (audit L8). */}
+      <PageContainer width="lg" className={stickyClearanceClass}>
         <PageHeader
           title={`${data.originLabel} → ${data.destLabel}`}
-          subtitle={`${formatRelativeDay(data.departureAt)} · ≈ ${formatDuration(durationMin)} de route (estimation)`}
+          subtitle={subtitle}
           backTo={backTo}
           actions={
             <ShareTripButton
@@ -144,11 +193,11 @@ export function TripDetailPage() {
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
           <div className="space-y-4">
             {cancelled ? (
-              <Card className="border-[var(--vermillon)] bg-[var(--vermillon-soft)] p-4 text-[14px] font-medium text-[var(--vermillon)]">
+              <Card className="border-danger bg-danger-soft p-4 text-body font-medium text-danger-ink" role="status">
                 Ce trajet a été annulé par le conducteur.
               </Card>
             ) : departed && !isOwnTrip ? (
-              <Card className="border-[var(--ocre)] bg-[var(--ocre-soft)] p-4 text-[14px] font-medium text-[var(--ocre-deep,var(--ocre))]">
+              <Card className="border-accent bg-accent-soft p-4 text-body font-medium text-accent-ink" role="status">
                 Ce trajet est déjà parti. Cherchez un prochain départ sur le même axe.
               </Card>
             ) : null}
@@ -157,8 +206,8 @@ export function TripDetailPage() {
             <Card className="p-4 sm:p-5">
               <SectionTitle
                 action={
-                  stopList.length > 0 ? (
-                    <span className="text-[12px] text-muted">Prix depuis {data.originLabel}</span>
+                  stopsShown.length > 0 ? (
+                    <span className="text-caption text-muted">Prix depuis {data.originLabel}</span>
                   ) : null
                 }
               >
@@ -172,7 +221,7 @@ export function TripDetailPage() {
               ) : stops.isError ? (
                 <>
                   <RouteTimeline points={points} />
-                  <p className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-control)] bg-[var(--ocre-soft)] px-3 py-2 text-[13px] text-[var(--ocre-ink)]">
+                  <p className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-control)] bg-accent-soft px-3 py-2 text-label text-accent-ink">
                     Arrêts intermédiaires indisponibles pour l'instant.
                     <button type="button" className="font-semibold underline-offset-4 hover:underline" onClick={() => stops.refetch()}>
                       Réessayer
@@ -183,22 +232,22 @@ export function TripDetailPage() {
                 <RouteTimeline points={points} />
               )}
 
-              {stopList.length > 0 ? (
-                <p className="mt-3 rounded-[var(--radius-control)] bg-[var(--surface-calm)] px-3 py-2 text-[13px] text-ink-2">
+              {stopsShown.length > 0 ? (
+                <p className="mt-3 rounded-[var(--radius-control)] bg-surface-2 px-3 py-2 text-label text-ink-2">
                   Vous pouvez descendre à un arrêt intermédiaire : le prix du tronçon s'applique automatiquement à la
                   réservation.
                 </p>
               ) : null}
             </Card>
 
-            {/* Une seule instance de carte a la fois : mobile ici, desktop dans la colonne laterale. */}
-            {!desktop ? <RouteMap points={mapPoints} className="h-[220px]" /> : null}
+            {/* Une seule instance de carte a la fois : mobile ici (plus basse, activee a la demande), desktop dans la colonne laterale. */}
+            {!desktop ? <RouteMap points={mapPoints} className="h-[180px]" activation="on-demand" /> : null}
 
             {/* --- Conducteur --- */}
             <Card>
               <Link
                 to={`/drivers/${data.driver.id}`}
-                className="flex items-center gap-3 p-4 transition-colors hover:bg-[var(--surface-calm)]"
+                className="flex items-center gap-3 p-4 transition-colors hover:bg-surface-2"
               >
                 <Avatar
                   firstName={data.driver.firstName}
@@ -207,7 +256,7 @@ export function TripDetailPage() {
                   size={52}
                 />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-display text-[17px] font-bold">
+                  <p className="truncate font-display text-title font-bold">
                     {data.driver.firstName} {data.driver.lastName}
                   </p>
                   <RatingStars value={data.driver.ratingAvg} count={data.driver.ratingCount} className="mt-0.5" />
@@ -224,7 +273,7 @@ export function TripDetailPage() {
               {data.description ? (
                 <>
                   <Separator />
-                  <p className="px-4 py-3 text-[14px] leading-relaxed text-ink-2">{data.description}</p>
+                  <p className="px-4 py-3 text-body leading-relaxed text-ink-2">{data.description}</p>
                 </>
               ) : null}
             </Card>
@@ -234,16 +283,11 @@ export function TripDetailPage() {
               <SectionTitle>Véhicule et conditions</SectionTitle>
               <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
                 <div>
-                  <p className="font-display text-[15px] font-bold">
+                  <p className="font-display text-base font-bold">
                     {data.vehicle.brand} {data.vehicle.model}
                   </p>
-                  <p className="text-[13px] text-muted">
-                    {data.vehicle.color ?? 'Couleur non précisée'} ·{' '}
-                    {
-                      { BASIC: 'Confort simple', COMFORT: 'Confortable', PREMIUM: 'Haut de gamme' }[
-                        data.vehicle.comfortLevel
-                      ]
-                    }
+                  <p className="text-label text-muted">
+                    {data.vehicle.color ?? 'Couleur non précisée'} · {COMFORT_LABEL[data.vehicle.comfortLevel]}
                   </p>
                 </div>
                 <div className="ml-auto flex flex-wrap gap-1.5">
@@ -261,7 +305,7 @@ export function TripDetailPage() {
               </div>
 
               {data.luggagePolicy ? (
-                <p className="mt-3 flex items-start gap-2 text-[14px] text-ink-2">
+                <p className="mt-3 flex items-start gap-2 text-body text-ink-2">
                   <Briefcase className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
                   {data.luggagePolicy}
                 </p>
@@ -291,7 +335,7 @@ export function TripDetailPage() {
                 action={
                   <Link
                     to={`/drivers/${data.driver.id}`}
-                    className="text-[13px] font-medium text-[var(--indigo)] underline-offset-4 hover:underline"
+                    className="text-label font-medium text-primary-ink underline-offset-4 hover:underline"
                   >
                     Tout voir
                   </Link>
@@ -305,14 +349,14 @@ export function TripDetailPage() {
                   <Skeleton className="h-4 w-full" />
                 </Card>
               ) : reviews.isError ? (
-                <Card className="flex flex-wrap items-center justify-between gap-2 p-4 text-[14px] text-muted">
+                <Card className="flex flex-wrap items-center justify-between gap-2 p-4 text-body text-muted">
                   Avis indisponibles pour l'instant.
                   <Button variant="secondary" size="sm" onClick={() => reviews.refetch()}>
                     Réessayer
                   </Button>
                 </Card>
               ) : reviewList.length === 0 ? (
-                <Card className="p-4 text-[14px] text-muted">Aucun avis pour l'instant.</Card>
+                <Card className="p-4 text-body text-muted">Aucun avis pour l'instant.</Card>
               ) : (
                 <div className="space-y-2">
                   {reviewList.map((review, index) => (
@@ -325,10 +369,10 @@ export function TripDetailPage() {
                       <Card className="p-4">
                         <div className="flex items-center justify-between gap-3">
                           <RatingStars value={review.rating} size={13} />
-                          <span className="shrink-0 text-[12px] text-muted">{formatFromNow(review.createdAt)}</span>
+                          <span className="shrink-0 text-caption text-muted">{formatFromNow(review.createdAt)}</span>
                         </div>
                         {review.comment ? (
-                          <p className="mt-1.5 text-[14px] leading-relaxed text-ink-2">{review.comment}</p>
+                          <p className="mt-1.5 text-body leading-relaxed text-ink-2">{review.comment}</p>
                         ) : null}
                       </Card>
                     </m.div>
@@ -336,6 +380,17 @@ export function TripDetailPage() {
                 </div>
               )}
             </section>
+
+            {/* Trajet retour : la meme recherche, inversee (audit, section 5 #21). */}
+            <Card className="flex flex-col items-start gap-3 p-4 sm:flex-row sm:items-center">
+              <ArrowLeftRight className="size-5 shrink-0 text-primary-ink" aria-hidden />
+              <p className="flex-1 text-body text-ink-2">
+                Besoin du retour ? Cherchez un départ de {data.destLabel} vers {data.originLabel}.
+              </p>
+              <Button asChild variant="secondary" size="sm">
+                <Link to={searchPath(data, requestedSeats, true)}>Trajet retour</Link>
+              </Button>
+            </Card>
 
             {authed && !isOwnTrip ? (
               <div className="flex justify-end">
@@ -358,22 +413,16 @@ export function TripDetailPage() {
                     <Button asChild variant="secondary" size="lg" block className="mt-4">
                       <Link to="/trips/mine">Gérer mes trajets</Link>
                     </Button>
-                    <p className="mt-2 text-center text-[12px] text-muted">
+                    <p className="mt-2 text-center text-caption text-muted">
                       Vous conduisez ce trajet. Partagez le lien pour remplir les places.
                     </p>
                   </>
                 ) : (
                   <>
-                    <Button
-                      size="lg"
-                      block
-                      className="mt-4"
-                      disabled={!bookable}
-                      onClick={() => navigate(`/book/${data.id}`)}
-                    >
+                    <Button size="lg" block className="mt-4" disabled={!bookable} onClick={() => navigate(bookHref)}>
                       {primaryLabel}
                     </Button>
-                    <p className="mt-2 text-center text-[12px] text-muted">
+                    <p className="mt-2 text-center text-caption text-muted">
                       Acompte en ligne, solde en espèces à bord — ou paiement intégral si vous préférez.
                     </p>
                   </>
@@ -390,39 +439,37 @@ export function TripDetailPage() {
         target={{ tripId: data.id, label: `le trajet ${data.originLabel} → ${data.destLabel}` }}
       />
 
-      {/* --- Barre d'action collante (mobile) --- */}
-      <div className="ek-glass safe-bottom fixed inset-x-0 bottom-[68px] z-30 border-t border-rule px-4 py-3 lg:hidden">
-        <div className="mx-auto flex max-w-3xl items-center gap-2">
-          <div className="min-w-0">
-            <p className="tnum font-display text-[22px] font-extrabold leading-none tracking-[-0.03em]">
-              {formatFcfa(data.pricePerSeat)}
-            </p>
-            <p className="text-[12px] text-muted">par place</p>
-          </div>
-          <ShareTripButton
-            title={`${data.originLabel} → ${data.destLabel}`}
-            text={shareText}
-            path={`/trips/${data.id}`}
-            size="lg"
-            iconOnly
-            className="ml-auto sm:hidden"
-          />
-          {isOwnTrip ? (
-            <Button asChild variant="secondary" size="lg" className="flex-1 sm:ml-auto sm:flex-none sm:px-10">
-              <Link to="/trips/mine">Gérer mes trajets</Link>
-            </Button>
-          ) : (
-            <Button
-              size="lg"
-              className="flex-1 sm:ml-auto sm:flex-none sm:px-10"
-              disabled={!bookable}
-              onClick={() => navigate(`/book/${data.id}`)}
-            >
-              {cancelled ? 'Annulé' : departed ? 'Déjà parti' : full ? 'Complet' : 'Réserver'}
-            </Button>
-          )}
+      {/* --- Barre d'action collante (mobile), posee au-dessus de la navigation basse et de la zone sure (audit F325) --- */}
+      <StickyActionBar>
+        <div className="min-w-0">
+          <p className="tnum font-display text-display font-extrabold leading-none tracking-[-0.03em]">
+            {formatFcfa(data.pricePerSeat)}
+          </p>
+          <p className="text-caption text-muted">par place</p>
         </div>
-      </div>
+        <ShareTripButton
+          title={`${data.originLabel} → ${data.destLabel}`}
+          text={shareText}
+          path={`/trips/${data.id}`}
+          size="lg"
+          iconOnly
+          className="ml-auto sm:hidden"
+        />
+        {isOwnTrip ? (
+          <Button asChild variant="secondary" size="lg" className="flex-1 sm:ml-auto sm:flex-none sm:px-10">
+            <Link to="/trips/mine">Gérer mes trajets</Link>
+          </Button>
+        ) : (
+          <Button
+            size="lg"
+            className="flex-1 sm:ml-auto sm:flex-none sm:px-10"
+            disabled={!bookable}
+            onClick={() => navigate(bookHref)}
+          >
+            {cancelled ? 'Annulé' : departed ? 'Déjà parti' : full ? 'Complet' : 'Réserver'}
+          </Button>
+        )}
+      </StickyActionBar>
     </>
   )
 }
@@ -435,21 +482,25 @@ export function TripDetailPage() {
 function PriceBlock({ pricePerSeat }: { pricePerSeat: number }) {
   const estimate = estimatePaymentPlan(pricePerSeat, 'MOMO_DEPOSIT')
   return (
-    <dl className="space-y-2 text-[14px]">
+    <dl className="space-y-2 text-body">
       <div className="flex items-baseline justify-between">
         <dt className="text-muted">Prix par place</dt>
-        <dd className="tnum font-display text-[22px] font-extrabold tracking-[-0.03em]">{formatFcfa(pricePerSeat)}</dd>
+        <dd className="tnum font-display text-display font-extrabold tracking-[-0.03em]">{formatFcfa(pricePerSeat)}</dd>
       </div>
       <Separator />
       <div className="flex items-baseline justify-between">
         <dt className="text-muted">Acompte en ligne</dt>
-        <dd className="tnum font-semibold">≈ {formatFcfa(estimate.depositAmount)}</dd>
+        <dd className="tnum font-semibold" title="Estimation">
+          ≈ {formatFcfa(estimate.depositAmount)}
+        </dd>
       </div>
       <div className="flex items-baseline justify-between">
         <dt className="text-muted">Solde en espèces</dt>
-        <dd className="tnum font-semibold">≈ {formatFcfa(estimate.balanceAmount)}</dd>
+        <dd className="tnum font-semibold" title="Estimation">
+          ≈ {formatFcfa(estimate.balanceAmount)}
+        </dd>
       </div>
-      <p className="pt-1 text-[12px] leading-snug text-muted">
+      <p className="pt-1 text-caption leading-snug text-muted">
         Estimation pour une place. Le montant exact est confirmé à l'étape de réservation.
       </p>
     </dl>
@@ -459,6 +510,7 @@ function PriceBlock({ pricePerSeat }: { pricePerSeat: number }) {
 function TripDetailSkeleton() {
   return (
     <PageContainer width="lg">
+      <PageMeta title="Trajet" />
       <Skeleton className="mb-4 h-9 w-2/3" />
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-4">

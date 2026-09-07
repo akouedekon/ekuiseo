@@ -95,17 +95,18 @@ describe('momoSchema et identitySchema', () => {
   })
 })
 
-describe('horaires de publication', () => {
+describe('horaires de publication (heure du Benin, quel que soit le fuseau de la machine)', () => {
+  // Instants exprimes en UTC : le Benin est a UTC+1 toute l'annee (07:02 au Benin = 06:02Z).
   it('propose la prochaine demi-heure ronde au moins 15 minutes plus tard', async () => {
     const { nextHalfHour } = await import('./validation')
-    expect(nextHalfHour(new Date(2026, 8, 7, 7, 2))).toEqual({ date: '2026-09-07', time: '07:30' })
-    expect(nextHalfHour(new Date(2026, 8, 7, 7, 20))).toEqual({ date: '2026-09-07', time: '08:00' })
-    expect(nextHalfHour(new Date(2026, 8, 7, 23, 50))).toEqual({ date: '2026-09-08', time: '00:30' })
+    expect(nextHalfHour(new Date('2026-09-07T06:02:00Z'))).toEqual({ date: '2026-09-07', time: '07:30' })
+    expect(nextHalfHour(new Date('2026-09-07T06:20:00Z'))).toEqual({ date: '2026-09-07', time: '08:00' })
+    expect(nextHalfHour(new Date('2026-09-07T22:50:00Z'))).toEqual({ date: '2026-09-08', time: '00:30' })
   })
 
-  it('reconstruit une date locale et refuse une saisie incomplete', async () => {
+  it('reconstruit un instant depuis une saisie en heure du Benin et refuse une saisie incomplete', async () => {
     const { departureFromFields } = await import('./validation')
-    expect(departureFromFields('2026-09-07', '07:30')?.getHours()).toBe(7)
+    expect(departureFromFields('2026-09-07', '07:30')?.toISOString()).toBe('2026-09-07T06:30:00.000Z')
     expect(departureFromFields('', '07:30')).toBeNull()
     expect(departureFromFields('2026-09-07', '7h30')).toBeNull()
   })

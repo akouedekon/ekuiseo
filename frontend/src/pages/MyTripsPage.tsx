@@ -29,6 +29,7 @@ import { Avatar, Separator } from '@/components/ui/misc'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { EmptyState, ErrorState, ListSkeleton } from '@/components/ui/states'
 import { PageContainer, PageHeader } from '@/components/layout/PageContainer'
+import { PageMeta } from '@/components/layout/PageMeta'
 import { DepositCountdown } from '@/components/booking/Countdown'
 import { EditTripSheet } from '@/features/trips/EditTripSheet'
 import { TripPassengersSheet } from '@/features/trips/TripPassengersSheet'
@@ -258,6 +259,7 @@ export function MyTripsPage({ defaultTab = 'upcoming' }: { defaultTab?: TabKey }
 
   return (
     <PageContainer width="md">
+      <PageMeta title="Mes trajets" noindex />
       <PageHeader
         title="Mes trajets"
         back={false}
@@ -412,7 +414,7 @@ export function MyBookingsPage() {
 
 function CountPill({ children }: { children: React.ReactNode }) {
   return (
-    <span className="tnum ml-1 flex min-w-[18px] items-center justify-center rounded-full bg-[var(--indigo)] px-1 text-[11px] font-bold leading-[18px] text-[var(--indigo-contrast)]">
+    <span className="tnum ml-1 flex min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-micro font-bold leading-[18px] text-on-primary">
       {children}
     </span>
   )
@@ -441,21 +443,21 @@ function BookingCard({
         className={
           // L'etat se lit d'abord au filet lateral, avant meme de lire la puce.
           pending
-            ? 'border-l-[3px] border-l-[var(--ocre)]'
+            ? 'border-l-[3px] border-l-accent'
             : closed
-              ? 'border-l-[3px] border-l-[var(--vermillon)] opacity-80'
+              ? 'border-l-[3px] border-l-danger'
               : booking.status === 'CONFIRMED'
-                ? 'border-l-[3px] border-l-[var(--vert)]'
+                ? 'border-l-[3px] border-l-success'
                 : 'border-l-[3px] border-l-rule-strong'
         }
       >
         <div className="p-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <Link to={`/trips/${booking.tripId}`} className="truncate font-display text-[16px] font-bold leading-tight hover:underline">
+              <Link to={`/trips/${booking.tripId}`} className="truncate font-display text-lead font-bold leading-tight hover:underline">
                 {booking.trip.originLabel} → {booking.trip.destLabel}
               </Link>
-              <p className="tnum mt-0.5 text-[13px] text-muted">
+              <p className="tnum mt-0.5 text-label text-muted">
                 {formatRelativeDay(booking.trip.departureAt)} · {formatTime(booking.trip.departureAt)} ·{' '}
                 {booking.seats} place{booking.seats > 1 ? 's' : ''}
               </p>
@@ -478,16 +480,16 @@ function BookingCard({
                 photoUrl={booking.trip.driver.photoUrl}
                 size={28}
               />
-              <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
+              <span className="min-w-0 flex-1 truncate text-label font-medium">
                 {booking.trip.driver.firstName} {booking.trip.driver.lastName}
               </span>
             </Link>
             <span className="tnum shrink-0 text-right">
-              <span className="block font-display text-[16px] font-bold leading-none">
+              <span className="block font-display text-lead font-bold leading-none">
                 {formatFcfa(booking.amount)}
               </span>
               {!past && booking.status === 'CONFIRMED' ? (
-                <span className="block text-[11px] text-muted">
+                <span className="block text-micro text-muted">
                   {booking.paymentPlan.balanceAmount > 0
                     ? `dont ${formatFcfa(booking.paymentPlan.balanceAmount)} à bord`
                     : 'réglé intégralement'}
@@ -510,14 +512,14 @@ function BookingCard({
                 <MessageSquare className="size-4" aria-hidden />
                 Messages
                 {booking.unreadMessages > 0 ? (
-                  <span className="tnum ml-1 flex size-4 items-center justify-center rounded-full bg-[var(--vermillon)] text-[10px] font-bold text-[var(--vermillon-contrast)]">
+                  <span className="tnum ml-1 flex size-4 items-center justify-center rounded-full bg-danger text-micro font-bold text-on-danger">
                     {booking.unreadMessages}
                   </span>
                 ) : null}
               </Link>
             </Button>
             {onCancel ? (
-              <Button variant="ghost" size="sm" className="ml-auto text-[var(--vermillon)]" onClick={onCancel}>
+              <Button variant="ghost" size="sm" className="ml-auto text-danger-ink" onClick={onCancel}>
                 Annuler
               </Button>
             ) : null}
@@ -574,19 +576,19 @@ function DrivingCard({
       <Card
         className={
           cancelled
-            ? 'border-l-[3px] border-l-[var(--vermillon)] opacity-80'
+            ? 'border-l-[3px] border-l-danger'
             : completed
               ? 'border-l-[3px] border-l-rule-strong'
-              : 'border-l-[3px] border-l-[var(--indigo)]'
+              : 'border-l-[3px] border-l-primary'
         }
       >
-        <Link to={`/trips/${trip.id}`} className="block p-4 transition-colors hover:bg-[var(--surface-calm)]">
+        <Link to={`/trips/${trip.id}`} className="block p-4 transition-colors hover:bg-surface-2">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="truncate font-display text-[16px] font-bold leading-tight">
+              <p className="truncate font-display text-lead font-bold leading-tight">
                 {trip.originLabel} → {trip.destLabel}
               </p>
-              <p className="tnum mt-0.5 text-[13px] text-muted">
+              <p className="tnum mt-0.5 text-label text-muted">
                 {template
                   ? `Navette · ${describeRecurrence(trip.recurrenceRule)} à ${formatTime(trip.departureAt)}`
                   : `${formatRelativeDay(trip.departureAt)} · ${formatTime(trip.departureAt)}`}
@@ -597,7 +599,7 @@ function DrivingCard({
               <ChevronRight className="size-4 text-muted" aria-hidden />
             </div>
           </div>
-          <p className="tnum mt-2 text-[13px] text-ink-2">
+          <p className="tnum mt-2 text-label text-ink-2">
             {template
               ? `${formatFcfa(trip.pricePerSeat)} par place · ${trip.seatsTotal} place${trip.seatsTotal > 1 ? 's' : ''} par départ`
               : `${formatFcfa(trip.pricePerSeat)} par place · ${booked} place${booked > 1 ? 's' : ''} réservée${booked > 1 ? 's' : ''}`}
@@ -619,7 +621,7 @@ function DrivingCard({
                     Modifier
                   </Button>
                 ) : null}
-                <Button variant="ghost" size="sm" className="ml-auto text-[var(--vermillon)]" onClick={onCancel}>
+                <Button variant="ghost" size="sm" className="ml-auto text-danger-ink" onClick={onCancel}>
                   {template ? 'Arrêter la navette' : 'Annuler le trajet'}
                 </Button>
               </>
@@ -668,14 +670,14 @@ function ShuttleGroupCard({
 
   return (
     <m.div variants={listItem}>
-      <Card className={cn('border-l-[3px]', cancelledTemplate ? 'border-l-[var(--vermillon)] opacity-80' : 'border-l-[var(--indigo)]')}>
+      <Card className={cn('border-l-[3px]', cancelledTemplate ? 'border-l-danger' : 'border-l-primary')}>
         <div className="p-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="truncate font-display text-[16px] font-bold leading-tight">
+              <p className="truncate font-display text-lead font-bold leading-tight">
                 {head.originLabel} → {head.destLabel}
               </p>
-              <p className="tnum mt-0.5 text-[13px] text-muted">
+              <p className="tnum mt-0.5 text-label text-muted">
                 Navette · {describeRecurrence(head.recurrenceRule)} à {formatTime(head.departureAt)}
               </p>
             </div>
@@ -684,7 +686,7 @@ function ShuttleGroupCard({
               Navette
             </Badge>
           </div>
-          <p className="tnum mt-2 text-[13px] text-ink-2">
+          <p className="tnum mt-2 text-label text-ink-2">
             {formatFcfa(head.pricePerSeat)} par place · {active.length} départ{active.length > 1 ? 's' : ''}
             {group.occurrences.length > 0 ? ` · ${bookedSeats} place${bookedSeats > 1 ? 's' : ''} réservée${bookedSeats > 1 ? 's' : ''}` : ''}
           </p>
@@ -696,7 +698,7 @@ function ShuttleGroupCard({
               type="button"
               onClick={() => setOpen((v) => !v)}
               aria-expanded={open}
-              className="flex w-full items-center justify-between gap-2 border-t border-rule px-4 py-2.5 text-[13px] font-semibold text-ink-2 transition-colors hover:bg-[var(--surface-calm)]"
+              className="flex w-full items-center justify-between gap-2 border-t border-rule px-4 py-2.5 text-label font-semibold text-ink-2 transition-colors hover:bg-surface-2"
             >
               {open ? 'Masquer les départs' : `Voir les ${group.occurrences.length} départ${group.occurrences.length > 1 ? 's' : ''}`}
               <ChevronDown className={cn('size-4 transition-transform', open && 'rotate-180')} aria-hidden />
@@ -707,7 +709,7 @@ function ShuttleGroupCard({
                   const state = drivingState(trip)
                   return (
                     <li key={trip.id} className="flex flex-wrap items-center gap-2 px-4 py-2.5">
-                      <Link to={`/trips/${trip.id}`} className="tnum min-w-0 flex-1 text-[14px] font-medium underline-offset-4 hover:underline">
+                      <Link to={`/trips/${trip.id}`} className="tnum min-w-0 flex-1 text-body font-medium underline-offset-4 hover:underline">
                         {formatDayShort(trip.departureAt)} · {formatTime(trip.departureAt)}
                       </Link>
                       <TripStatusBadge trip={trip} />
@@ -726,7 +728,7 @@ function ShuttleGroupCard({
                           variant="ghost"
                           size="iconSm"
                           aria-label="Annuler ce départ"
-                          className="text-[var(--vermillon)]"
+                          className="text-danger-ink"
                           onClick={() => onCancel(trip)}
                         >
                           <XCircle className="size-4" aria-hidden />
@@ -746,7 +748,7 @@ function ShuttleGroupCard({
               <Pencil className="size-4" aria-hidden />
               Modifier la navette
             </Button>
-            <Button variant="ghost" size="sm" className="ml-auto text-[var(--vermillon)]" onClick={() => onCancel(template)}>
+            <Button variant="ghost" size="sm" className="ml-auto text-danger-ink" onClick={() => onCancel(template)}>
               Arrêter la navette
             </Button>
           </div>

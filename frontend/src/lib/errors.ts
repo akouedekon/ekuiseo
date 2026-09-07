@@ -35,6 +35,27 @@ export function isTransientError(error: unknown): boolean {
   return false
 }
 
+/**
+ * Erreur definitive (audit F246) : une requete invalide, interdite ou introuvable
+ * ne changera pas en la rejouant. L'ecran d'erreur n'affiche alors pas de bouton
+ * « Reessayer », qui promettrait un resultat different.
+ */
+export function isDefinitiveError(error: unknown): boolean {
+  const status = errorStatus(error)
+  return status === 400 || status === 403 || status === 404 || status === 410 || status === 422
+}
+
 export function errorStatus(error: unknown): number | undefined {
   return error instanceof ApiError ? error.status : undefined
+}
+
+/** Type RFC 7807 d'un compte suspendu (403 renvoye par l'API sur toute requete authentifiee). */
+export const ACCOUNT_SUSPENDED_TYPE = 'account-suspended'
+
+/** Vrai pour le 403 « compte suspendu » : un ecran dedie, pas une redirection vers la connexion. */
+export function isAccountSuspendedError(error: unknown): boolean {
+  if (!(error instanceof ApiError) || error.status !== 403) return false
+  const problem = error.problem
+  if (!problem) return false
+  return [problem.type, problem.title].some((value) => typeof value === 'string' && value.includes(ACCOUNT_SUSPENDED_TYPE))
 }

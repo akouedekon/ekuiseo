@@ -26,7 +26,8 @@ const SURFACES = [
   { token: '--surface-2', usage: 'Zones secondaires, survol' },
   { token: '--surface-sunk', usage: 'Champs désactivés, creux' },
   { token: '--rule', usage: 'Filets et séparateurs' },
-  { token: '--rule-strong', usage: 'Bordures de contrôle' },
+  { token: '--rule-strong', usage: 'Boutons secondaires, séparateurs forts' },
+  { token: '--field-border', usage: 'Contour des champs, cases, radios (≥ 3:1)' },
 ]
 
 const INKS = [
@@ -42,8 +43,8 @@ const HUES = [
 ]
 
 const TYPE_SCALE = [
-  { cls: 'text-hero', label: 'hero · 42/44 · Archivo 800', sample: 'Partagez la route' },
-  { cls: 'text-display-lg', label: 'display-lg · 32/34 · Archivo 800', sample: 'Cotonou → Bohicon' },
+  { cls: 'text-hero', label: 'hero · 44/46 · Archivo 800', sample: 'Partagez la route' },
+  { cls: 'text-display-lg', label: 'display-lg · 32/36 · Archivo 800', sample: 'Cotonou → Bohicon' },
   { cls: 'text-display', label: 'display · 24/28 · Archivo 800', sample: '3 500 FCFA' },
   { cls: 'text-heading', label: 'heading · 20/26 · Archivo 700', sample: 'Réservation confirmée' },
   { cls: 'text-title', label: 'title · 17/22 · Archivo 700', sample: 'Itinéraire et tarif par tronçon' },
@@ -52,6 +53,7 @@ const TYPE_SCALE = [
   { cls: 'text-body', label: 'body · 14/21 · Inter 400', sample: 'Un acompte de 1 000 FCFA bloque la place.' },
   { cls: 'text-label', label: 'label · 13/18 · Inter 500', sample: 'Numéro de téléphone' },
   { cls: 'text-caption', label: 'caption · 12/16 · Inter 600', sample: 'ÉTAPE 1 — MAINTENANT' },
+  { cls: 'text-micro', label: 'micro · 11/14 · Inter 600 · pastilles et barre basse seulement', sample: 'RECHERCHER' },
 ]
 
 export function StyleGuidePage() {
@@ -89,7 +91,7 @@ export function StyleGuidePage() {
       </Section>
 
       {/* ---------------------------------------------------------- Couleurs */}
-      <Section title="Couleurs" intro="Neutres graphite sur pierre claire, sans nuance bleue. Trois teintes de signal, celles du drapeau, chacune en quatre rôles : pleine, survol/appui, fond pâle, encre lisible sur fond pâle.">
+      <Section title="Couleurs" intro="Neutres graphite sur pierre claire, sans nuance bleue. Trois teintes de signal, celles du drapeau, chacune en six rôles : pleine, survol, appui, fond pâle, fond pâle appuyé, encre lisible sur fond pâle.">
         <SectionTitle>Surfaces et encres</SectionTitle>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           {[...SURFACES, ...INKS].map((item) => (
@@ -127,7 +129,7 @@ export function StyleGuidePage() {
                   row.cls,
                   row.cls.startsWith('text-hero') || row.cls.startsWith('text-display') || row.cls === 'text-heading' || row.cls === 'text-title'
                     ? 'font-display font-extrabold tracking-[-0.03em]'
-                    : row.cls === 'text-caption'
+                    : row.cls === 'text-caption' || row.cls === 'text-micro'
                       ? 'font-semibold uppercase tracking-[0.06em]'
                       : row.cls === 'text-label'
                         ? 'font-medium'
@@ -159,7 +161,7 @@ export function StyleGuidePage() {
           <div className="flex flex-wrap items-center gap-3">
             <Button size="lg">
               <Search className="size-5" aria-hidden />
-              Principale 54 px
+              Principale 52 px
             </Button>
             <Button size="md">Standard 44 px</Button>
             <Button size="sm">Compacte 36 px</Button>
@@ -198,7 +200,7 @@ export function StyleGuidePage() {
       </Section>
 
       {/* ------------------------------------------------------------ Champs */}
-      <Section title="Champs" intro="Même anatomie partout : filet fort au repos, filet indigo et anneau pâle au focus, filet vermillon et message sous le champ en erreur. Le libellé est toujours visible, jamais remplacé par le placeholder.">
+      <Section title="Champs" intro="Même anatomie partout : contour à 3:1 au repos (--field-border), filet primaire et anneau pâle au focus, filet danger et message en encre danger sous le champ en erreur. Le libellé est toujours visible, jamais remplacé par le placeholder.">
         <Card className="grid gap-4 p-5 sm:grid-cols-2">
           <Input label="Départ" placeholder="D'où partez-vous ?" leading={<MapPin />} hint="Ville ou quartier du Bénin." />
           <Input label="Numéro de téléphone" defaultValue="+229 97" error="Numéro de téléphone incomplet" />
@@ -228,7 +230,7 @@ export function StyleGuidePage() {
       </Section>
 
       {/* ----------------------------------------------------- Surfaces & retours */}
-      <Section title="Surfaces, retours et vides" intro="Rayons 4 / 8 / 12 / 16 px, ombres courtes avec un filet quasi invisible. Un état vide propose toujours une action ; une confirmation précède toute action qui engage.">
+      <Section title="Surfaces, retours et vides" intro="Rayons 6 / 10 / 14 / 18 px, ombres courtes avec un filet quasi invisible. Un état vide propose toujours une action ; une confirmation précède toute action qui engage.">
         <div className="grid gap-4 lg:grid-cols-3">
           <Card className="p-4">
             <div className="flex items-center gap-3">
@@ -239,8 +241,8 @@ export function StyleGuidePage() {
               </div>
             </div>
             <Separator className="my-3" />
-            <Progress value={62} tone="indigo" aria-label="Exemple de progression" />
-            <p className="mt-2 text-label text-muted">Carte · rayon 12 px · ombre e1</p>
+            <Progress value={62} tone="primary" aria-label="Exemple de progression" />
+            <p className="mt-2 text-label text-muted">Carte · rayon 14 px · ombre e1</p>
           </Card>
           <Card>
             <EmptyState
@@ -318,7 +320,7 @@ function HueChip({ token, label, text }: { token: string; label: string; text: s
       style={{ background: `var(${token})`, color: `var(${text})` }}
     >
       <span className="text-caption font-semibold">Aa</span>
-      <span className="text-[11px] font-medium leading-none">{label}</span>
+      <span className="text-micro font-medium leading-none">{label}</span>
     </div>
   )
 }

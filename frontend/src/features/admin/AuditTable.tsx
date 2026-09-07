@@ -77,7 +77,7 @@ const COLUMNS: DataTableColumn<AuditLogResponse>[] = [
     className: 'hidden lg:table-cell max-w-[360px]',
     cell: (row) =>
       row.details && Object.keys(row.details).length > 0 ? (
-        <code className="block truncate text-[12px] text-ink-2" title={JSON.stringify(row.details)}>
+        <code className="block truncate text-caption text-ink-2" title={JSON.stringify(row.details)}>
           {JSON.stringify(row.details)}
         </code>
       ) : (

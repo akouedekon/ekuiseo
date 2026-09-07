@@ -9,18 +9,14 @@ import { Progress } from '@/components/ui/misc'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { EmptyState, ErrorState, StatSkeleton } from '@/components/ui/states'
 import { SectionTitle } from '@/components/layout/PageContainer'
+import { PageMeta } from '@/components/layout/PageMeta'
 import { downloadLiquidityCsv, useAdminLiquidity } from '@/hooks/useAdmin'
 import { describeError } from '@/lib/errors'
 import { formatFromNow } from '@/lib/format'
 import { listContainer } from '@/lib/motion'
-import type { TripType } from '@/api/types'
+import { TRIP_TYPE_LABEL as MODE_LABEL } from '@/lib/labels'
 import { formatHours, formatPercent, pointsDelta, relativeDelta } from './adminMetrics'
 import { StatTile, TableHead } from './AdminWidgets'
-
-const MODE_LABEL: Record<TripType, string> = {
-  INTERURBAIN: 'Interurbain',
-  QUOTIDIEN: 'Quotidien',
-}
 
 /**
  * Liquidite du marche : les passagers trouvent-ils, les conducteurs
@@ -51,16 +47,17 @@ export function AdminLiquidity() {
 
   return (
     <div>
+      <PageMeta title="Liquidité · Back-office" noindex />
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <SectionTitle className="mb-0">Liquidité</SectionTitle>
-          <p className="mt-0.5 text-[13px] text-muted">
+          <p className="mt-0.5 text-label text-muted">
             Un passager qui ne trouve rien ne revient pas ; un conducteur sans passager ne republie pas.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Select value={String(days)} onValueChange={(value) => setDays(Number(value))}>
-            <SelectTrigger className="h-10 w-auto min-w-[150px] gap-2 text-[14px]" aria-label="Période analysée">
+            <SelectTrigger className="h-10 w-auto min-w-[150px] gap-2 text-body" aria-label="Période analysée">
               <CalendarRange className="size-4 text-muted" aria-hidden />
               <SelectValue />
             </SelectTrigger>
@@ -78,7 +75,7 @@ export function AdminLiquidity() {
       </div>
 
       {/* --- Cote demande : les passagers trouvent-ils ? --- */}
-      <h2 className="mb-2 font-display text-[15px] font-bold">Les passagers trouvent-ils ?</h2>
+      <h2 className="mb-2 font-display text-base font-bold">Les passagers trouvent-ils ?</h2>
       {liquidity.isPending || !cur || !prev ? (
         <div className="grid gap-3 sm:grid-cols-3">
           {[0, 1, 2].map((i) => (
@@ -112,8 +109,8 @@ export function AdminLiquidity() {
       {/* --- Axes en penurie : la liste a demarcher --- */}
       <Card className="mt-4">
         <div className="px-4 pt-4">
-          <h2 className="font-display text-[15px] font-bold">Axes en pénurie</h2>
-          <p className="text-[13px] text-muted">
+          <h2 className="font-display text-base font-bold">Axes en pénurie</h2>
+          <p className="text-label text-muted">
             Couples origine → destination recherchés sans résultat. C'est la liste des corridors à démarcher en
             priorité auprès des conducteurs.
           </p>
@@ -128,7 +125,7 @@ export function AdminLiquidity() {
           />
         ) : (
           <div className="mt-3 overflow-x-auto">
-            <table className="w-full min-w-[560px] text-[14px]">
+            <table className="w-full min-w-[560px] text-body">
               <TableHead>
                 <th scope="col" className="px-4 py-2 font-semibold">Axe</th>
                 <th scope="col" className="px-4 py-2 text-right font-semibold">Recherches</th>
@@ -145,7 +142,7 @@ export function AdminLiquidity() {
                         {route.origin} → {route.destination}
                       </th>
                       <td className="tnum px-4 py-3 text-right">{route.searches.toLocaleString('fr-FR')}</td>
-                      <td className="tnum px-4 py-3 text-right font-semibold text-[var(--vermillon)]">
+                      <td className="tnum px-4 py-3 text-right font-semibold text-danger-ink">
                         {route.searchesWithoutResults.toLocaleString('fr-FR')}
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -166,7 +163,7 @@ export function AdminLiquidity() {
       </Card>
 
       {/* --- Cote offre : les conducteurs remplissent-ils ? --- */}
-      <h2 className="mb-2 mt-6 font-display text-[15px] font-bold">Les conducteurs remplissent-ils ?</h2>
+      <h2 className="mb-2 mt-6 font-display text-base font-bold">Les conducteurs remplissent-ils ?</h2>
       {liquidity.isPending || !cur || !prev ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {[0, 1, 2, 3].map((i) => (
@@ -220,30 +217,30 @@ export function AdminLiquidity() {
         {/* --- Par mode : la these produit --- */}
         <Card>
           <div className="px-4 pt-4">
-            <h2 className="font-display text-[15px] font-bold">Remplissage par mode</h2>
-            <p className="text-[13px] text-muted">
+            <h2 className="font-display text-base font-bold">Remplissage par mode</h2>
+            <p className="text-label text-muted">
               Le quotidien est le modèle économique : s'il ne se remplit pas, le volume interurbain ne suffira pas.
             </p>
           </div>
           {liquidity.isPending || !data ? (
             <div className="shimmer m-4 h-32 rounded-[var(--radius-control)]" />
           ) : data.fillByMode.length === 0 ? (
-            <p className="px-4 py-8 text-center text-[14px] text-muted">Aucun trajet parti sur la période.</p>
+            <p className="px-4 py-8 text-center text-body text-muted">Aucun trajet parti sur la période.</p>
           ) : (
             <ul className="mt-3 divide-y divide-rule">
               {data.fillByMode.map((mode) => (
                 <li key={mode.tripType} className="px-4 py-3">
                   <div className="flex items-baseline justify-between gap-3">
                     <span className="font-medium">{MODE_LABEL[mode.tripType]}</span>
-                    <span className="tnum font-display text-[18px] font-extrabold">{formatPercent(mode.fillRate)}</span>
+                    <span className="tnum font-display text-heading font-extrabold">{formatPercent(mode.fillRate)}</span>
                   </div>
                   <Progress
                     value={Math.min(100, mode.fillRate)}
-                    tone={mode.fillRate >= 60 ? 'vert' : mode.fillRate >= 40 ? 'ocre' : 'vermillon'}
+                    tone={mode.fillRate >= 60 ? 'success' : mode.fillRate >= 40 ? 'accent' : 'danger'}
                     className="mt-2"
                     aria-label={`Taux de remplissage ${MODE_LABEL[mode.tripType]}`}
                   />
-                  <p className="tnum mt-1.5 text-[12px] text-muted">
+                  <p className="tnum mt-1.5 text-caption text-muted">
                     {mode.seatsBooked.toLocaleString('fr-FR')} / {mode.seatsPublished.toLocaleString('fr-FR')} places ·{' '}
                     {mode.trips.toLocaleString('fr-FR')} trajets · {formatPercent(mode.orphanRate, 0)} orphelins
                   </p>
@@ -256,14 +253,14 @@ export function AdminLiquidity() {
         {/* --- Par axe --- */}
         <Card>
           <div className="px-4 pt-4">
-            <h2 className="font-display text-[15px] font-bold">Remplissage par axe</h2>
-            <p className="text-[13px] text-muted">Classés par places publiées</p>
+            <h2 className="font-display text-base font-bold">Remplissage par axe</h2>
+            <p className="text-label text-muted">Classés par places publiées</p>
           </div>
           {liquidity.isPending || !data ? (
             <div className="shimmer m-4 h-32 rounded-[var(--radius-control)]" />
           ) : (
             <div className="mt-3 overflow-x-auto">
-              <table className="w-full min-w-[520px] text-[14px]">
+              <table className="w-full min-w-[520px] text-body">
                 <TableHead>
                   <th scope="col" className="px-4 py-2 font-semibold">Axe</th>
                   <th scope="col" className="px-4 py-2 text-right font-semibold">Trajets</th>
@@ -278,7 +275,7 @@ export function AdminLiquidity() {
                         <span className="block">
                           {route.origin} → {route.destination}
                         </span>
-                        <span className="text-[12px] font-normal text-muted">{MODE_LABEL[route.tripType]}</span>
+                        <span className="text-caption font-normal text-muted">{MODE_LABEL[route.tripType]}</span>
                       </th>
                       <td className="tnum px-4 py-3 text-right">{route.trips.toLocaleString('fr-FR')}</td>
                       <td className="tnum px-4 py-3 text-right text-muted">

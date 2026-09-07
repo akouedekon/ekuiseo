@@ -78,8 +78,8 @@ export function AccountHeaderCard({
       </div>
       {user.bio ? <p className="mt-3 text-body leading-relaxed text-ink-2">{user.bio}</p> : null}
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)] px-3 py-2">
-        <span className="flex min-w-0 items-center gap-2 text-[13px] text-ink-2">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-2 px-3 py-2">
+        <span className="flex min-w-0 items-center gap-2 text-label text-ink-2">
           <Mail className="size-4 shrink-0 text-muted" aria-hidden />
           <span className="truncate">{user.email ?? 'Aucune adresse e-mail'}</span>
         </span>
@@ -87,7 +87,7 @@ export function AccountHeaderCard({
           {user.email ? "Changer l'adresse" : 'Ajouter une adresse'}
         </Button>
       </div>
-      <p className="mt-1.5 text-[12px] text-muted">
+      <p className="mt-1.5 text-caption text-muted">
         Vos codes de connexion sont envoyés à cette adresse. Tout changement est confirmé par un code reçu sur la
         nouvelle adresse.
       </p>
@@ -116,7 +116,8 @@ export function AccountHeaderCard({
               {
                 firstName: values.firstName,
                 lastName: values.lastName,
-                bio: values.bio || null,
+                // Chaine vide = effacer (contrat PATCH /me) ; `photoUrl` n'est jamais envoye.
+                bio: values.bio,
               },
               {
                 onSuccess: () => {

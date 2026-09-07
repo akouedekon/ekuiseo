@@ -4,6 +4,7 @@ import { Skeleton } from '@/components/ui/misc'
 import { ErrorState, OfflineState, isOfflineWithoutData } from '@/components/ui/states'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PageContainer, PageHeader } from '@/components/layout/PageContainer'
+import { PageMeta } from '@/components/layout/PageMeta'
 import { AccountHeaderCard } from '@/features/account/AccountHeaderCard'
 import { AlertsSection } from '@/features/account/AlertsSection'
 import { DataSection } from '@/features/account/DataSection'
@@ -44,6 +45,7 @@ export function MePage() {
   if (isOfflineWithoutData(me)) {
     return (
       <PageContainer width="md">
+        <PageMeta title="Mon compte" noindex />
         <PageHeader title="Mon compte" back={false} />
         <OfflineState
           description="Votre compte n'est pas enregistré sur cet appareil. Il s'affichera dès que la connexion reviendra."
@@ -64,6 +66,7 @@ export function MePage() {
   if (me.isPending || !user) {
     return (
       <PageContainer width="md">
+        <PageMeta title="Mon compte" noindex />
         <PageHeader title="Mon compte" back={false} />
         <Card className="flex items-center gap-4 p-5">
           <Skeleton className="size-16 rounded-full" />
@@ -80,7 +83,8 @@ export function MePage() {
 
   return (
     <PageContainer width="md" className="pb-10">
-      <PageHeader title="Mon compte" back={false} />
+      <PageMeta title="Mon compte" noindex />
+        <PageHeader title="Mon compte" back={false} />
 
       {/* Statut d'identite : inconnu tant que la requete n'a pas repondu, jamais devine. */}
       <AccountHeaderCard user={user} identityStatus={identity.data?.status} />

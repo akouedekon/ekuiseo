@@ -11,6 +11,7 @@ import { Sheet } from '@/components/ui/sheet'
 import { EmptyState, ErrorState } from '@/components/ui/states'
 import { SectionTitle } from '@/components/layout/PageContainer'
 import { useAddVehicle, useDeleteVehicle, useMyVehicles } from '@/hooks/useAccount'
+import { describeError } from '@/lib/errors'
 import { listContainer, listItem } from '@/lib/motion'
 import type { VehicleResponse } from '@/api/types'
 import { VEHICLE_FORM_ID, VehicleForm } from './forms/VehicleForm'
@@ -29,7 +30,9 @@ export function VehiclesSection() {
     const vehicle = toDelete
     deleteVehicle.mutate(vehicle.id, {
       onSuccess: () => toast.success(`${vehicle.brand} ${vehicle.model} retiré de vos véhicules`),
-      onError: () => toast.error("Le véhicule n'a pas pu être supprimé. Il est peut-être engagé sur un trajet."),
+      // Le serveur explique le refus (409 : vehicule engage sur un trajet a venir) ; on le repete tel quel (audit F255).
+      onError: (error) =>
+        toast.error(describeError(error, "Le véhicule n'a pas pu être supprimé. Il est peut-être engagé sur un trajet.")),
       onSettled: () => setToDelete(null),
     })
   }
@@ -69,7 +72,7 @@ export function VehiclesSection() {
           {list.map((vehicle) => (
             <m.li key={vehicle.id} variants={listItem}>
               <Card className="flex items-center gap-3 p-4">
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-[var(--surface-calm)] text-ink-2">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-surface-2 text-ink-2">
                   <Car className="size-5" aria-hidden />
                 </span>
                 <div className="min-w-0 flex-1">
@@ -97,7 +100,7 @@ export function VehiclesSection() {
                   size="icon"
                   aria-label={`Supprimer ${vehicle.brand} ${vehicle.model}`}
                   onClick={() => setToDelete(vehicle)}
-                  className="text-muted hover:bg-[var(--vermillon-soft)] hover:text-[var(--vermillon)]"
+                  className="text-muted hover:bg-danger-soft hover:text-danger-ink"
                 >
                   <Trash2 className="size-4" aria-hidden />
                 </Button>
@@ -132,7 +135,7 @@ export function VehiclesSection() {
                   setAddOpen(false)
                   toast.success('Véhicule ajouté', { description: 'Vous pouvez le proposer sur vos trajets dès maintenant.' })
                 },
-                onError: () => toast.error("Le véhicule n'a pas pu être ajouté. Réessayez."),
+                onError: (error) => toast.error(describeError(error, "Le véhicule n'a pas pu être ajouté. Réessayez.")),
               },
             )
           }

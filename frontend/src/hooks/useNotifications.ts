@@ -34,7 +34,7 @@ export function useUnreadNotificationCount(): number {
   const authenticated = useIsAuthenticated()
   const { data } = useQuery<UnreadCountResponse>({
     queryKey: ['notifications', 'unread-count'],
-    queryFn: () => apiClient.get<UnreadCountResponse>('/api/v1/notifications/unread-count'),
+    queryFn: ({ signal }) => apiClient.get<UnreadCountResponse>('/api/v1/notifications/unread-count', { signal }),
     enabled: authenticated,
     refetchInterval: 60_000,
     staleTime: 30_000,

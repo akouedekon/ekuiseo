@@ -18,14 +18,14 @@ const SCRIPT_URL = 'https://cdn.kkiapay.me/k.js'
 
 type KkiapayEvent = 'success' | 'failed' | 'pending'
 
-export interface KkiapaySuccess {
+interface KkiapaySuccess {
   transactionId: string
   /** Ce que nous avons passe dans `data`, renvoye tel quel par certains widgets. */
   requestData?: unknown
   [key: string]: unknown
 }
 
-export interface KkiapayFailure {
+interface KkiapayFailure {
   transactionId?: string
   reason?: string
   message?: string
@@ -61,7 +61,7 @@ declare global {
 let loader: Promise<void> | undefined
 
 /** Charge k.js une seule fois ; rejette si le script est bloque (CSP, hors ligne, bloqueur). */
-export function loadKkiapayScript(): Promise<void> {
+function loadKkiapayScript(): Promise<void> {
   if (typeof window === 'undefined') return Promise.reject(new Error('Kkiapay : pas de navigateur'))
   if (window.openKkiapayWidget) return Promise.resolve()
   if (loader) return loader
@@ -83,7 +83,7 @@ export function loadKkiapayScript(): Promise<void> {
   return loader
 }
 
-export interface OpenKkiapayInput {
+interface OpenKkiapayInput {
   amount: number
   publicKey: string
   sandbox: boolean
@@ -105,7 +105,7 @@ export function toKkiapayPhone(phone: string | undefined): string | undefined {
 }
 
 /** Fenetre fermee par l'utilisateur sans conclure : ni succes ni refus, rien a afficher. */
-export class KkiapayClosedError extends Error {
+class KkiapayClosedError extends Error {
   constructor() {
     super('Kkiapay : fenetre fermee')
     this.name = 'KkiapayClosedError'

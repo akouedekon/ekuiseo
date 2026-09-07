@@ -47,6 +47,7 @@ import {
 import { useMe } from '@/hooks/useAuth'
 import { describeError } from '@/lib/errors'
 import { formatDateTime, formatDayShort, formatFcfa, formatPhone } from '@/lib/format'
+import { COMFORT_LABEL, documentLabel } from '@/lib/labels'
 import { providerLabel } from '@/lib/payments'
 import type {
   AdminPaymentResponse,
@@ -57,7 +58,7 @@ import type {
   IdentityVerificationStatus,
   PaymentRecordStatus,
 } from '@/api/extended'
-import type { ComfortLevel, TripResponse, TripStatus } from '@/api/types'
+import type { TripResponse, TripStatus } from '@/api/types'
 
 const PAGE_SIZE = 10
 
@@ -74,18 +75,6 @@ const IDENTITY_LABEL: Record<IdentityVerificationStatus, { label: string; tone: 
   PENDING: { label: 'En attente', tone: 'warning' },
   APPROVED: { label: 'Validée', tone: 'success' },
   REJECTED: { label: 'Refusée', tone: 'danger' },
-}
-
-const DOCUMENT_LABEL: Record<string, string> = {
-  CNI: "Carte nationale d'identité",
-  PASSPORT: 'Passeport',
-  DRIVER_LICENSE: 'Permis de conduire',
-}
-
-const COMFORT_LABEL: Record<ComfortLevel, string> = {
-  BASIC: 'Standard',
-  COMFORT: 'Confort',
-  PREMIUM: 'Premium',
 }
 
 const BOOKING_STATUS_LABEL: Record<string, { label: string; tone: 'success' | 'danger' | 'warning' | 'neutral' | 'indigo' }> = {
@@ -328,6 +317,7 @@ export function AdminUserDetail() {
     <div>
       <BackLink />
       <AdminPageHeader
+        metaTitle={name}
         title={
           <span className="flex items-center gap-3">
             <Avatar firstName={data.firstName} lastName={data.lastName} size={40} />
@@ -403,7 +393,7 @@ export function AdminUserDetail() {
       />
 
       {suspended && (data.suspendedReason || data.suspendedAt) ? (
-        <Card className="mb-4 border-[var(--vermillon)] bg-[var(--vermillon-soft)] px-4 py-3 text-[13px] leading-relaxed text-[var(--vermillon)]">
+        <Card className="mb-4 border-danger bg-danger-soft px-4 py-3 text-label leading-relaxed text-danger-ink">
           <span className="font-semibold">Suspendu{data.suspendedAt ? ` le ${formatDateTime(data.suspendedAt)}` : ''}.</span>{' '}
           {data.suspendedReason ? `Motif : ${data.suspendedReason}` : 'Motif non renseigné.'}
         </Card>
@@ -457,7 +447,7 @@ function BackLink() {
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 text-[13px]">
+    <div className="flex items-baseline justify-between gap-3 text-label">
       <dt className="shrink-0 text-muted">{label}</dt>
       <dd className="tnum min-w-0 text-right font-medium text-ink">{children}</dd>
     </div>
@@ -466,10 +456,10 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 
 function CardTitle({ children, count }: { children: ReactNode; count?: number }) {
   return (
-    <h3 className="mb-3 flex items-center gap-2 font-display text-[15px] font-bold">
+    <h3 className="mb-3 flex items-center gap-2 font-display text-base font-bold">
       {children}
       {count !== undefined ? (
-        <span className="tnum rounded-full bg-[var(--surface-calm)] px-2 py-0.5 text-caption font-semibold text-ink-2">{count}</span>
+        <span className="tnum rounded-full bg-surface-2 px-2 py-0.5 text-caption font-semibold text-ink-2">{count}</span>
       ) : null}
     </h3>
   )
@@ -487,16 +477,25 @@ function ProfileCard({ user }: { user: AdminUserDetailResponse }) {
         </Fact>
         {identity?.documentType ? (
           <Fact label="Pièce">
-            {DOCUMENT_LABEL[identity.documentType] ?? identity.documentType}
+            {documentLabel(identity.documentType)}
             {identity.documentLast4 ? <span className="text-muted"> · …{identity.documentLast4}</span> : null}
           </Fact>
+        ) : null}
+        {/* Contrat phase 3 : e-mail confirme et derniere connexion, optionnels tant que le backend ne les envoie pas. */}
+        {user.emailVerified !== undefined ? (
+          <Fact label="E-mail">
+            <Badge tone={user.emailVerified ? 'success' : 'warning'}>{user.emailVerified ? 'Confirmé' : 'Non confirmé'}</Badge>
+          </Fact>
+        ) : null}
+        {user.lastLoginAt !== undefined ? (
+          <Fact label="Dernière connexion">{user.lastLoginAt ? formatDateTime(user.lastLoginAt) : 'Jamais'}</Fact>
         ) : null}
         <Fact label="Trajets publiés">{user.tripsPublished.toLocaleString('fr-FR')}</Fact>
         <Fact label="Réservations">{user.bookingsMade.toLocaleString('fr-FR')}</Fact>
         <Fact label="Note">
           {user.ratingAvg > 0 ? (
             <span className="inline-flex items-center gap-1">
-              <Star className="size-3.5 fill-[var(--ocre)] text-[var(--ocre)]" aria-hidden />
+              <Star className="size-3.5 fill-accent text-accent-ink" aria-hidden />
               {user.ratingAvg.toFixed(1).replace('.', ',')}
             </span>
           ) : (
@@ -504,14 +503,14 @@ function ProfileCard({ user }: { user: AdminUserDetailResponse }) {
           )}
         </Fact>
         <Fact label="Annulations tardives">
-          <span className={user.lateCancellationsCount > 0 ? 'text-[var(--vermillon)]' : undefined}>
+          <span className={user.lateCancellationsCount > 0 ? 'text-danger-ink' : undefined}>
             {user.lateCancellationsCount.toLocaleString('fr-FR')}
           </span>
         </Fact>
         {user.anonymizedAt ? <Fact label="Anonymisé le">{formatDateTime(user.anonymizedAt)}</Fact> : null}
       </dl>
       {user.lateCancellationsCount >= 3 ? (
-        <p className="mt-3 text-[12px] leading-relaxed text-muted">
+        <p className="mt-3 text-caption leading-relaxed text-muted">
           Trois annulations à moins de 24 h du départ ou plus : un passager qui fait perdre des places aux conducteurs.
         </p>
       ) : null}
@@ -539,7 +538,7 @@ function VehiclesCard({ user }: { user: AdminUserDetailResponse }) {
     <Card className="p-4">
       <CardTitle count={user.vehicles.length}>Véhicules</CardTitle>
       {user.vehicles.length === 0 ? (
-        <p className="text-[13px] text-muted">Aucun véhicule enregistré : ce compte ne publie pas de trajet.</p>
+        <p className="text-label text-muted">Aucun véhicule enregistré : ce compte ne publie pas de trajet.</p>
       ) : (
         <ul className="space-y-2">
           {user.vehicles.map((vehicle) => (
@@ -548,12 +547,12 @@ function VehiclesCard({ user }: { user: AdminUserDetailResponse }) {
                 <Car className="size-4" aria-hidden />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] font-semibold text-ink">
+                <span className="block truncate text-label font-semibold text-ink">
                   {vehicle.brand} {vehicle.model}
                   {vehicle.color ? <span className="font-normal text-muted"> · {vehicle.color}</span> : null}
                 </span>
-                <span className="tnum block text-[12px] text-muted">
-                  {vehicle.plate} · {vehicle.seats} places · {COMFORT_LABEL[vehicle.comfortLevel] ?? vehicle.comfortLevel}
+                <span className="tnum block text-caption text-muted">
+                  {vehicle.plate} · {vehicle.seats} places · {COMFORT_LABEL[vehicle.comfortLevel]}
                 </span>
                 <span className="mt-1 block">
                   {vehicle.verified ? (
@@ -594,7 +593,7 @@ function PaymentAccountsCard({ user }: { user: AdminUserDetailResponse }) {
     <Card className="p-4">
       <CardTitle count={user.paymentAccounts.length}>Comptes mobile money</CardTitle>
       {user.paymentAccounts.length === 0 ? (
-        <p className="text-[13px] text-muted">Aucun compte : ce conducteur ne peut recevoir aucun reversement.</p>
+        <p className="text-label text-muted">Aucun compte : ce conducteur ne peut recevoir aucun reversement.</p>
       ) : (
         <ul className="space-y-2">
           {user.paymentAccounts.map((account) => (
@@ -603,7 +602,7 @@ function PaymentAccountsCard({ user }: { user: AdminUserDetailResponse }) {
                 <Smartphone className="size-4" aria-hidden />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="tnum block text-[13px] font-semibold text-ink">
+                <span className="tnum block text-label font-semibold text-ink">
                   {providerLabel(account.provider)} {formatPhone(account.phone)}
                 </span>
                 <span className="mt-1 flex flex-wrap gap-1">
@@ -616,7 +615,7 @@ function PaymentAccountsCard({ user }: { user: AdminUserDetailResponse }) {
         </ul>
       )}
       {user.paymentAccounts.some((a) => !a.verified) ? (
-        <p className="mt-3 text-[12px] leading-relaxed text-muted">
+        <p className="mt-3 text-caption leading-relaxed text-muted">
           Un compte non vérifié ne reçoit aucun reversement. L'attestation se fait depuis{' '}
           <Link to="/admin/payouts" className="font-medium text-ink underline-offset-4 hover:underline">
             Reversements
@@ -682,7 +681,7 @@ function PaymentsTab({ userId }: { userId: string }) {
         rows={payments.data?.content ?? []}
         rowKey={(p) => p.id}
         loading={payments.isPending}
-        rowAccent={(p) => (p.status === 'REFUND_MANUAL' ? 'var(--vermillon)' : p.status === 'REFUND_PENDING' ? 'var(--ocre)' : undefined)}
+        rowAccent={(p) => (p.status === 'REFUND_MANUAL' ? 'var(--danger)' : p.status === 'REFUND_PENDING' ? 'var(--accent)' : undefined)}
         empty={<EmptyState icon={Smartphone} title="Aucun paiement" description="Aucun paiement mobile money pour ce compte." />}
       />
       {payments.data ? (

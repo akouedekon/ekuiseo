@@ -1,3 +1,4 @@
+import * as RadioGroupPrimitive from '@radix-ui/react-radio-group'
 import { Star } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
@@ -21,14 +22,20 @@ interface ReviewDialogProps {
   onOpenChange: (open: boolean) => void
   tripId: string
   target: { id: string; name: string }
-  /** Role de la personne NOTEE : DRIVER quand un passager note son conducteur. */
+  /** Role de la personne NOTEE : DRIVER quand un passager note son conducteur, PASSENGER dans l'autre sens. */
   role: ReviewRole
+  /** Appele apres enregistrement : l'appelant memorise que cette personne est notee (le serveur n'expose pas toujours l'etat). */
+  onReviewed?: () => void
 }
 
 const RATING_LABEL = ['', 'Très mauvais', 'Mauvais', 'Correct', 'Bien', 'Excellent']
 
-/** Avis apres un trajet termine (POST /api/v1/trips/{id}/reviews) : note de 1 a 5 et commentaire facultatif. */
-export function ReviewDialog({ open, onOpenChange, tripId, target, role }: ReviewDialogProps) {
+/**
+ * Avis apres un trajet termine (POST /api/v1/trips/{id}/reviews) : note de 1 a 5
+ * et commentaire facultatif. Les etoiles forment un groupe radio Radix :
+ * fleches du clavier et tabindex tournant fournis (audit F321).
+ */
+export function ReviewDialog({ open, onOpenChange, tripId, target, role, onReviewed }: ReviewDialogProps) {
   const [rating, setRating] = useState(0)
   const [hover, setHover] = useState(0)
   const [comment, setComment] = useState('')
@@ -42,6 +49,7 @@ export function ReviewDialog({ open, onOpenChange, tripId, target, role }: Revie
       {
         onSuccess: () => {
           onOpenChange(false)
+          onReviewed?.()
           toast.success('Merci pour votre avis', { description: `${target.name} a été noté ${rating}/5.` })
         },
         onError: (error) => toast.error(describeError(error, "L'avis n'a pas pu être enregistré.")),
@@ -60,32 +68,32 @@ export function ReviewDialog({ open, onOpenChange, tripId, target, role }: Revie
         </DialogHeader>
         <div className="space-y-4">
           <div>
-            <div className="flex justify-center gap-1" role="radiogroup" aria-label="Note sur 5">
+            <RadioGroupPrimitive.Root
+              value={rating === 0 ? undefined : String(rating)}
+              onValueChange={(value) => setRating(Number(value))}
+              orientation="horizontal"
+              aria-label="Note sur 5"
+              className="flex justify-center gap-1"
+            >
               {[1, 2, 3, 4, 5].map((value) => (
-                <button
+                <RadioGroupPrimitive.Item
                   key={value}
-                  type="button"
-                  role="radio"
-                  aria-checked={rating === value}
+                  value={String(value)}
                   aria-label={`${value} sur 5 : ${RATING_LABEL[value]}`}
                   onMouseEnter={() => setHover(value)}
                   onMouseLeave={() => setHover(0)}
                   onFocus={() => setHover(value)}
                   onBlur={() => setHover(0)}
-                  onClick={() => setRating(value)}
                   className="flex size-11 items-center justify-center rounded-[var(--radius-control)] transition-transform hover:scale-110"
                 >
                   <Star
-                    className={cn(
-                      'size-8 transition-colors',
-                      value <= shown ? 'fill-[var(--ocre)] text-[var(--ocre)]' : 'text-rule-strong',
-                    )}
+                    className={cn('size-8 transition-colors', value <= shown ? 'fill-accent text-accent-ink' : 'text-field-border')}
                     aria-hidden
                   />
-                </button>
+                </RadioGroupPrimitive.Item>
               ))}
-            </div>
-            <p className="mt-1 text-center text-[13px] font-medium text-ink-2" aria-live="polite">
+            </RadioGroupPrimitive.Root>
+            <p className="mt-1 text-center text-label font-medium text-ink-2" aria-live="polite">
               {shown > 0 ? RATING_LABEL[shown] : 'Touchez une étoile'}
             </p>
           </div>

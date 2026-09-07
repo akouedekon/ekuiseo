@@ -7,7 +7,7 @@ import type { CreateReviewRequest, ReviewResponse } from '@/api/types'
 export function useUserReviews(userId: string | undefined) {
   return useQuery<ReviewResponse[]>({
     queryKey: ['users', userId, 'reviews'],
-    queryFn: () => apiClient.get<ReviewResponse[]>(`/api/v1/users/${userId}/reviews`, { auth: false }),
+    queryFn: ({ signal }) => apiClient.get<ReviewResponse[]>(`/api/v1/users/${userId}/reviews`, { auth: false, signal }),
     enabled: !!userId,
   })
 }
@@ -16,7 +16,7 @@ export function useUserReviews(userId: string | undefined) {
 export function usePublicUser(userId: string | undefined) {
   return useQuery<PublicUserResponse>({
     queryKey: ['users', userId],
-    queryFn: () => apiClient.get<PublicUserResponse>(`/api/v1/users/${userId}`, { auth: false }),
+    queryFn: ({ signal }) => apiClient.get<PublicUserResponse>(`/api/v1/users/${userId}`, { auth: false, signal }),
     enabled: !!userId,
   })
 }
@@ -31,6 +31,8 @@ export function useCreateReview() {
       queryClient.invalidateQueries({ queryKey: ['users', variables.input.targetId] })
       queryClient.invalidateQueries({ queryKey: ['bookings'] })
       queryClient.invalidateQueries({ queryKey: ['me', 'trips'] })
+      // Liste d'appel du conducteur : un passager note n'est plus propose a la notation.
+      queryClient.invalidateQueries({ queryKey: ['trips', variables.tripId, 'passengers'] })
     },
   })
 }

@@ -44,7 +44,7 @@ export function StatTile({
         <p className="text-label font-medium text-muted">{label}</p>
         <p
           title={title}
-          className="tnum mt-2 font-display text-[26px] font-extrabold leading-none tracking-[-0.03em] text-ink"
+          className="tnum mt-2 font-display text-display font-extrabold leading-none tracking-[-0.03em] text-ink"
         >
           {value}
         </p>
@@ -115,10 +115,10 @@ export function ChartTooltip({
   if (!active || !payload?.length) return null
   return (
     <div className="rounded-[var(--radius-control)] border border-rule bg-surface px-3 py-2 shadow-e3">
-      {label ? <p className="mb-1 text-[12px] font-semibold text-ink">{label}</p> : null}
+      {label ? <p className="mb-1 text-caption font-semibold text-ink">{label}</p> : null}
       <ul className="space-y-0.5">
         {payload.map((entry, index) => (
-          <li key={index} className="flex items-center gap-2 text-[12px]">
+          <li key={index} className="flex items-center gap-2 text-caption">
             <span aria-hidden className="size-2 rounded-full" style={{ background: entry.color }} />
             <span className="text-muted">{entry.name}</span>
             <span className="tnum ml-auto font-semibold text-ink">
@@ -135,7 +135,7 @@ export function ChartTooltip({
 export function TableHead({ children }: { children: React.ReactNode }) {
   return (
     <thead>
-      <tr className="border-y border-rule bg-[var(--surface-calm)] text-left text-[12px] uppercase tracking-wide text-muted">
+      <tr className="border-y border-rule bg-surface-2 text-left text-caption uppercase tracking-wide text-muted">
         {children}
       </tr>
     </thead>

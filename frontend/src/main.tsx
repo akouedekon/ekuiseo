@@ -4,7 +4,7 @@ import { BrowserRouter } from 'react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
 import { TooltipProvider } from '@radix-ui/react-tooltip'
-import { LazyMotion, domAnimation } from 'motion/react'
+import { LazyMotion, MotionConfig, domAnimation } from 'motion/react'
 import { Toaster } from 'sonner'
 
 // Polices auto-hebergees (pas de CDN) : seul le sous-ensemble latin est charge.
@@ -42,30 +42,37 @@ const tree = (
      * refuse tout composant `motion.*` qui ramenerait le paquet entier.
      */}
     <LazyMotion features={domAnimation} strict>
-      {/* Sous-chemin de publication (vitrine GitHub Pages) : le routeur doit le connaitre. */}
-      <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-        {/* La frontiere d'erreur vit dans le routeur : son ecran de secours contient des liens. */}
-        <ErrorBoundary>
-          <App />
-        </ErrorBoundary>
-        <ServiceWorkerUpdate />
-        <Toaster
-          position="top-center"
-          offset={68}
-          closeButton
-          toastOptions={{
-            // Les toasts empruntent les tokens : aucune couleur en dur.
-            style: {
-              background: 'var(--surface)',
-              color: 'var(--ink)',
-              border: '1px solid var(--rule)',
-              borderRadius: 'var(--radius-card)',
-              fontFamily: 'var(--font-sans)',
-              boxShadow: 'var(--shadow-3)',
-            },
-          }}
-        />
-      </BrowserRouter>
+      {/*
+       * `reducedMotion="user"` : toutes les animations `motion` (transitions
+       * d'ecran, cascades, feuilles) suivent prefers-reduced-motion, comme le CSS
+       * (audit F316). Les transformations sont neutralisees, les fondus conserves.
+       */}
+      <MotionConfig reducedMotion="user">
+        {/* Sous-chemin de publication (vitrine GitHub Pages) : le routeur doit le connaitre. */}
+        <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
+          {/* La frontiere d'erreur vit dans le routeur : son ecran de secours contient des liens. */}
+          <ErrorBoundary>
+            <App />
+          </ErrorBoundary>
+          <ServiceWorkerUpdate />
+          <Toaster
+            position="top-center"
+            offset={68}
+            closeButton
+            toastOptions={{
+              // Les toasts empruntent les tokens : aucune couleur en dur.
+              style: {
+                background: 'var(--surface)',
+                color: 'var(--ink)',
+                border: '1px solid var(--rule)',
+                borderRadius: 'var(--radius-card)',
+                fontFamily: 'var(--font-sans)',
+                boxShadow: 'var(--shadow-3)',
+              },
+            }}
+          />
+        </BrowserRouter>
+      </MotionConfig>
     </LazyMotion>
   </TooltipProvider>
 )

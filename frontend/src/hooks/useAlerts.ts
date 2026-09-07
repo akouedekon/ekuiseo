@@ -19,7 +19,7 @@ export function useCreateTripAlert() {
 export function useMyTripAlerts(enabled = true) {
   return useQuery<TripAlertResponse[]>({
     queryKey: ['me', 'trip-alerts'],
-    queryFn: () => apiClient.get<TripAlertResponse[]>('/api/v1/trip-alerts'),
+    queryFn: ({ signal }) => apiClient.get<TripAlertResponse[]>('/api/v1/trip-alerts', { signal }),
     enabled,
   })
 }
