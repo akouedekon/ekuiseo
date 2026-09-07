@@ -1,0 +1,48 @@
+# ============================================================
+# Ekuiseo — surcouche « tests de bout en bout » (a combiner avec docker-compose.yml)
+# ============================================================
+# Usage :
+#   cp .env.example .env            # si absent
+#   docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build
+#   bash e2e/scripts/wait-for-stack.sh && bash e2e/scripts/seed.sh
+#   cd e2e && npm ci && npx playwright install --with-deps chromium && npm test
+#
+# La pile de developpement (Vite sur 5173, API sur 8080, PostGIS) est reprise telle
+# quelle ; cette surcouche fige seulement ce dont Playwright a besoin :
+#  - paiements simules (KKIAPAY_MODE=stub) : aucun appel a Kkiapay ;
+#  - e-mails journalises (MAIL_MODE=log) avec les codes EN CLAIR
+#    (OTP_LOG_PLAIN_CODES=true -> ekuiseo.otp.log-plain-codes) : e2e/helpers/otp.ts lit le
+#    code de connexion dans `docker logs ekuiseo-backend` ([MAIL-STUB] ...) ;
+#  - quotas anti-abus releves : chaque parcours cree un compte et demande un code, les deux
+#    projets Playwright (mobile puis desktop) rejouent tout, et un poste de dev relance
+#    souvent — les seuils de production (3 codes / 10 min par numero, 10 par IP) bloqueraient
+#    la deuxieme execution.
+# Aucun secret ici : les valeurs sont celles du developpement (docker-compose.yml).
+# ============================================================
+
+services:
+  backend:
+    environment:
+      KKIAPAY_MODE: stub
+      KKIAPAY_SANDBOX: "true"
+      MAIL_MODE: log
+      OTP_CHANNEL: email
+      OTP_SMS_FALLBACK: "false"
+      SMS_MODE: log
+      OTP_LOG_PLAIN_CODES: "true"
+      # Quotas (application.yml : ekuiseo.otp.*, ekuiseo.rate-limit.*).
+      OTP_RATE_LIMIT_MAX_REQUESTS: "100"
+      OTP_RATE_LIMIT_WINDOW_MINUTES: "10"
+      OTP_MAX_PER_DAY: "500"
+      RATE_LIMIT_OTP_MAX: "500"
+      RATE_LIMIT_OTP_WINDOW_SECONDS: "600"
+      RATE_LIMIT_AUTH_MAX: "1000"
+      RATE_LIMIT_AUTH_WINDOW_SECONDS: "60"
+      RATE_LIMIT_SEARCH_MAX: "1000"
+      RATE_LIMIT_SEARCH_WINDOW_SECONDS: "60"
+
+  frontend:
+    environment:
+      # Le navigateur pilote par Playwright tourne sur l'hote : il appelle l'API sur le port
+      # publie (8080), pas via le proxy Vite interne au conteneur (CORS "*" en dev).
+      VITE_API_URL: ${E2E_API_URL:-http://localhost:8080}

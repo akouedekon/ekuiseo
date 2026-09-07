@@ -1,0 +1,22 @@
+{
+  "name": "ekuiseo-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Tests de bout en bout Playwright d'Ekuiseo (pile Docker de dev + jeu de demonstration)",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:mobile": "playwright test --project=mobile",
+    "test:desktop": "playwright test --project=desktop",
+    "test:headed": "playwright test --headed --project=desktop",
+    "test:ui": "playwright test --ui",
+    "report": "playwright show-report",
+    "browsers": "playwright install --with-deps chromium",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^22.19.0",
+    "typescript": "^5.9.0"
+  }
+}

@@ -1,0 +1,7 @@
+# Sorties de Playwright (rapport HTML, traces, captures) et dependances.
+node_modules/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+stack-logs.txt

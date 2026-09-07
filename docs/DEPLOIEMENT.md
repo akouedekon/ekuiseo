@@ -274,12 +274,15 @@ Internet --443--> nginx (hôte, TLS via certbot) --127.0.0.1:8090--> caddy (cont
    bash scripts/deploy-vps.sh
    ```
 
-   Ce script clone ou met à jour `/opt/ekuiseo`, vérifie `.env`, et lance
-   `docker compose -f docker-compose.prod.yml -f docker-compose.vps.yml up -d --build`.
+   Ce script clone ou met à jour `/opt/ekuiseo`, vérifie `.env`, choisit les images
+   (registre GHCR si `EKUISEO_TAG` est fourni, construction locale sinon — voir §14.1) et
+   lance `docker compose -f docker-compose.prod.yml -f docker-compose.vps.yml up -d`.
    La surcouche `docker-compose.vps.yml` remplace les ports publics de Caddy par
-   `127.0.0.1:8090:80` et monte `Caddyfile.proxied` (HTTP simple, mêmes routes et
-   en-têtes, HSTS laissé au nginx amont). Rien d'autre ne change : réseaux, volumes et
-   conteneurs restent préfixés `ekuiseo`, sans collision avec l'autre application.
+   `127.0.0.1:8090:80`, monte `Caddyfile.proxied` (HTTP simple, mêmes routes et
+   en-têtes, HSTS laissé au nginx amont) et pointe `backend`/`frontend` sur
+   `ghcr.io/akouedekon/ekuiseo-*:${EKUISEO_TAG}`. Rien d'autre ne change : réseaux,
+   volumes et conteneurs restent préfixés `ekuiseo`, sans collision avec l'autre
+   application.
 
 2. **Site nginx de l'hôte** — un fichier dédié, qui ne touche pas aux autres sites :
 
@@ -300,21 +303,116 @@ Internet --443--> nginx (hôte, TLS via certbot) --127.0.0.1:8090--> caddy (cont
    Certbot ajoute le bloc `listen 443 ssl` et la redirection HTTP → HTTPS au fichier du
    site, et programme le renouvellement.
 
-4. **Mises à jour** — relancer `bash scripts/deploy-vps.sh` : `git pull` puis reconstruction
-   des images, sans interruption de l'autre application.
+4. **Mises à jour** — le chemin normal est le déploiement automatique (§14). À la main :
+   `EKUISEO_TAG=<sha> bash scripts/deploy-vps.sh` tire les images publiées par la CI ;
+   `bash scripts/deploy-vps.sh` sans `EKUISEO_TAG` reconstruit les images sur le serveur
+   (secours sans registre). Dans les deux cas sans interruption de l'autre application.
 
 ## 14. Déploiement automatique à chaque push
 
 `.github/workflows/deploy-prod.yml` se déclenche à la fin du workflow **CI** sur `main`,
-uniquement s'il a réussi (tests backend contre PostGIS, build du frontend). Il se connecte
-au VPS avec une clé SSH dédiée (secret `DEPLOY_SSH_KEY`, variables `DEPLOY_HOST`,
-`DEPLOY_USER`, `DEPLOY_KNOWN_HOSTS`), cale `/opt/ekuiseo` sur le commit testé, lance
-`scripts/deploy-vps.sh` puis vérifie `https://ekuiseo.com/actuator/health`.
+uniquement s'il a réussi (tests backend contre PostGIS, build du frontend, publication des
+images). Il se connecte au VPS avec une clé SSH dédiée (secret `DEPLOY_SSH_KEY`, variables
+`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_KNOWN_HOSTS`), cale `/opt/ekuiseo` sur le commit
+testé, lance `scripts/deploy-vps.sh` avec `EKUISEO_TAG=<sha>` puis vérifie
+`https://ekuiseo.com/actuator/health`.
 
 - Un commit qui casse les tests n'est jamais déployé.
 - Le déploiement peut aussi être lancé à la main : onglet *Actions* → *Production (VPS)* →
-  *Run workflow*.
+  *Run workflow*. Le commit visé est alors la tête de `main` ; la CI doit y avoir publié
+  les images (elle le fait à chaque push sur `main`).
 - Les secrets applicatifs (`.env` du serveur : base, JWT, Kkiapay, SMS) ne transitent
   jamais par GitHub ; ils restent sur le VPS.
 - Pour révoquer l'accès : retirer la ligne `github-actions-ekuiseo-deploy` de
   `~deploy/.ssh/authorized_keys` sur le serveur et supprimer le secret `DEPLOY_SSH_KEY`.
+
+### 14.1 Images publiées dans le registre GitHub (GHCR)
+
+Le job `docker-images` du workflow **CI** construit les deux images à chaque run (une PR
+vérifie que les Dockerfiles passent) et les **publie sur un push de `main`** dans GitHub
+Container Registry (constat F437) :
+
+```
+ghcr.io/akouedekon/ekuiseo-backend:<sha>    ghcr.io/akouedekon/ekuiseo-backend:main
+ghcr.io/akouedekon/ekuiseo-frontend:<sha>   ghcr.io/akouedekon/ekuiseo-frontend:main
+```
+
+Aucun secret à créer : `GITHUB_TOKEN` suffit (`permissions: packages: write`). Le VPS ne
+construit plus rien, il tire le tag `<sha>` que lui passe le workflow ; le retour arrière
+consiste à relancer l'ancien tag (`docs/EXPLOITATION.md`, § Mise à jour). Le cache de build
+GitHub Actions (`type=gha`) rend les builds suivants incrémentaux.
+
+**Réglages GitHub à faire une fois par le fondateur :**
+
+1. **Rendre les paquets publics** — après la première publication, sur la page du dépôt :
+   *Packages* → `ekuiseo-backend` → *Package settings* → *Danger zone* → *Change
+   visibility* → *Public* ; idem pour `ekuiseo-frontend`. Un paquet public se tire **sans
+   authentification** : le VPS n'a besoin d'aucun jeton, et le code est de toute façon
+   dans un dépôt public. Vérifier aussi que le paquet est bien lié au dépôt (*Manage
+   Actions access* n'est nécessaire que pour des dépôts privés).
+2. **À défaut, si les paquets restent privés** — créer un jeton d'accès personnel (classic)
+   avec la seule permission `read:packages` (*Settings* → *Developer settings* → *Personal
+   access tokens*), puis, une fois, sur le VPS, en tant qu'utilisateur `deploy` :
+   ```bash
+   docker login ghcr.io -u akouedekon     # coller le jeton comme mot de passe
+   ```
+   Docker le conserve dans `~/.docker/config.json` ; les `docker compose pull` du script
+   l'utiliseront. Révoquer le jeton depuis GitHub pour retirer l'accès.
+3. **Variables du frontend** (*Settings* → *Secrets and variables* → *Actions* → onglet
+   *Variables*) — Vite fige ces valeurs dans le bundle **au moment du build** de l'image,
+   elles ne peuvent plus être changées par le `.env` du serveur :
+   - `VITE_API_URL` : **laisser vide** en production (l'API est servie sous le même domaine
+     via `/api`, voir `.env.example`) ;
+   - `VITE_MAP_STYLE_URL` : URL de style MapTiler (clé restreinte aux origines
+     `https://ekuiseo.com` et `https://www.ekuiseo.com`) ; vide = tracé schématique ;
+   - `VITE_SUPPORT_EMAIL` : adresse de support affichée sur l'écran de connexion
+     (`contact@ekuiseo.com` si la variable est absente).
+   Une variable absente vaut la valeur par défaut ci-dessus ; la changer impose un nouveau
+   build (un push sur `main`, ou *Re-run* du job CI).
+
+Le déploiement manuel sans registre reste possible (`bash scripts/deploy-vps.sh` sans
+`EKUISEO_TAG`) : le script construit alors les images sur le serveur et les tague
+`local-<commit>-<horodatage>` sous le même espace de noms, le reste du parcours (sonde,
+retour arrière, purge) est identique.
+
+## 15. Tests de bout en bout (Playwright)
+
+Quatre parcours réels (constats F435/F143) jouent contre la pile Docker de développement
+avec un navigateur piloté, sur deux gabarits (Pixel 5, puis bureau 1366 px) :
+inscription et connexion par code, recherche Cotonou → Bohicon et réservation en espèces,
+publication d'un trajet par un conducteur, annulation d'une réservation par le passager.
+Ils vivent dans `e2e/` (propre `package.json`, sélecteurs par rôle et libellés français
+de l'interface).
+
+La surcouche `docker-compose.e2e.yml` fige ce dont les tests ont besoin : Kkiapay simulé
+(`KKIAPAY_MODE=stub`), e-mails journalisés avec les codes en clair (`MAIL_MODE=log`,
+`OTP_LOG_PLAIN_CODES=true`, propriété `ekuiseo.otp.log-plain-codes`), quotas anti-abus
+relevés. `e2e/helpers/otp.ts` lit le code de connexion dans `docker logs ekuiseo-backend`
+(ligne `[MAIL-STUB] a <adresse> | Votre code Ekuiseo : 123456 | …`). Le jeu de données
+est celui de la démonstration (`scripts/seed-demo.sh`, conducteur vérifié Marcellin Sagbo
+`+229 01 97 00 10 06`) plus un trajet Cotonou → Bohicon dédié, remis à J+3 à chaque
+passage (`e2e/seed-e2e.sql`).
+
+En local (Docker démarré, Node 22, aucun secret) :
+
+```bash
+cp .env.example .env                                   # si absent (valeurs de developpement)
+docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build
+bash e2e/scripts/wait-for-stack.sh                     # API sur :8080, Vite sur :5173
+bash e2e/scripts/seed.sh                               # demo + trajet E2E (rejouable)
+cd e2e && npm ci && npx playwright install --with-deps chromium
+npm test                                               # les deux projets ; npm run test:mobile / test:desktop
+npm run report                                         # rapport HTML, traces des echecs
+```
+
+`npm run test:headed` ouvre le navigateur ; `npm run test:ui` lance l'explorateur Playwright.
+Variables utiles : `E2E_BASE_URL` (front, défaut `http://localhost:5173`),
+`E2E_BACKEND_CONTAINER` (défaut `ekuiseo-backend`). Les tests ne tournent **jamais**
+contre la production : sans `OTP_LOG_PLAIN_CODES=true` les codes sont masqués dans les
+journaux et aucune connexion n'est possible.
+
+En CI, le job `e2e` du workflow **CI** rejoue exactement ces étapes après les jobs backend
+et frontend, et publie le rapport HTML, les traces et les journaux de la pile en artefact
+(`e2e-playwright`). Il est **non bloquant** au premier passage (`continue-on-error: true`
+dans `.github/workflows/ci.yml`) : le retirer après deux runs verts consécutifs, pour qu'un
+parcours cassé bloque le déploiement.
