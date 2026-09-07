@@ -155,9 +155,15 @@ rollback() {
 
 if [ "$MODE" = registre ]; then
   log "Recuperation des images $TAG depuis le registre"
-  $COMPOSE pull --quiet backend frontend \
-    || die "images $TAG introuvables sur $IMAGE_NS : la CI ne les a pas publiees, ou le paquet n'est pas public (docker login ghcr.io requis, voir docs/DEPLOIEMENT.md §14). La pile en service n'a pas ete touchee."
-else
+  if ! $COMPOSE pull --quiet backend frontend; then
+    # Paquet encore prive, premiere publication manquante ou registre injoignable : on
+    # retombe sur la construction locale plutot que de bloquer le deploiement (le tag
+    # reste celui de la CI pour que le retour arriere et .deployed-tag restent coherents).
+    log "AVERTISSEMENT : images $TAG introuvables sur $IMAGE_NS (paquet prive ? voir docs/DEPLOIEMENT.md §14) : construction locale de secours"
+    MODE=local-secours
+  fi
+fi
+if [ "$MODE" != registre ]; then
   log "Construction locale des images depuis le depot (docker-compose.prod.yml)"
   docker compose -f docker-compose.prod.yml build backend frontend \
     || die "construction impossible ; la pile en service n'a pas ete touchee."
