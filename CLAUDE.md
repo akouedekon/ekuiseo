@@ -88,7 +88,7 @@ GitHub Actions, cible de déploiement : VPS Hostinger.
   Classement par distance de détour, écart horaire et note du conducteur.
 - Erreurs HTTP en **RFC 7807** (`ProblemDetail`).
 - Migrations Flyway **numérotées à la suite**. Ne jamais modifier une migration déjà
-  écrite — V1 à V16 existent (la prochaine est V17).
+  écrite — V1 à V17 existent (la prochaine est V18).
 - Le front ne recalcule jamais un montant pour une réservation existante : il lit le
   `paymentPlan` renvoyé par l'API. Les estimations locales sont autorisées **avant**
   création, et doivent être affichées comme telles.
@@ -102,7 +102,7 @@ GitHub Actions, cible de déploiement : VPS Hostinger.
 Complet et cohérent de bout en bout : API, interface, back-office d'administration,
 chaîne de déploiement, jeu de démonstration, documentation d'exploitation.
 
-- `backend/` — 16 migrations. Kkiapay (initiation, webhook signé et
+- `backend/` — 17 migrations. Kkiapay (initiation, webhook signé et
   idempotent, vérification serveur, remboursements), codes de connexion par e-mail (SMS en repli) avec limitation de débit,
   géocodage des villes béninoises en base, rôles et back-office, reversements, signalements,
   journal d'audit, alertes de recherche, abonnements, trace des recherches (`search_events`,
@@ -122,8 +122,8 @@ chaîne de déploiement, jeu de démonstration, documentation d'exploitation.
 
 ## État de vérification
 
-**Backend** : `mvn test` = 415 tests unitaires, 0 échec, plus 28 tests d intégration Testcontainers (`mvn verify`, exécutés en CI). **Frontend** :
-`npm run lint`, `npm test` (Vitest, 84 tests : client HTTP et rafraîchissement de jeton,
+**Backend** : `mvn test` = 454 tests unitaires, 0 échec, plus 43 tests d intégration Testcontainers (`mvn verify`, exécutés en CI). **Frontend** :
+`npm run lint`, `npm test` (Vitest, 99 tests : client HTTP et rafraîchissement de jeton,
 erreurs, règles de paiement, validation) et `npm run build` passent ; les trois tournent en CI.
 
 **Vérifié en production le 2026-09-05** (https://ekuiseo.com, `docs/RAPPORT-FONCTIONNEL.md`) :
