@@ -1,0 +1,22 @@
+# Profil "it" : tests d'integration (classes *IT, maven-failsafe) contre un PostGIS
+# Testcontainers. L'URL JDBC est injectee par AbstractPostgisIT (@DynamicPropertySource).
+# Aucune passerelle reelle : Kkiapay simule, e-mails et SMS journalises.
+ekuiseo:
+  jwt:
+    secret: it-only-secret-key-not-for-production-use-min-32-chars
+  kkiapay:
+    mode: stub
+    webhook-secret: it-webhook-secret
+    sandbox: true
+  mail:
+    mode: log
+  sms:
+    mode: log
+  otp:
+    log-plain-codes: false
+
+logging:
+  level:
+    bj.ekuiseo.api: WARN
+    org.testcontainers: WARN
+    com.github.dockerjava: WARN

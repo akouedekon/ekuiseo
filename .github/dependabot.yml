@@ -1,0 +1,133 @@
+# Veille de dependances (constats F018/F430 de l'audit) : une PR groupee par
+# ecosysteme et par semaine, le lundi matin (heure du Benin, UTC+1), pour que la
+# revue tienne en une seule session plutot qu'en dix notifications eparses.
+#
+# Regles :
+# - Spring Boot reste sur la ligne 3.x (Java 17, voir CLAUDE.md) : les versions
+#   majeures sont ignorees ici et se decident a la main (4.x = revue complete).
+# - Les images Docker et le compose suivent les memes majeures que le code
+#   (PostGIS 16, Java 17, Node 22) ; seules les mineures/correctifs sont proposes.
+# - Les correctifs de securite arrivent aussi en dehors du groupe hebdomadaire
+#   (comportement par defaut de Dependabot pour les alertes).
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Africa/Porto-Novo
+    open-pull-requests-limit: 5
+    labels: [dependances, backend]
+    commit-message:
+      prefix: "deps(backend)"
+    groups:
+      spring:
+        patterns: ["org.springframework*", "org.springdoc:*"]
+        update-types: [minor, patch]
+      maven-mineurs:
+        patterns: ["*"]
+        exclude-patterns: ["org.springframework*", "org.springdoc:*"]
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: "org.springframework.boot:*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "org.springdoc:*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Africa/Porto-Novo
+    open-pull-requests-limit: 5
+    labels: [dependances, frontend]
+    commit-message:
+      prefix: "deps(frontend)"
+    groups:
+      npm-mineurs:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    ignore:
+      # Majeures du socle front decidees a la main (React, Vite, Tailwind, router, Query).
+      - dependency-name: "react*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "tailwindcss"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@tanstack/*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Africa/Porto-Novo
+    labels: [dependances, ci]
+    commit-message:
+      prefix: "deps(ci)"
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Africa/Porto-Novo
+    labels: [dependances, docker]
+    commit-message:
+      prefix: "deps(docker)"
+    groups:
+      images-backend:
+        patterns: ["*"]
+    ignore:
+      - dependency-name: "eclipse-temurin"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "maven"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: docker
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Africa/Porto-Novo
+    labels: [dependances, docker]
+    commit-message:
+      prefix: "deps(docker)"
+    groups:
+      images-frontend:
+        patterns: ["*"]
+    ignore:
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Africa/Porto-Novo
+    labels: [dependances, docker]
+    commit-message:
+      prefix: "deps(compose)"
+    groups:
+      images-compose:
+        patterns: ["*"]
+    ignore:
+      # PostGIS 16 : un changement de majeure PostgreSQL impose une migration de donnees.
+      - dependency-name: "postgis/postgis"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]

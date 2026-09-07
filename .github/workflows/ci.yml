@@ -15,31 +15,12 @@ jobs:
   backend:
     name: Backend (Maven)
     runs-on: ubuntu-latest
-    services:
-      # Utilise pour les eventuels tests d'integration qui se connectent via une URL
-      # JDBC fixe plutot que via Testcontainers (qui gere son propre conteneur et
-      # n'a pas besoin de ce service). Les identifiants correspondent aux valeurs par
-      # defaut de backend/src/main/resources/application.yml.
-      postgis:
-        image: postgis/postgis:16-3.4
-        env:
-          POSTGRES_DB: ekuiseo
-          POSTGRES_USER: ekuiseo
-          POSTGRES_PASSWORD: ekuiseo_ci
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U ekuiseo -d ekuiseo"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      DB_HOST: localhost
-      DB_PORT: 5432
-      DB_NAME: ekuiseo
-      DB_USER: ekuiseo
-      DB_PASSWORD: ekuiseo_ci
-      JWT_SECRET: ci-only-secret-key-not-for-production-use-min-32-chars
+    # Pas de service postgis ici : les tests d'integration (classes *IT, maven-failsafe)
+    # demarrent leur propre PostGIS via Testcontainers (image postgis/postgis:16-3.4,
+    # voir backend/src/test/java/bj/ekuiseo/api/integration/AbstractPostgisIT.java) sur
+    # le Docker fourni par ubuntu-latest. L'ancien service etait inutilise (constat F433).
+    # Aucune variable JWT_SECRET/DB_* non plus : le profil de test "it"
+    # (src/test/resources/application-it.yml) porte sa propre configuration.
     steps:
       - name: Recuperer le code
         uses: actions/checkout@v4
@@ -52,7 +33,10 @@ jobs:
           cache: maven
           cache-dependency-path: backend/pom.xml
 
-      - name: Compiler et tester (mvn verify)
+      # Phase test : tests unitaires (surefire, *Test). Phases integration-test/verify :
+      # tests d'integration (failsafe, *IT) sur PostGIS reel. Un echec de l'un ou l'autre
+      # casse le build ; -DskipITs permet de ne jouer que les unitaires en local sans Docker.
+      - name: "Compiler et tester (mvn verify : unitaires + integration)"
         working-directory: backend
         run: mvn -B verify
 
@@ -60,10 +44,24 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: backend-surefire-reports
-          path: backend/target/surefire-reports/
+          name: backend-test-reports
+          path: |
+            backend/target/surefire-reports/
+            backend/target/failsafe-reports/
           if-no-files-found: ignore
           retention-days: 7
+
+      # Veille de dependances (constats F018/F430), volontairement NON bloquante : le
+      # rapport sert a preparer les montees de version, Dependabot (.github/dependabot.yml)
+      # ouvre les PR. OWASP dependency-check n'est pas utilise ici : il exige une cle NVD
+      # et plusieurs minutes de telechargement a chaque run.
+      - name: Mises a jour de dependances disponibles (informatif)
+        working-directory: backend
+        continue-on-error: true
+        run: >-
+          mvn -B -ntp
+          org.codehaus.mojo:versions-maven-plugin:2.21.0:display-dependency-updates
+          org.codehaus.mojo:versions-maven-plugin:2.21.0:display-plugin-updates
 
   frontend:
     name: Frontend (npm)
@@ -85,6 +83,11 @@ jobs:
       - name: Installer les dependances (npm ci)
         run: npm ci
 
+      # Non bloquant au depart (constat F430) : le rapport est lu, les correctifs
+      # arrivent par Dependabot. A rendre bloquant une fois la base assainie.
+      - name: Audit de securite npm (informatif)
+        run: npm audit --audit-level=high || true
+
       - name: Lint (oxlint)
         run: npm run lint
 
@@ -97,6 +100,42 @@ jobs:
           # Valeur factice suffisante pour valider le build ; la vraie valeur est
           # injectee au build de l'image Docker (voir frontend/Dockerfile, ARG VITE_API_URL).
           VITE_API_URL: https://ci-build-placeholder.invalid
+
+      # Budget de taille (reseau degrade assume, terminaux d'entree de gamme : CLAUDE.md).
+      # Mesure sur le JS et le CSS de dist/assets compresses en gzip, tel que Caddy/nginx
+      # les servent. Seuils calibres avec une marge sur le build de reference
+      # (JS total ~690 Kio gzip, dont ~235 Kio pour l'entree index) ; les depasser doit
+      # etre une decision (nouvelle dependance lourde), pas une derive silencieuse.
+      - name: Budget de taille du build
+        env:
+          BUDGET_JS_TOTAL_KIB: 900
+          BUDGET_JS_ENTRY_KIB: 320
+          BUDGET_CSS_TOTAL_KIB: 60
+        run: |
+          set -euo pipefail
+          gz() { gzip -9c "$1" | wc -c; }
+          js_total=0; css_total=0; entry=0
+          printf '%10s  %s\n' 'gzip (o)' 'fichier'
+          for f in dist/assets/*.js; do
+            s=$(gz "$f"); js_total=$((js_total + s))
+            case "$(basename "$f")" in index-*.js) entry=$((entry + s));; esac
+            printf '%10d  %s\n' "$s" "$(basename "$f")"
+          done
+          for f in dist/assets/*.css; do
+            s=$(gz "$f"); css_total=$((css_total + s))
+            printf '%10d  %s\n' "$s" "$(basename "$f")"
+          done
+          echo "JS total : $((js_total / 1024)) Kio gzip (budget ${BUDGET_JS_TOTAL_KIB})"
+          echo "JS entree index : $((entry / 1024)) Kio gzip (budget ${BUDGET_JS_ENTRY_KIB})"
+          echo "CSS total : $((css_total / 1024)) Kio gzip (budget ${BUDGET_CSS_TOTAL_KIB})"
+          status=0
+          if [ $((js_total / 1024)) -gt "$BUDGET_JS_TOTAL_KIB" ]; then
+            echo "::error::Budget JS total depasse : $((js_total / 1024)) Kio > ${BUDGET_JS_TOTAL_KIB} Kio"; status=1; fi
+          if [ $((entry / 1024)) -gt "$BUDGET_JS_ENTRY_KIB" ]; then
+            echo "::error::Budget de l'entree index depasse : $((entry / 1024)) Kio > ${BUDGET_JS_ENTRY_KIB} Kio"; status=1; fi
+          if [ $((css_total / 1024)) -gt "$BUDGET_CSS_TOTAL_KIB" ]; then
+            echo "::error::Budget CSS depasse : $((css_total / 1024)) Kio > ${BUDGET_CSS_TOTAL_KIB} Kio"; status=1; fi
+          exit $status
 
       - name: Publier le build (dist/)
         uses: actions/upload-artifact@v4
