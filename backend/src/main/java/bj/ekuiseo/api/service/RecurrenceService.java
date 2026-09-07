@@ -11,7 +11,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.DayOfWeek;
 import java.time.Instant;
@@ -49,26 +51,40 @@ public class RecurrenceService {
     private final TripRepository tripRepository;
     private final TripStopRepository tripStopRepository;
     private final SearchAlertMatchService searchAlertMatchService;
+    private final TransactionTemplate transaction;
 
     public RecurrenceService(TripRepository tripRepository, TripStopRepository tripStopRepository,
-                             SearchAlertMatchService searchAlertMatchService) {
+                             SearchAlertMatchService searchAlertMatchService, PlatformTransactionManager transactionManager) {
         this.tripRepository = tripRepository;
         this.tripStopRepository = tripStopRepository;
         this.searchAlertMatchService = searchAlertMatchService;
+        this.transaction = new TransactionTemplate(transactionManager);
     }
 
-    /** Execute chaque jour a 03h00 (heure du serveur) pour faire glisser l horizon. */
+    /**
+     * Execute chaque jour a 03h00 (heure du serveur) pour faire glisser l horizon. Une
+     * transaction par modele (constat F128) : une regle invalide ou un conflit sur une
+     * navette n empeche pas les autres d etre engendrees, l echec est journalise.
+     */
     @Scheduled(cron = "0 0 3 * * *")
-    @Transactional
     public void generateUpcomingOccurrences() {
-        List<Trip> templates = tripRepository
-                .findByRecurrenceRuleIsNotNullAndParentTripIdIsNullAndStatus(TripStatus.TEMPLATE);
-        int created = 0;
-        for (Trip template : templates) {
-            created += generateFor(template);
-        }
-        if (created > 0) {
-            log.info("Recurrence : {} occurrence(s) generee(s) pour les {} prochains jours", created, HORIZON_DAYS);
+        try {
+            List<Trip> templates = tripRepository
+                    .findByRecurrenceRuleIsNotNullAndParentTripIdIsNullAndStatus(TripStatus.TEMPLATE);
+            int created = 0;
+            for (Trip template : templates) {
+                try {
+                    Integer n = transaction.execute(status -> generateFor(template));
+                    created += n == null ? 0 : n;
+                } catch (RuntimeException ex) {
+                    log.error("Recurrence : generation impossible pour la navette {}", template.getId(), ex);
+                }
+            }
+            if (created > 0) {
+                log.info("Recurrence : {} occurrence(s) generee(s) pour les {} prochains jours", created, HORIZON_DAYS);
+            }
+        } catch (RuntimeException ex) {
+            log.error("Recurrence : echec de l execution", ex);
         }
     }
 

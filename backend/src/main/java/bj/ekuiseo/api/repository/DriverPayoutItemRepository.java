@@ -23,4 +23,22 @@ public interface DriverPayoutItemRepository extends JpaRepository<DriverPayoutIt
 
     @Query("select coalesce(sum(i.netAmount), 0L) from DriverPayoutItem i where i.payout.id = :payoutId and i.reversedAt is not null")
     long sumReversedByPayoutId(@Param("payoutId") UUID payoutId);
+
+    /** Comptes d un lot, pour {@link #getStatsByPayoutIds}. */
+    interface PayoutItemStats {
+        UUID getPayoutId();
+
+        long getItems();
+
+        long getReversedCount();
+
+        long getReversedAmount();
+    }
+
+    /** Reservations incluses, remboursees et montant a deduire, pour une liste de lots en une requete (constats F119/F308). */
+    @Query("select i.payout.id as payoutId, count(i) as items, "
+            + "coalesce(sum(case when i.reversedAt is not null then 1L else 0L end), 0L) as reversedCount, "
+            + "coalesce(sum(case when i.reversedAt is not null then i.netAmount else 0L end), 0L) as reversedAmount "
+            + "from DriverPayoutItem i where i.payout.id in :ids group by i.payout.id")
+    List<PayoutItemStats> getStatsByPayoutIds(@Param("ids") List<UUID> ids);
 }

@@ -1,6 +1,8 @@
 package bj.ekuiseo.api.service;
 
 import bj.ekuiseo.api.common.exception.TooManyRequestsException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -15,10 +17,12 @@ import java.util.concurrent.ConcurrentMap;
  * (e-mail ou SMS) : empeche qu'un tiers ne fasse spammer une adresse ou un numero,
  * et freine le brute-force. Par defaut 3 demandes / 10 minutes / numero
  * ({@code ekuiseo.sms.otp.rate-limit.*}, nom conserve pour compatibilite).
+ * Le 429 porte le delai restant de la fenetre ({@code Retry-After}, constat F542).
  */
 @Component
 public class OtpRateLimiter {
 
+    private static final Logger log = LoggerFactory.getLogger(OtpRateLimiter.class);
     private static final long IDLE_ENTRY_TTL_MILLIS = 3_600_000L;
 
     private final int maxRequests;
@@ -39,8 +43,10 @@ public class OtpRateLimiter {
                 timestamps.pollFirst();
             }
             if (timestamps.size() >= maxRequests) {
+                // La plus ancienne demande de la fenetre sort dans (oldest + window - now) ms.
+                long retryAfterSeconds = (timestamps.peekFirst() + windowMillis - now + 999) / 1000;
                 throw new TooManyRequestsException(
-                        "Trop de demandes de code pour ce numero, reessayez dans quelques minutes.");
+                        "Trop de demandes de code pour ce numero, reessayez dans quelques minutes.", retryAfterSeconds);
             }
             timestamps.addLast(now);
         }
@@ -48,14 +54,18 @@ public class OtpRateLimiter {
 
     @Scheduled(fixedRate = 600_000)
     void cleanup() {
-        long now = System.currentTimeMillis();
-        history.entrySet().removeIf(e -> {
-            Deque<Long> d = e.getValue();
-            Long last;
-            synchronized (d) {
-                last = d.peekLast();
-            }
-            return last == null || now - last > IDLE_ENTRY_TTL_MILLIS;
-        });
+        try {
+            long now = System.currentTimeMillis();
+            history.entrySet().removeIf(e -> {
+                Deque<Long> d = e.getValue();
+                Long last;
+                synchronized (d) {
+                    last = d.peekLast();
+                }
+                return last == null || now - last > IDLE_ENTRY_TTL_MILLIS;
+            });
+        } catch (RuntimeException ex) {
+            log.error("Purge des compteurs OTP : echec de l execution", ex);
+        }
     }
 }

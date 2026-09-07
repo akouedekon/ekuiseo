@@ -29,6 +29,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -87,7 +88,24 @@ public class AdminUserService {
     @Transactional(readOnly = true)
     public List<AdminUserResponse> search(String q) {
         Page<User> page = userRepository.search(q == null ? "" : q.trim(), PageRequest.of(0, SEARCH_LIMIT));
-        return page.getContent().stream().map(this::toResponse).toList();
+        List<User> users = page.getContent();
+        if (users.isEmpty()) {
+            return List.of();
+        }
+        // Deux requetes group by sur la liste d identifiants au lieu de deux count par
+        // utilisateur (constats F016/F119/F308).
+        List<UUID> ids = users.stream().map(User::getId).toList();
+        Map<UUID, Long> trips = new HashMap<>();
+        for (TripRepository.IdCount c : tripRepository.countByDriverIds(ids)) {
+            trips.put(c.getId(), c.getCount());
+        }
+        Map<UUID, Long> bookings = new HashMap<>();
+        for (BookingRepository.IdCount c : bookingRepository.countByPassengerIds(ids)) {
+            bookings.put(c.getId(), c.getCount());
+        }
+        return users.stream()
+                .map(u -> toResponse(u, trips.getOrDefault(u.getId(), 0L), bookings.getOrDefault(u.getId(), 0L)))
+                .toList();
     }
 
     /**
@@ -251,9 +269,12 @@ public class AdminUserService {
         return userRepository.findById(id).orElseThrow(() -> new NotFoundException("Utilisateur introuvable"));
     }
 
+    /** Vue d un seul utilisateur (actions unitaires) : deux comptes cibles, sans N+1 possible. */
     private AdminUserResponse toResponse(User u) {
-        long tripsPublished = tripRepository.countByDriverId(u.getId());
-        long bookingsMade = bookingRepository.countByPassengerId(u.getId());
+        return toResponse(u, tripRepository.countByDriverId(u.getId()), bookingRepository.countByPassengerId(u.getId()));
+    }
+
+    private AdminUserResponse toResponse(User u, long tripsPublished, long bookingsMade) {
         return new AdminUserResponse(u.getId(), u.getFirstName(), u.getLastName(), u.getPhone(), u.getEmail(),
                 u.getCreatedAt(), u.isIdentityVerified(), u.isPhoneVerified(), u.getStatus() == UserStatus.SUSPENDED,
                 tripsPublished, bookingsMade, u.getRatingAvg(), u.getDeletedAt());

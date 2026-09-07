@@ -7,6 +7,7 @@ import bj.ekuiseo.api.security.CurrentUser;
 import bj.ekuiseo.api.service.admin.AdminVerificationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -44,7 +45,7 @@ public class AdminVerificationController {
 
     @Operation(summary = "Rejeter une verification d'identite", description = "409 si le dossier n est plus PENDING. Retire le badge et previent l utilisateur avec le motif (IDENTITY_REJECTED).")
     @PostMapping("/{id}/reject")
-    public void reject(@PathVariable UUID id, @RequestBody(required = false) RejectVerificationRequest req) {
+    public void reject(@PathVariable UUID id, @Valid @RequestBody(required = false) RejectVerificationRequest req) {
         adminVerificationService.reject(currentUser.id(), id, req != null ? req.reason() : null);
     }
 }

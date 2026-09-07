@@ -96,17 +96,114 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     long sumServiceFeeBetween(@Param("from") Instant from, @Param("to") Instant to,
                               @Param("statuses") List<BookingStatus> statuses);
 
-    /**
-     * Reservations creees dans la periode, trajet charge en anticipe (JOIN FETCH) :
-     * source unique pour la serie temporelle, les axes les plus demandes et la
-     * repartition par statut du tableau de bord admin (voir AdminStatsService).
-     */
-    @Query("select b from Booking b join fetch b.trip t where b.createdAt between :from and :to")
-    List<Booking> findAllWithTripByCreatedAtBetween(@Param("from") Instant from, @Param("to") Instant to);
-
     /** Utilisateurs distincts ayant reserve dans la periode, proxy de "utilisateurs actifs" (voir AdminStatsResponse.totals.activeUsers). */
     @Query("select count(distinct b.passenger.id) from Booking b where b.createdAt between :from and :to")
     long countDistinctPassengersBetween(@Param("from") Instant from, @Param("to") Instant to);
+
+    // ------------------------------------------------------------------
+    // Tableau de bord admin (AdminStatsService, constats F016/F238) : agregations
+    // SQL natives sur [from, to), jamais le chargement des reservations en memoire.
+    // Alias en snake_case (voir la note dans MessageRepository).
+    // ------------------------------------------------------------------
+
+    /** Totaux d une periode, pour {@link #getPeriodTotals}. */
+    interface PeriodTotals {
+        long getBookings();
+
+        long getGmv();
+
+        long getRevenue();
+    }
+
+    /** Reservations creees sur [from, to) ; GMV et commission sur les seuls statuts comptes (noms d enum BookingStatus). */
+    @Query(value = """
+            select count(*) as bookings,
+                   coalesce(sum(case when b.status in (:counted) then b.amount else 0 end), 0) as gmv,
+                   coalesce(sum(case when b.status in (:counted) then b.service_fee else 0 end), 0) as revenue
+            from bookings b
+            where b.created_at >= :from and b.created_at < :to
+            """, nativeQuery = true)
+    PeriodTotals getPeriodTotals(@Param("from") Instant from, @Param("to") Instant to,
+                                 @Param("counted") List<String> counted);
+
+    /** Serie journaliere, pour {@link #getDailyStats}. */
+    interface DayStats {
+        /** Jour civil du Benin, ISO AAAA-MM-JJ. */
+        String getDay();
+
+        long getBookings();
+
+        long getGmv();
+
+        long getRevenue();
+    }
+
+    @Query(value = """
+            select to_char(date_trunc('day', b.created_at at time zone 'Africa/Porto-Novo'), 'YYYY-MM-DD') as day,
+                   count(*) as bookings,
+                   coalesce(sum(case when b.status in (:counted) then b.amount else 0 end), 0) as gmv,
+                   coalesce(sum(case when b.status in (:counted) then b.service_fee else 0 end), 0) as revenue
+            from bookings b
+            where b.created_at >= :from and b.created_at < :to
+            group by 1
+            order by 1
+            """, nativeQuery = true)
+    List<DayStats> getDailyStats(@Param("from") Instant from, @Param("to") Instant to,
+                                 @Param("counted") List<String> counted);
+
+    /** Repartition par statut, pour {@link #countByStatusBetween}. */
+    interface StatusCount {
+        String getStatus();
+
+        long getCount();
+    }
+
+    @Query(value = """
+            select b.status as status, count(*) as count
+            from bookings b
+            where b.created_at >= :from and b.created_at < :to
+            group by b.status
+            """, nativeQuery = true)
+    List<StatusCount> countByStatusBetween(@Param("from") Instant from, @Param("to") Instant to);
+
+    /** Axe le plus demande, pour {@link #getTopRoutes}. */
+    interface RouteStats {
+        String getOrigin();
+
+        String getDestination();
+
+        long getTrips();
+
+        long getGmv();
+    }
+
+    /** Axes classes par GMV des reservations comptees creees sur [from, to) ; trips = trajets distincts reserves. */
+    @Query(value = """
+            select t.origin_label as origin,
+                   t.dest_label as destination,
+                   count(distinct t.id) as trips,
+                   coalesce(sum(b.amount), 0) as gmv
+            from bookings b
+            join trips t on t.id = b.trip_id
+            where b.created_at >= :from and b.created_at < :to
+              and b.status in (:counted)
+            group by t.origin_label, t.dest_label
+            order by gmv desc, trips desc, origin, destination
+            limit :limit
+            """, nativeQuery = true)
+    List<RouteStats> getTopRoutes(@Param("from") Instant from, @Param("to") Instant to,
+                                  @Param("counted") List<String> counted, @Param("limit") int limit);
+
+    /** Compte par identifiant, pour {@link #countByPassengerIds}. */
+    interface IdCount {
+        UUID getId();
+
+        long getCount();
+    }
+
+    /** Reservations par passager, pour une liste d identifiants (back-office, plus de N+1 : constats F016/F308). */
+    @Query("select b.passenger.id as id, count(b) as count from Booking b where b.passenger.id in :ids group by b.passenger.id")
+    List<IdCount> countByPassengerIds(@Param("ids") List<UUID> ids);
 
     /** Places des reservations creees sur [from, to) dans les statuts donnes (metrique nord, voir AdminLiquidityService). */
     @Query("select coalesce(sum(b.seats), 0L) from Booking b where b.createdAt >= :from and b.createdAt < :to "

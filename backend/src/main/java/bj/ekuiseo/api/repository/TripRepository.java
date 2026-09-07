@@ -105,15 +105,50 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
             + "and t.reminderSentAt is null and t.departureAt between :from and :to")
     List<Trip> findDueForReminder(@Param("from") Instant from, @Param("to") Instant to);
 
+    /** Conditionnel (reminder_sent_at encore null) : 0 ligne = deja marque par un autre passage, ne pas renvoyer (constat F128). */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("update Trip t set t.reminderSentAt = :now where t.id = :id")
+    @Query("update Trip t set t.reminderSentAt = :now where t.id = :id and t.reminderSentAt is null")
     int markReminderSent(@Param("id") UUID id, @Param("now") Instant now);
 
     long countByCreatedAtBetween(Instant from, Instant to);
 
-    /** Horodatages de creation seuls (pas les entites completes) pour la serie temporelle du tableau de bord admin (voir AdminStatsService). */
-    @Query("select t.createdAt from Trip t where t.createdAt between :from and :to")
-    List<Instant> findCreatedAtBetween(@Param("from") Instant from, @Param("to") Instant to);
+    /** Trajets crees sur [from, to) (tableau de bord admin, une seule requete de comptage). */
+    @Query("select count(t) from Trip t where t.createdAt >= :from and t.createdAt < :to")
+    long countCreatedBetween(@Param("from") Instant from, @Param("to") Instant to);
+
+    /** Compte par jour civil, pour {@link #countCreatedByDay}. */
+    interface DayCount {
+        /** Jour au format ISO AAAA-MM-JJ (formate en SQL, jour civil du Benin). */
+        String getDay();
+
+        long getCount();
+    }
+
+    /**
+     * Trajets crees par jour civil du Benin sur [from, to) : serie du tableau de bord admin
+     * (AdminStatsService, constats F016/F238), agregee en SQL plutot qu en chargeant les
+     * horodatages en memoire.
+     */
+    @Query(value = """
+            select to_char(date_trunc('day', t.created_at at time zone 'Africa/Porto-Novo'), 'YYYY-MM-DD') as day,
+                   count(*) as count
+            from trips t
+            where t.created_at >= :from and t.created_at < :to
+            group by 1
+            order by 1
+            """, nativeQuery = true)
+    List<DayCount> countCreatedByDay(@Param("from") Instant from, @Param("to") Instant to);
+
+    /** Compte par identifiant, pour {@link #countByDriverIds}. */
+    interface IdCount {
+        UUID getId();
+
+        long getCount();
+    }
+
+    /** Trajets publies par conducteur, pour une liste d identifiants (back-office, plus de N+1 : constats F016/F308). */
+    @Query("select t.driver.id as id, count(t) as count from Trip t where t.driver.id in :ids group by t.driver.id")
+    List<IdCount> countByDriverIds(@Param("ids") List<UUID> ids);
 
     /**
      * Trajets PUBLISHED correspondant a une alerte de recherche (regle metier n.13) :

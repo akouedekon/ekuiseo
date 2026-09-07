@@ -56,6 +56,13 @@ public class Vehicle {
     @Builder.Default
     private boolean verified = false;
 
+    /**
+     * Suppression logique (V15, constat F124) : un vehicule ayant servi sur un trajet garde
+     * sa ligne pour l historique, mais n est plus liste ni utilisable pour publier.
+     */
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;

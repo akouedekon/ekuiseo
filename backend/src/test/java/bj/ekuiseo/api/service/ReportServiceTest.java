@@ -9,6 +9,7 @@ import bj.ekuiseo.api.domain.Trip;
 import bj.ekuiseo.api.domain.User;
 import bj.ekuiseo.api.domain.enums.BookingStatus;
 import bj.ekuiseo.api.domain.enums.NotificationType;
+import bj.ekuiseo.api.domain.enums.ReportReason;
 import bj.ekuiseo.api.domain.enums.ReportStatus;
 import bj.ekuiseo.api.dto.report.AdminReportResponse;
 import bj.ekuiseo.api.dto.report.CreateReportRequest;
@@ -82,7 +83,7 @@ class ReportServiceTest {
 
     @Test
     void driver_cannotReportOwnTrip() {
-        assertThatThrownBy(() -> service.create(driver.getId(), new CreateReportRequest(null, trip.getId(), "OTHER", null)))
+        assertThatThrownBy(() -> service.create(driver.getId(), new CreateReportRequest(null, trip.getId(), ReportReason.OTHER, null)))
                 .isInstanceOf(BadRequestException.class);
         verify(reportRepository, never()).save(any());
     }
@@ -91,11 +92,11 @@ class ReportServiceTest {
     void noShow_withoutSharedBooking_isRejected_butFraudIsAccepted() {
         when(bookingRepository.findSharedBookings(any(), any(), anyList())).thenReturn(List.of());
 
-        assertThatThrownBy(() -> service.create(reporter.getId(), new CreateReportRequest(driver.getId(), null, "NO_SHOW", null)))
+        assertThatThrownBy(() -> service.create(reporter.getId(), new CreateReportRequest(driver.getId(), null, ReportReason.NO_SHOW, null)))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("reservation");
 
-        ReportResponse fraud = service.create(reporter.getId(), new CreateReportRequest(driver.getId(), null, "FRAUD", "faux profil"));
+        ReportResponse fraud = service.create(reporter.getId(), new CreateReportRequest(driver.getId(), null, ReportReason.FRAUD, "faux profil"));
         assertThat(fraud.reportedUserId()).isEqualTo(driver.getId());
         ArgumentCaptor<Report> saved = ArgumentCaptor.forClass(Report.class);
         verify(reportRepository).save(saved.capture());
@@ -109,7 +110,7 @@ class ReportServiceTest {
         when(bookingRepository.findSharedBookings(driver.getId(), reporter.getId(), List.of(BookingStatus.CONFIRMED, BookingStatus.COMPLETED, BookingStatus.NO_SHOW)))
                 .thenReturn(List.of(shared));
 
-        service.create(driver.getId(), new CreateReportRequest(reporter.getId(), null, "HARASSMENT", "insultes"));
+        service.create(driver.getId(), new CreateReportRequest(reporter.getId(), null, ReportReason.HARASSMENT, "insultes"));
 
         ArgumentCaptor<Report> saved = ArgumentCaptor.forClass(Report.class);
         verify(reportRepository).save(saved.capture());
@@ -122,7 +123,7 @@ class ReportServiceTest {
         when(bookingRepository.findByTripIdAndPassengerIdAndStatusInOrderByCreatedAtDesc(eq(trip.getId()), eq(reporter.getId()), anyList()))
                 .thenReturn(List.of(mine));
 
-        service.create(reporter.getId(), new CreateReportRequest(null, trip.getId(), "VEHICLE_MISMATCH", null));
+        service.create(reporter.getId(), new CreateReportRequest(null, trip.getId(), ReportReason.VEHICLE_MISMATCH, null));
 
         ArgumentCaptor<Report> saved = ArgumentCaptor.forClass(Report.class);
         verify(reportRepository).save(saved.capture());
@@ -135,7 +136,7 @@ class ReportServiceTest {
         when(reportRepository.existsByReporterIdAndReportedUserIdAndStatusIn(eq(reporter.getId()), eq(driver.getId()),
                 eq(List.of(ReportStatus.OPEN, ReportStatus.IN_REVIEW)))).thenReturn(true);
 
-        assertThatThrownBy(() -> service.create(reporter.getId(), new CreateReportRequest(driver.getId(), null, "FRAUD", null)))
+        assertThatThrownBy(() -> service.create(reporter.getId(), new CreateReportRequest(driver.getId(), null, ReportReason.FRAUD, null)))
                 .isInstanceOf(ConflictException.class);
         verify(reportRepository, never()).save(any());
     }
@@ -144,7 +145,7 @@ class ReportServiceTest {
     void moreThanFivePerDay_isRateLimited() {
         when(reportRepository.countByReporterIdAndCreatedAtAfter(eq(reporter.getId()), any())).thenReturn(5L);
 
-        assertThatThrownBy(() -> service.create(reporter.getId(), new CreateReportRequest(driver.getId(), null, "FRAUD", null)))
+        assertThatThrownBy(() -> service.create(reporter.getId(), new CreateReportRequest(driver.getId(), null, ReportReason.FRAUD, null)))
                 .isInstanceOf(TooManyRequestsException.class);
         verify(reportRepository, never()).save(any());
     }
@@ -170,7 +171,7 @@ class ReportServiceTest {
         Report report = Report.builder().id(UUID.randomUUID()).reporter(reporter).reportedTrip(trip)
                 .bookingId(UUID.randomUUID()).reasonCode("NO_SHOW").build();
         ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
-        when(reportRepository.findByStatus(eq(ReportStatus.OPEN), pageable.capture()))
+        when(reportRepository.findByStatusWithParties(eq(ReportStatus.OPEN), pageable.capture()))
                 .thenAnswer(inv -> new PageImpl<>(List.of(report)));
 
         List<AdminReportResponse> rows = service.listForAdmin(ReportStatus.OPEN);

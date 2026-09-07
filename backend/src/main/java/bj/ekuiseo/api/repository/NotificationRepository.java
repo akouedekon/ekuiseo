@@ -19,4 +19,9 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update Notification n set n.readAt = :now where n.user.id = :userId and n.readAt is null")
     int markAllAsRead(@Param("userId") UUID userId, @Param("now") Instant now);
+
+    /** Retention (RetentionScheduler, constats F120/F516) : notifications creees avant la date, lues ou non. */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete from Notification n where n.createdAt < :before")
+    int deleteByCreatedAtBefore(@Param("before") Instant before);
 }

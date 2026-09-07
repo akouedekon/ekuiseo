@@ -33,7 +33,7 @@ class TripReminderSchedulerTest {
     private final TripRepository tripRepository = mock(TripRepository.class);
     private final BookingRepository bookingRepository = mock(BookingRepository.class);
     private final NotificationService notificationService = mock(NotificationService.class);
-    private final TripReminderScheduler scheduler = new TripReminderScheduler(tripRepository, bookingRepository, notificationService);
+    private final TripReminderScheduler scheduler = new TripReminderScheduler(tripRepository, bookingRepository, notificationService, mock(org.springframework.transaction.PlatformTransactionManager.class));
 
     @Test
     void fullTrip_dueTomorrow_remindsEveryConfirmedPassenger_once() {
@@ -51,6 +51,8 @@ class TripReminderSchedulerTest {
                 .thenReturn(List.of(full));
         when(bookingRepository.findByTripIdAndStatusIn(eq(full.getId()), eq(List.of(BookingStatus.CONFIRMED))))
                 .thenReturn(List.of(b1, b2));
+
+        when(tripRepository.markReminderSent(full.getId(), now)).thenReturn(1);
 
         int reminded = scheduler.sendDueReminders(now);
 

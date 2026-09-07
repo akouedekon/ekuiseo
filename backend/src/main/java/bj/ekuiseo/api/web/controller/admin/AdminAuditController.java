@@ -5,6 +5,8 @@ import bj.ekuiseo.api.mapper.AuditLogMapper;
 import bj.ekuiseo.api.service.AuditService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -27,10 +29,10 @@ public class AdminAuditController {
         this.auditLogMapper = auditLogMapper;
     }
 
-    @Operation(summary = "Consulter le journal d'audit", description = "Trie du plus recent au plus ancien.")
+    @Operation(summary = "Consulter le journal d'audit", description = "Trie du plus recent au plus ancien ; 100 lignes par page au plus.")
     @GetMapping
-    public Page<AuditLogResponse> list(@RequestParam(defaultValue = "0") int page,
-                                        @RequestParam(defaultValue = "20") int size) {
+    public Page<AuditLogResponse> list(@RequestParam(defaultValue = "0") @Min(0) int page,
+                                        @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         Pageable pageable = PageRequest.of(page, size);
         return auditService.list(pageable).map(auditLogMapper::toResponse);
     }

@@ -3,11 +3,13 @@ package bj.ekuiseo.api.security;
 import bj.ekuiseo.api.domain.User;
 import bj.ekuiseo.api.domain.enums.UserStatus;
 import bj.ekuiseo.api.repository.UserRepository;
+import bj.ekuiseo.api.web.filter.RequestIdFilter;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.MDC;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -48,6 +50,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         var auth = new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
                         auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                         SecurityContextHolder.getContext().setAuthentication(auth);
+                        // Correlation des journaux (constat F439) : vide par RequestIdFilter en fin de requete.
+                        MDC.put(RequestIdFilter.MDC_USER_ID, u.getId().toString());
                     });
                 }
             } catch (JwtException | IllegalArgumentException ex) {
