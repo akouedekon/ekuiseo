@@ -133,7 +133,8 @@ notifications, compte (véhicules, mobile money, identité, réglages, revenus, 
 publication avec arrêts géolocalisés, modification et annulation de trajet (remboursement
 sandbox), avis, signalement, back-office complet (signalements, vérifications, lots de
 reversement, suspension motivée, journal d'audit, export CSV), responsive 375 → 1920.
-Comptes de test en production : `+2290197000322` (conducteur), `+2290197000321` (passager).
+Comptes de test en production : `+2290197000322` (conducteur), `+2290197000321` (passager). Les
+numéros béninois s écrivent `+229 01 XX XX XX XX` (10 chiffres nationaux depuis 2024).
 
 Il n'existe **plus aucun mode démonstration** : `api/demo.ts` et `api/resilient.ts` ont été
 supprimés, chaque hook appelle l'API et chaque écran affiche un état d'erreur avec réessai.
@@ -168,6 +169,50 @@ money vérifiés d office (numéro du compte) ou par l administration ; prix par
 strictement positifs, bornés et croissants (V12) ; modification de trajet sous verrou avec recalcul
 FULL/PUBLISHED ; abonnement : souscription en attente réutilisée, confirmation rejouée avec le même
 paiement, expiration après 30 min.
+
+**Phase 1, lot 1.3 (cycle de vie et mode quotidien) livré le 2026-09-05** : fuseau `Africa/Porto-Novo`
+partout (`common/Tz`), `TripLifecycleScheduler` (ONGOING au départ, COMPLETED 6 h après, réservations
+clôturées), no-show conducteur (48 h, acompte reversé net), liste des passagers d un trajet, cascade de la
+suspension, notification et annulation gratuite 24 h après un changement d horaire, navettes = modèles
+`TEMPLATE` avec occurrences générées à la création et chaque nuit (COUNT/UNTIL/BYDAY, arrêts copiés,
+index unique parent/départ, V13).
+
+**Phase 1, lot 1.4 (confiance, notifications, recherche, conformité) livré le 2026-09-05** : avis et
+signalements liés à une réservation commune, identité révocable et resoumission bornée, routeur de
+notifications (in-app + e-mail + SMS selon préférences, après commit, asynchrone, gabarits
+`NotificationTemplates`), contrainte de sens et rayon borné dans la recherche, vérifications admin
+filtrées, suppression de compte par OTP et anonymisation admin (V14), caches du service worker et de
+TanStack limités aux données publiques et purgés à la déconnexion, Messages dans la barre mobile.
+
+**Phase 2 livrée le 2026-09-07** (V15, V16, Spring Boot 3.5.16) : erreurs MVC en RFC 7807 avec
+`errorId` et `X-Request-Id` (MDC), bornes et quotas sur les GET publics et la messagerie, validation
+Bean complète, rétention nocturne (OTP, notifications, messages, alertes), transactions par élément dans
+les tâches planifiées, véhicules supprimés logiquement, statistiques admin en SQL natif ; statut
+`EXPIRED`, décision de vérification Kkiapay factorisée, cycle de vie de l abonnement (J-7, J-3, EXPIRED),
+reversements gardés (`settle`/`fail`, référence de virement, verrou de lot), comptes mobile money
+dédoublonnés et préfixes par opérateur, alertes de recherche complètes (liste, suppression, rayon,
+matching en une requête après commit, e-mail), messagerie fermée après la réservation, transitions de
+signalement, conversations d un signalement (accès journalisé), CGU horodatées, export des données
+personnelles, tri et filtres serveur de la recherche **avec arrêts intermédiaires** (tronçon et prix
+renvoyés), aperçu Open Graph `/share/trips/{id}` pour WhatsApp ; front : lazy par route, LazyMotion,
+service worker en mode `prompt`, pages légales, collecte d erreurs, fiche utilisateur admin, tests
+Testing Library ; tests d intégration Testcontainers (`*IT.java`, `mvn verify`) et `@WebMvcTest`
+exécutés en CI, Dependabot.
+
+**Phases 3, 4 et 5 livrées le 2026-09-07** (V17) : webhook acquitté sur cible inconnue, paiement
+INITIATED réutilisé et abandonné après 20 min, verrou sur le paiement, opérateur réel dans
+`payments.channel`, contraintes CHECK sur les statuts, index manquants, `password_hash` nullable,
+journal des connexions et `last_login_at`, quota OTP durable en base, référentiel `geo_places` étendu
+(communes, quartiers, gares `STATION`, alias, `pg_trgm`, `GET /api/v1/geo/places` source unique du
+front), numéro de pièce tronqué après décision, KPI de rétention et de paiement
+(`GET /api/v1/admin/stats/retention` + CSV, page `/admin/retention`), **CASH réservé aux conducteurs à
+identité vérifiée** ; front : jetons de couleur et contraste vérifiés en CI (`check-contrast`,
+`check-tokens`), titres par route et live region, cibles 44 px, radios Radix, icônes PWA régénérées,
+heures en `Africa/Porto-Novo`, avis conducteur → passager, villes récentes, trajet retour, invite
+d installation PWA.
+
+Suivi constat par constat : `docs/AUDIT-SUIVI.md` ; bilan et nouvelle grille de scores :
+`docs/RAPPORT-FINAL.md`.
 
 ## Commandes
 
@@ -257,11 +302,16 @@ Ces deux courbes s'éteignent mutuellement en six semaines si personne ne les re
   en tête de `/admin` (métrique nord, quatre chiffres de liquidité) et en détail sur
   `/admin/liquidity`. Approximation assumée : recherche → réservation = même utilisateur
   connecté, réservation sous 24 h (pas d'identifiant de recherche transmis par le front).
-- Les indicateurs de rétention (section 2) supposent des requêtes par cohorte
-  hebdomadaire : à écrire en SQL natif agrégé, jamais en chargeant des collections en
-  mémoire — même modèle que `AdminLiquidityService`.
-- Les taux d'échec de paiement se calculent depuis `payments` (statut + canal), déjà
-  disponible — rien à instrumenter.
+- **Fait — sections 2 et 3 (rétention, paiement).** `AdminRetentionService` (SQL natif par
+  cohorte) sert `GET /api/v1/admin/stats/retention?days=N` + `/retention/export` : rétention
+  conducteur W1/W4, passager 30 j, part du quotidien, navettes actives, conversion
+  réservation → acompte, part des expirées, échecs Kkiapay par opérateur réel
+  (`payments.channel`), répartition des modes, panier moyen ; page `/admin/retention` et bloc
+  « Rétention » du tableau de bord.
+- Sections 4 et 5 : les compteurs de file (`GET /api/v1/admin/overview` : signalements ouverts,
+  vérifications en attente et ancienneté, reversements dus, remboursements à traiter, gros
+  émetteurs de messages) existent ; taux d annulation par acteur, no-show et délai médian de
+  traitement des signalements restent à calculer.
 - **Export CSV** de chaque indicateur : le fondateur travaillera dans un tableur, pas
   seulement dans le tableau de bord. Fait pour la liquidité (`AdminLiquidityService#toCsv`,
   `;` + virgule décimale + BOM) ; à reproduire pour les sections suivantes.
@@ -296,10 +346,15 @@ s'interprète pas.
   à décider) ; seul l'état de la vérification existe.
 - Aucun fournisseur de tuiles cartographiques n'est câblé : `RouteMap` dessine un tracé
   schématique tant que `VITE_MAP_STYLE_URL` n'est pas renseignée.
-- Web Push non implémenté ; les notifications critiques passent par SMS.
-- Le décaissement effectif des reversements est manuel.
-- Le mode `CASH` confirme immédiatement la réservation, sans validation du conducteur :
-  à réserver aux conducteurs de confiance, sinon la commission est contournable.
+- Web Push non implémenté ; les notifications critiques passent par e-mail et, si un
+  fournisseur est activé, par SMS.
+- Le décaissement effectif des reversements est manuel (référence de virement et échec
+  consignés depuis le back-office).
+- Le mode `CASH` confirme immédiatement la réservation sans validation du conducteur ; il
+  n est proposé qu avec un conducteur à identité vérifiée. Une validation conducteur
+  (accept/decline) reste à concevoir si la commission contournée devient un problème.
+- Actions hors dépôt attendues du fondateur : voir `docs/AUDIT-SUIVI.md` (SMS, sauvegardes
+  hors site, sonde externe, clé MapTiler, rotation des secrets, juriste).
 
 ## Marque
 

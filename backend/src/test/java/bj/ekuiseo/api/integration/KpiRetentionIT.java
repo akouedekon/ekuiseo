@@ -223,10 +223,10 @@ class KpiRetentionIT extends AbstractPostgisIT {
     void housekeeping_failsAbandonedInitiatedPayments_onlyWithoutPendingBooking() {
         // Le paiement INITIATED de failedBooking porte la reference interne ; sa reservation est
         // encore PENDING_PAYMENT : rien ne se passe. Une fois la reservation expiree, il passe FAILED.
-        assertThat(paymentRepository.failAbandonedInitiated(Instant.now())).isZero();
+        assertThat(transactionTemplate.execute(tx -> paymentRepository.failAbandonedInitiated(Instant.now()))).isZero();
         jdbcTemplate.update("update bookings set status = 'EXPIRED' where status = 'PENDING_PAYMENT'");
 
-        assertThat(paymentRepository.failAbandonedInitiated(Instant.now())).isEqualTo(1);
+        assertThat(transactionTemplate.execute(tx -> paymentRepository.failAbandonedInitiated(Instant.now()))).isEqualTo(1);
 
         Payment abandoned = paymentRepository.findByProviderAndProviderTxId(PaymentProvider.KKIAPAY, "ekuiseo-booking-abandon").orElseThrow();
         assertThat(abandoned.getStatus()).isEqualTo(PaymentStatus.FAILED);
@@ -264,9 +264,9 @@ class KpiRetentionIT extends AbstractPostgisIT {
                 """, UUID.class, passenger.getId(), COTONOU_LAT, COTONOU_LNG, BOHICON_LAT, BOHICON_LNG);
         UUID tripKey = firstOfA.getId();
 
-        assertThat(searchAlertRepository.insertMatch(alertId, tripKey)).isEqualTo(1);
-        assertThat(searchAlertRepository.insertMatch(alertId, tripKey)).as("deja prevenue").isZero();
-        assertThat(searchAlertRepository.insertMatch(alertId, lastOfA.getId())).isEqualTo(1);
+        assertThat(transactionTemplate.execute(tx -> searchAlertRepository.insertMatch(alertId, tripKey))).isEqualTo(1);
+        assertThat(transactionTemplate.execute(tx -> searchAlertRepository.insertMatch(alertId, tripKey))).as("deja prevenue").isZero();
+        assertThat(transactionTemplate.execute(tx -> searchAlertRepository.insertMatch(alertId, lastOfA.getId()))).isEqualTo(1);
     }
 
     @Test
