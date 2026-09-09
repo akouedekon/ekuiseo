@@ -12,13 +12,14 @@ import {
   Wallet,
   type LucideIcon,
 } from 'lucide-react'
-import { useState, type CSSProperties } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { NavLink, Outlet } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { Tooltip } from '@/components/ui/misc'
 import { Logo } from '@/components/layout/Logo'
 import { PageContainer } from '@/components/layout/PageContainer'
 import { useAdminOverview } from '@/hooks/useAdmin'
+import { preloadAdminPages } from '@/pages/admin/lazy'
 import { cn } from '@/lib/cn'
 import type { AdminOverviewResponse } from '@/api/extended'
 
@@ -121,6 +122,12 @@ function storeCollapsed(collapsed: boolean): void {
 export function AdminLayout() {
   const [collapsed, setCollapsed] = useState(readCollapsed)
   const overview = useAdminOverview()
+
+  // Tous les ecrans du back-office sont charges en arriere-plan des l entree : aucun clic
+  // dans le menu ou sur une file d attente n attend plus un chunk (pages/admin/lazy.ts).
+  useEffect(() => {
+    preloadAdminPages()
+  }, [])
 
   const toggle = () => {
     setCollapsed((current) => {

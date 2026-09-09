@@ -39,6 +39,7 @@ import { useTheme } from '@/hooks/useTheme'
 import { cn } from '@/lib/cn'
 import { CONTACT_EMAIL, LEGAL_PAGES } from '@/lib/legal'
 import { pageVariants } from '@/lib/motion'
+import { transitionKeyOf } from '@/lib/navigation'
 import { AccountSuspendedPage } from '@/pages/SystemPages'
 
 /** Profondeur de navigation : sert a donner sa direction a la transition. */
@@ -353,7 +354,7 @@ export function AppShell() {
         ) : (
           <AnimatePresence mode="wait" custom={direction} initial={false}>
             <m.div
-              key={location.pathname}
+              key={transitionKeyOf(location.pathname)}
               custom={direction}
               variants={pageVariants}
               initial="enter"

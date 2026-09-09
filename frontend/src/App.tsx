@@ -6,6 +6,8 @@ import { HomeSearchPage } from '@/pages/HomeSearchPage'
 import { SearchResultsPage } from '@/pages/SearchResultsPage'
 import { TripDetailPage } from '@/pages/TripDetailPage'
 import { DriverProfilePage } from '@/pages/DriverProfilePage'
+import { Skeleton } from '@/components/ui/misc'
+import { ADMIN_PAGE_LOADERS } from '@/pages/admin/lazy'
 import { AppLoadingScreen, NotFoundPage } from '@/pages/SystemPages'
 
 /**
@@ -37,16 +39,33 @@ const LegalPage = lazyPage(() => import('@/pages/LegalPage'), 'LegalPage')
  * premier chargement des passagers sur reseau mobile.
  */
 const AdminLayout = lazyPage(() => import('@/pages/admin/AdminLayout'), 'AdminLayout')
-const AdminDashboard = lazyPage(() => import('@/pages/admin/AdminDashboard'), 'AdminDashboard')
-const AdminLiquidity = lazyPage(() => import('@/pages/admin/AdminLiquidity'), 'AdminLiquidity')
-const AdminRetention = lazyPage(() => import('@/pages/admin/AdminRetention'), 'AdminRetention')
-const AdminReports = lazyPage(() => import('@/pages/admin/AdminReports'), 'AdminReports')
-const AdminVerifications = lazyPage(() => import('@/pages/admin/AdminVerifications'), 'AdminVerifications')
-const AdminPayouts = lazyPage(() => import('@/pages/admin/AdminPayouts'), 'AdminPayouts')
-const AdminPayments = lazyPage(() => import('@/pages/admin/AdminPayments'), 'AdminPayments')
-const AdminUsers = lazyPage(() => import('@/pages/admin/AdminUsers'), 'AdminUsers')
-const AdminUserDetail = lazyPage(() => import('@/pages/admin/AdminUserDetail'), 'AdminUserDetail')
-const AdminAudit = lazyPage(() => import('@/pages/admin/AdminAudit'), 'AdminAudit')
+// Chargeurs partages avec AdminLayout, qui les prechauffe (pages/admin/lazy.ts).
+const AdminDashboard = lazyPage(ADMIN_PAGE_LOADERS.AdminDashboard, 'AdminDashboard')
+const AdminLiquidity = lazyPage(ADMIN_PAGE_LOADERS.AdminLiquidity, 'AdminLiquidity')
+const AdminRetention = lazyPage(ADMIN_PAGE_LOADERS.AdminRetention, 'AdminRetention')
+const AdminReports = lazyPage(ADMIN_PAGE_LOADERS.AdminReports, 'AdminReports')
+const AdminVerifications = lazyPage(ADMIN_PAGE_LOADERS.AdminVerifications, 'AdminVerifications')
+const AdminPayouts = lazyPage(ADMIN_PAGE_LOADERS.AdminPayouts, 'AdminPayouts')
+const AdminPayments = lazyPage(ADMIN_PAGE_LOADERS.AdminPayments, 'AdminPayments')
+const AdminUsers = lazyPage(ADMIN_PAGE_LOADERS.AdminUsers, 'AdminUsers')
+const AdminUserDetail = lazyPage(ADMIN_PAGE_LOADERS.AdminUserDetail, 'AdminUserDetail')
+const AdminAudit = lazyPage(ADMIN_PAGE_LOADERS.AdminAudit, 'AdminAudit')
+
+/**
+ * Attente d un ecran du back-office : un squelette a la place du vide. Sans lui, le temps
+ * de charger le chunk (premiere visite, reseau mobile), la zone de contenu restait blanche
+ * et se lisait comme une panne.
+ */
+function AdminPageFallback() {
+  return (
+    <div role="status" aria-label="Chargement de l’écran" className="space-y-3">
+      <Skeleton className="h-8 w-56 rounded-[var(--radius-control)]" />
+      <Skeleton className="h-4 w-80 max-w-full" />
+      <Skeleton className="mt-4 h-28 rounded-[var(--radius-card)]" />
+      <Skeleton className="h-28 rounded-[var(--radius-card)]" />
+    </div>
+  )
+}
 /* Charte graphique vivante : reference de l'equipe, servie uniquement en developpement. */
 const StyleGuidePage = import.meta.env.DEV ? lazyPage(() => import('@/pages/StyleGuidePage'), 'StyleGuidePage') : null
 
@@ -102,16 +121,16 @@ export default function App() {
             </RequireAuth>
           }
         >
-          <Route index element={<Suspense fallback={null}><AdminDashboard /></Suspense>} />
-          <Route path="liquidity" element={<Suspense fallback={null}><AdminLiquidity /></Suspense>} />
-          <Route path="retention" element={<Suspense fallback={null}><AdminRetention /></Suspense>} />
-          <Route path="reports" element={<Suspense fallback={null}><AdminReports /></Suspense>} />
-          <Route path="verifications" element={<Suspense fallback={null}><AdminVerifications /></Suspense>} />
-          <Route path="payouts" element={<Suspense fallback={null}><AdminPayouts /></Suspense>} />
-          <Route path="payments" element={<Suspense fallback={null}><AdminPayments /></Suspense>} />
-          <Route path="users" element={<Suspense fallback={null}><AdminUsers /></Suspense>} />
-          <Route path="users/:id" element={<Suspense fallback={null}><AdminUserDetail /></Suspense>} />
-          <Route path="audit" element={<Suspense fallback={null}><AdminAudit /></Suspense>} />
+          <Route index element={<Suspense fallback={<AdminPageFallback />}><AdminDashboard /></Suspense>} />
+          <Route path="liquidity" element={<Suspense fallback={<AdminPageFallback />}><AdminLiquidity /></Suspense>} />
+          <Route path="retention" element={<Suspense fallback={<AdminPageFallback />}><AdminRetention /></Suspense>} />
+          <Route path="reports" element={<Suspense fallback={<AdminPageFallback />}><AdminReports /></Suspense>} />
+          <Route path="verifications" element={<Suspense fallback={<AdminPageFallback />}><AdminVerifications /></Suspense>} />
+          <Route path="payouts" element={<Suspense fallback={<AdminPageFallback />}><AdminPayouts /></Suspense>} />
+          <Route path="payments" element={<Suspense fallback={<AdminPageFallback />}><AdminPayments /></Suspense>} />
+          <Route path="users" element={<Suspense fallback={<AdminPageFallback />}><AdminUsers /></Suspense>} />
+          <Route path="users/:id" element={<Suspense fallback={<AdminPageFallback />}><AdminUserDetail /></Suspense>} />
+          <Route path="audit" element={<Suspense fallback={<AdminPageFallback />}><AdminAudit /></Suspense>} />
         </Route>
 
         <Route path="*" element={<NotFoundPage />} />
