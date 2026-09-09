@@ -57,4 +57,60 @@ test.describe('Back-office', () => {
     const unexpected = errors.filter((line) => !/401|Failed to load resource/.test(line))
     expect(unexpected, unexpected.join('\n')).toEqual([])
   })
+
+  /**
+   * Navigation par clics, sans rechargement : c est ainsi que le fondateur utilise le
+   * back-office, et c est la ou des ecrans blancs ont ete signales (tuiles « Files d attente »
+   * du tableau de bord). Chaque tuile puis chaque entree du menu doit amener a l ecran attendu.
+   */
+  test('les tuiles des files d’attente et le menu mènent à leur écran sans rechargement', async ({ page }, testInfo) => {
+    test.setTimeout(180_000)
+    const errors = watchErrors(page)
+    await loginViaUi(page, SEED_ADMIN)
+    await page.goto('/admin')
+    await expect(page.getByRole('heading', { name: /Vue d.ensemble/ })).toBeVisible({ timeout: 30_000 })
+
+    const tiles: { label: RegExp; heading: RegExp; name: string }[] = [
+      { label: /^Signalements ouverts/, heading: /^Signalements/, name: 'signalements' },
+      { label: /^Vérifications d.identité/, heading: /Vérifications d.identité/, name: 'verifications' },
+      { label: /^Reversements dus/, heading: /^Reversements/, name: 'reversements' },
+      { label: /^Remboursements à traiter/, heading: /^Paiements/, name: 'paiements' },
+    ]
+    for (const tile of tiles) {
+      await test.step(`tuile ${tile.name}`, async () => {
+        await page.getByRole('link', { name: tile.label }).click()
+        await expect(page.getByRole('heading', { name: tile.heading }).first()).toBeVisible({ timeout: 30_000 })
+        await expect(page.locator('main .shimmer')).toHaveCount(0, { timeout: 30_000 })
+        await page.screenshot({ path: testInfo.outputPath(`clic-tuile-${tile.name}.png`), fullPage: true })
+        // Retour au tableau de bord par le menu du back-office, sans rechargement.
+        await page.getByRole('navigation', { name: 'Navigation du back-office' }).getByRole('link', { name: 'Tableau de bord' }).click()
+        await expect(page.getByRole('heading', { name: /Vue d.ensemble/ })).toBeVisible({ timeout: 30_000 })
+      })
+    }
+
+    const menu = page.getByRole('navigation', { name: 'Navigation du back-office' })
+    for (const entry of ADMIN_PAGES.filter((item) => item.path !== '/admin')) {
+      await test.step(`menu ${entry.name}`, async () => {
+        const label = ADMIN_MENU_LABELS[entry.path]
+        await menu.getByRole('link', { name: label }).click()
+        await expect(page.getByRole('heading', { name: entry.heading }).first()).toBeVisible({ timeout: 30_000 })
+        await page.screenshot({ path: testInfo.outputPath(`clic-menu-${entry.name}.png`), fullPage: true })
+      })
+    }
+
+    const unexpected = errors.filter((line) => !/401|Failed to load resource/.test(line))
+    expect(unexpected, unexpected.join('\n')).toEqual([])
+  })
 })
+
+/** Libelles du menu (AdminLayout) par route. */
+const ADMIN_MENU_LABELS: Record<string, string> = {
+  '/admin/liquidity': 'Liquidité',
+  '/admin/retention': 'Rétention',
+  '/admin/reports': 'Signalements',
+  '/admin/verifications': 'Vérifications',
+  '/admin/payouts': 'Reversements',
+  '/admin/payments': 'Paiements',
+  '/admin/users': 'Utilisateurs',
+  '/admin/audit': 'Journal',
+}
