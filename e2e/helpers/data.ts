@@ -3,6 +3,14 @@
  * (docs/donnees-demo.sql) et trajet dedie aux tests (e2e/seed-e2e.sql).
  */
 
+/** Compte de demonstration du back-office, promu ADMIN par e2e/seed-e2e.sql. */
+export const SEED_ADMIN = {
+  phone: '+2290190000000',
+  email: 'admin@ekuiseo.bj',
+  firstName: 'Fabrice',
+  lastName: 'Houngbedji',
+}
+
 /** Conducteur du seed a identite verifiee (le mode especes lui est reserve). */
 export const SEED_DRIVER = {
   phone: '+2290197001006',

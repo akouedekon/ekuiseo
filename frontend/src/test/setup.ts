@@ -7,6 +7,10 @@ import { afterEach, vi } from 'vitest'
  * chaque test, et deux API absentes de jsdom que l'application interroge au
  * rendu (matchMedia pour useMediaQuery, scrollTo dans AppShell).
  */
+// Aucun rapport d'erreur ne part vers l'API pendant les tests (lib/monitoring.ts) :
+// un appel fetch parasite fausserait les tests qui comptent les requetes.
+vi.stubEnv('VITE_ERROR_REPORT_URL', 'off')
+
 afterEach(() => {
   cleanup()
 })

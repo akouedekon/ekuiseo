@@ -11,7 +11,7 @@
     "test:headed": "playwright test --headed --project=desktop",
     "test:ui": "playwright test --ui",
     "report": "playwright show-report",
-    "browsers": "playwright install --with-deps chromium",
+    "browsers": "playwright install --with-deps chromium webkit",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

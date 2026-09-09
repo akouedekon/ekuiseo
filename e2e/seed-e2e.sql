@@ -45,3 +45,10 @@ ON CONFLICT (id) DO UPDATE
        seats_available = EXCLUDED.seats_available,
        price_per_seat  = EXCLUDED.price_per_seat,
        status          = EXCLUDED.status;
+
+-- Compte de demonstration du back-office (docs/donnees-demo.sql, +229 01 90 00 00 00) :
+-- promu ADMIN pour le parcours « back-office » (tests/back-office.spec.ts). En production,
+-- la promotion reste manuelle (docs/DEPLOIEMENT.md, section 9).
+UPDATE users
+   SET role = 'ADMIN', status = 'ACTIVE'
+ WHERE id = 'a0000000-0000-0000-0000-000000000031';

@@ -1,9 +1,11 @@
 /**
  * Remontee des erreurs frontend (audit F440).
  *
- * Si `VITE_ERROR_REPORT_URL` est defini, chaque erreur part en POST JSON vers
- * ce collecteur (Sentry, GlitchTip ou un simple point d'entree maison) ; sinon
- * elle reste dans la console. Le rapport ne contient AUCUNE donnee personnelle :
+ * Chaque erreur part en POST JSON vers un collecteur : par defaut le point d'entree
+ * de l'API (`POST /api/v1/client-errors`, journalise cote serveur sous le logger
+ * `bj.ekuiseo.api.client`), ou l'URL donnee par `VITE_ERROR_REPORT_URL` (Sentry,
+ * GlitchTip...). La valeur `off` coupe l'envoi : l'erreur reste alors dans la
+ * console (tests, poste de developpement). Le rapport ne contient AUCUNE donnee personnelle :
  * message, pile tronquee, route (chemin seul, sans parametres), version du
  * paquet et agent utilisateur. Jamais de jeton, de numero ni de corps de requete.
  *
@@ -12,7 +14,16 @@
  * echecs 5xx non transitoires (lib/queryClient.ts).
  */
 
-const REPORT_URL = (import.meta.env.VITE_ERROR_REPORT_URL as string | undefined)?.trim() || null
+const DEFAULT_REPORT_PATH = '/api/v1/client-errors'
+
+/** Collecteur : URL explicite, `off` pour desactiver, sinon le point d'entree de l'API (meme base que client.ts). */
+export function resolveReportUrl(env: Record<string, string | undefined> = import.meta.env as Record<string, string | undefined>): string | null {
+  const configured = env.VITE_ERROR_REPORT_URL?.trim()
+  if (configured === 'off' || configured === 'none' || configured === 'false') return null
+  if (configured) return configured
+  const apiBase = (env.VITE_API_URL ?? '').replace(/\/$/, '')
+  return `${apiBase}${DEFAULT_REPORT_PATH}`
+}
 const APP_VERSION = (import.meta.env.VITE_APP_VERSION as string | undefined) || 'dev'
 const STACK_MAX_CHARS = 2_000
 /** Au-dela, on arrete d'envoyer : une boucle d'erreurs ne doit pas inonder le collecteur. */
@@ -71,7 +82,8 @@ export function buildReport(error: unknown, context: { source: string; component
  */
 export function reportError(error: unknown, context: { source: string; componentStack?: string }): void {
   const report = buildReport(error, context)
-  if (!REPORT_URL) {
+  const reportUrl = resolveReportUrl()
+  if (!reportUrl) {
     // Pas de collecteur configure : la console reste la seule trace (developpement, ou choix d'exploitation).
     // eslint-disable-next-line no-console
     console.error(`[${report.source}]`, error, report.componentStack ?? '')
@@ -85,10 +97,10 @@ export function reportError(error: unknown, context: { source: string; component
     const body = JSON.stringify(report)
     // sendBeacon survit a la fermeture de l'onglet ; fetch keepalive en repli.
     if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
-      const ok = navigator.sendBeacon(REPORT_URL, new Blob([body], { type: 'application/json' }))
+      const ok = navigator.sendBeacon(reportUrl, new Blob([body], { type: 'application/json' }))
       if (ok) return
     }
-    void fetch(REPORT_URL, {
+    void fetch(reportUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body,

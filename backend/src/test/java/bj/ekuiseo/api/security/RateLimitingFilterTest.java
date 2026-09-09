@@ -163,7 +163,7 @@ class RateLimitingFilterTest {
     @Test
     void publicSearch_isLimitedPerIp_andThe429CarriesRetryAfter() throws Exception {
         // search : 2 / 60 s ; les autres quotas restent larges.
-        RateLimitingFilter filter = new RateLimitingFilter(null, 100, 60, 120, 60, 10, 600, 2, 60, 30, 600, 10, 600);
+        RateLimitingFilter filter = new RateLimitingFilter(null, 100, 60, 120, 60, 10, 600, 2, 60, 30, 600, 10, 600, 30, 600);
         FilterChain chain = mock(FilterChain.class);
         for (int i = 0; i < 2; i++) {
             MockHttpServletResponse res = new MockHttpServletResponse();
@@ -189,7 +189,7 @@ class RateLimitingFilterTest {
     void messages_areLimitedPerAuthenticatedUser_notPerIp() throws Exception {
         JwtService jwt = new JwtService("cle-de-test-suffisamment-longue-pour-hmac-sha256-0123456789", 60, 30);
         // msg : 1 / 10 min par utilisateur.
-        RateLimitingFilter filter = new RateLimitingFilter(jwt, 100, 60, 120, 60, 10, 600, 60, 60, 1, 600, 10, 600);
+        RateLimitingFilter filter = new RateLimitingFilter(jwt, 100, 60, 120, 60, 10, 600, 60, 60, 1, 600, 10, 600, 30, 600);
         FilterChain chain = mock(FilterChain.class);
         String alice = "Bearer " + jwt.generateAccessToken(java.util.UUID.randomUUID());
         String bob = "Bearer " + jwt.generateAccessToken(java.util.UUID.randomUUID());

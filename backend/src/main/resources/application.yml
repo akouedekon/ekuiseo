@@ -300,6 +300,10 @@ ekuiseo:
     alert:
       max-requests: ${RATE_LIMIT_ALERT_MAX:10}
       window-seconds: ${RATE_LIMIT_ALERT_WINDOW_SECONDS:600}
+    # Rapports d erreur du navigateur (POST /client-errors, public), par IP (constat F440).
+    client-errors:
+      max-requests: ${RATE_LIMIT_CLIENT_ERRORS_MAX:30}
+      window-seconds: ${RATE_LIMIT_CLIENT_ERRORS_WINDOW_SECONDS:600}
 
 logging:
   level:

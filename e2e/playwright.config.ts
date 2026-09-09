@@ -49,5 +49,13 @@ export default defineConfig({
       name: 'desktop',
       use: { ...devices['Desktop Chrome'], viewport: { width: 1366, height: 900 } },
     },
+    // iPhone (moteur WebKit, celui de Safari iOS) : reserve au parcours back-office, dont les
+    // pages blanches ont ete signalees depuis un iPhone. Les autres parcours restent sur
+    // Chromium, ou le selecteur Radix et le champ fichier sont stables.
+    {
+      name: 'iphone-webkit',
+      testMatch: /back-office.spec.ts/,
+      use: { ...devices['iPhone 13'] },
+    },
   ],
 })

@@ -53,6 +53,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/share/trips/*").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/users/*", "/api/v1/users/*/reviews").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/geo/search", "/api/v1/geo/places").permitAll()
+                        // Rapports d erreur du navigateur (ClientErrorController, constat F440) : ils doivent
+                        // partir meme sans session ; quota par IP dans RateLimitingFilter.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/client-errors").permitAll()
                         // Actuator : health et info restent publics (sondes de disponibilite standard),
                         // le reste (metrics, env, etc.) est reserve au back-office (donnees d'exploitation
                         // sensibles : versions, configuration, metriques internes).

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildReport, isStaleChunkError } from './monitoring'
+import { buildReport, isStaleChunkError, resolveReportUrl } from './monitoring'
 
 describe('monitoring', () => {
   it('construit un rapport sans donnee personnelle : route sans parametres, pile tronquee', () => {
@@ -12,6 +12,14 @@ describe('monitoring', () => {
     expect(report.stack?.length).toBeLessThanOrEqual(2_000)
     expect(report.message).toBe('Boum')
     expect(report.source).toBe('test')
+  })
+
+  it('vise le collecteur de l API par defaut, une URL explicite sinon, rien si « off »', () => {
+    expect(resolveReportUrl({})).toBe('/api/v1/client-errors')
+    expect(resolveReportUrl({ VITE_API_URL: 'https://api.example.com/' })).toBe('https://api.example.com/api/v1/client-errors')
+    expect(resolveReportUrl({ VITE_ERROR_REPORT_URL: 'https://sentry.example/ingest' })).toBe('https://sentry.example/ingest')
+    expect(resolveReportUrl({ VITE_ERROR_REPORT_URL: 'off' })).toBeNull()
+    expect(resolveReportUrl({ VITE_ERROR_REPORT_URL: '  ' })).toBe('/api/v1/client-errors')
   })
 
   it('reconnait un import paresseux casse par un deploiement', () => {

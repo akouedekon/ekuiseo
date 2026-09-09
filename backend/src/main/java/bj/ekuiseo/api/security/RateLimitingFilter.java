@@ -66,6 +66,8 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     private static final Set<String> SEARCH_PATHS = Set.of("/api/v1/trips/search", "/api/v1/geo/search", "/api/v1/geo/places");
     private static final Pattern MESSAGES_PATH = Pattern.compile("^/api/v1/bookings/[^/]+/messages$");
     private static final String ALERTS_PATH = "/api/v1/trip-alerts";
+    /** Rapports d erreur du navigateur (ClientErrorController) : public, donc borne par IP. */
+    private static final String CLIENT_ERRORS_PATH = "/api/v1/client-errors";
     private static final long IDLE_ENTRY_TTL_MILLIS = 3_600_000L; // 1h : purge des cles inactives
 
     private final int authMaxRequests;
@@ -80,6 +82,8 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     private final long messageWindowMillis;
     private final int alertMaxRequests;
     private final long alertWindowMillis;
+    private final int clientErrorsMaxRequests;
+    private final long clientErrorsWindowMillis;
     /** Null dans les tests unitaires du filtre : les quotas par utilisateur retombent alors sur l IP. */
     @Nullable
     private final JwtService jwtService;
@@ -95,7 +99,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     public RateLimitingFilter(int authMaxRequests, long authWindowSeconds, int webhookMaxRequests, long webhookWindowSeconds,
                               int otpMaxRequests, long otpWindowSeconds) {
         this(null, authMaxRequests, authWindowSeconds, webhookMaxRequests, webhookWindowSeconds, otpMaxRequests, otpWindowSeconds,
-                60, 60, 30, 600, 10, 600);
+                60, 60, 30, 600, 10, 600, 30, 600);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -111,7 +115,9 @@ public class RateLimitingFilter extends OncePerRequestFilter {
                               @Value("${ekuiseo.rate-limit.message.max-requests:30}") int messageMaxRequests,
                               @Value("${ekuiseo.rate-limit.message.window-seconds:600}") long messageWindowSeconds,
                               @Value("${ekuiseo.rate-limit.alert.max-requests:10}") int alertMaxRequests,
-                              @Value("${ekuiseo.rate-limit.alert.window-seconds:600}") long alertWindowSeconds) {
+                              @Value("${ekuiseo.rate-limit.alert.window-seconds:600}") long alertWindowSeconds,
+                              @Value("${ekuiseo.rate-limit.client-errors.max-requests:30}") int clientErrorsMaxRequests,
+                              @Value("${ekuiseo.rate-limit.client-errors.window-seconds:600}") long clientErrorsWindowSeconds) {
         this.jwtService = jwtService;
         this.authMaxRequests = authMaxRequests;
         this.authWindowMillis = authWindowSeconds * 1000L;
@@ -125,6 +131,8 @@ public class RateLimitingFilter extends OncePerRequestFilter {
         this.messageWindowMillis = messageWindowSeconds * 1000L;
         this.alertMaxRequests = alertMaxRequests;
         this.alertWindowMillis = alertWindowSeconds * 1000L;
+        this.clientErrorsMaxRequests = clientErrorsMaxRequests;
+        this.clientErrorsWindowMillis = clientErrorsWindowSeconds * 1000L;
     }
 
     @Override
@@ -182,6 +190,9 @@ public class RateLimitingFilter extends OncePerRequestFilter {
         }
         if ("POST".equals(method) && path.equals(ALERTS_PATH)) {
             return new Quota("alert:", userOrIp(request), alertMaxRequests, alertWindowMillis);
+        }
+        if ("POST".equals(method) && path.equals(CLIENT_ERRORS_PATH)) {
+            return new Quota("errors:", clientIp(request), clientErrorsMaxRequests, clientErrorsWindowMillis);
         }
         return null;
     }
