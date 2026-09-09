@@ -353,7 +353,10 @@ s'interprète pas.
   chiffrés AES-256-GCM sur le disque du conteneur (`IDENTITY_STORAGE_KEY`, `ekuiseo.storage.identity-dir`
   = `./data/identity`, à monter sur un volume nommé en production), lus par le back-office avec
   audit `ADMIN_IDENTITY_DOCUMENT_VIEWED`, purgés 30 jours après la décision. Sans clé, le
-  téléversement répond 503 et l'interface l'explique.
+  téléversement répond 503 et l'interface l'explique. Côté front, une photo de plus de 1 Mo ou
+  dans un format que le serveur refuse (HEIC des iPhone) est redessinée en JPEG de 2 000 px
+  maximum avant l'envoi (`lib/imageReduction.ts`) : la limite serveur de 5 Mo ne vaut plus que
+  pour les PDF.
 - Aucun fournisseur de tuiles cartographiques n'est câblé : `RouteMap` dessine un tracé
   schématique tant que `VITE_MAP_STYLE_URL` n'est pas renseignée.
 - Web Push (V20) : canal complémentaire de l'e-mail (`WebPushSender`, `nl.martijndwars:web-push`,

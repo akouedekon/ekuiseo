@@ -14,9 +14,9 @@ import {
   IDENTITY_SIDES,
   formatFileSize,
   isImageType,
-  validateIdentityDocument,
   type IdentityDocumentSide,
 } from '@/lib/identityDocuments'
+import { prepareIdentityDocument } from '@/lib/imageReduction'
 
 /** Statuts dans lesquels les pieces se deposent, se remplacent et se suppriment (le serveur exige PENDING). */
 export const IDENTITY_DOCUMENTS_ALLOWED: ReadonlySet<string> = new Set(['PENDING'])
@@ -41,8 +41,8 @@ export function IdentityDocumentsForm({ documents, editable }: { documents: Iden
         />
       ))}
       <p className="text-caption text-muted">
-        Photo (JPEG, PNG, WebP) ou PDF, 5 Mo au maximum par fichier. Vos pièces sont chiffrées sur nos serveurs, visibles
-        uniquement par la modération, et supprimées 30 jours après la décision.
+        Photo ou PDF (5 Mo au maximum pour un PDF ; les photos sont réduites automatiquement avant l’envoi). Vos pièces
+        sont chiffrées sur nos serveurs, visibles uniquement par la modération, et supprimées 30 jours après la décision.
       </p>
     </div>
   )
@@ -66,19 +66,27 @@ function DocumentSlot({
   const inputRef = useRef<HTMLInputElement>(null)
   const [preview, setPreview] = useState<{ url: string; name: string } | null>(null)
   const [progress, setProgress] = useState<number | null>(null)
+  const [preparing, setPreparing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const inputId = `identity-document-${side.toLowerCase()}`
 
   // L'URL d'apercu est liberee au demontage et a chaque remplacement.
   useEffect(() => () => (preview ? URL.revokeObjectURL(preview.url) : undefined), [preview])
 
-  const choose = (file: File | undefined) => {
-    if (!file) return
-    const problem = validateIdentityDocument(file)
-    if (problem) {
-      toast.error(problem)
+  const choose = async (chosen: File | undefined) => {
+    if (!chosen) return
+    // Une photo de telephone (4 a 12 Mo, parfois HEIC) est reduite en JPEG avant de partir :
+    // le serveur n'accepte que 5 Mo en JPEG/PNG/WebP/PDF (lib/imageReduction.ts).
+    setPreparing(true)
+    let file: File
+    try {
+      file = await prepareIdentityDocument(chosen)
+    } catch (error) {
+      setPreparing(false)
+      toast.error(error instanceof Error ? error.message : "Ce fichier ne peut pas être envoyé.")
       return
     }
+    setPreparing(false)
     setPreview(file.type.startsWith('image/') ? { url: URL.createObjectURL(file), name: file.name } : null)
     setProgress(0)
     upload.mutate(
@@ -94,7 +102,7 @@ function DocumentSlot({
     )
   }
 
-  const busy = upload.isPending || remove.isPending
+  const busy = preparing || upload.isPending || remove.isPending
   const Icon = existing ? (isImageType(existing.contentType) ? ImagePlus : FileText) : UploadCloud
 
   return (
@@ -129,6 +137,7 @@ function DocumentSlot({
           ) : (
             <p className="text-caption text-muted">{hint}</p>
           )}
+          {preparing ? <p className="mt-2 text-caption text-muted">Préparation de la photo…</p> : null}
           {progress !== null ? (
             <div className="mt-2">
               <Progress value={progress} aria-label={`Envoi de ${label}`} />
@@ -148,12 +157,12 @@ function DocumentSlot({
             capture={side === 'SELFIE' ? 'user' : undefined}
             className="sr-only"
             onChange={(event) => {
-              choose(event.target.files?.[0])
+              void choose(event.target.files?.[0])
               // Le meme fichier doit pouvoir etre rechoisi apres une erreur.
               event.target.value = ''
             }}
           />
-          <Button size="sm" variant={existing ? 'secondary' : 'primary'} loading={upload.isPending} disabled={busy} onClick={() => inputRef.current?.click()}>
+          <Button size="sm" variant={existing ? 'secondary' : 'primary'} loading={preparing || upload.isPending} disabled={busy} onClick={() => inputRef.current?.click()}>
             <UploadCloud aria-hidden />
             {existing ? 'Remplacer' : side === 'SELFIE' ? 'Prendre la photo' : 'Ajouter'}
           </Button>

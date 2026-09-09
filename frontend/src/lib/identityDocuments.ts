@@ -12,8 +12,11 @@ export const IDENTITY_DOCUMENT_MAX_BYTES = 5 * 1024 * 1024
 export const IDENTITY_DOCUMENT_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'] as const
 export type IdentityDocumentType = (typeof IDENTITY_DOCUMENT_TYPES)[number]
 
-/** Valeur de l'attribut `accept` du champ fichier. */
-export const IDENTITY_DOCUMENT_ACCEPT = IDENTITY_DOCUMENT_TYPES.join(',')
+/**
+ * Valeur de l'attribut `accept` du champ fichier : toute image (HEIC des iPhone compris,
+ * converti en JPEG par lib/imageReduction.ts avant l'envoi) ou un PDF.
+ */
+export const IDENTITY_DOCUMENT_ACCEPT = 'image/*,application/pdf'
 
 export const IDENTITY_SIDES: { side: IdentityDocumentSide; label: string; hint: string }[] = [
   { side: 'FRONT', label: 'Recto de la pièce', hint: 'Photo nette, les quatre coins visibles, sans reflet.' },

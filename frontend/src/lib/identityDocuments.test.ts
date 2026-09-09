@@ -40,7 +40,7 @@ describe('validateIdentityDocument', () => {
   })
 
   it('expose la liste des types acceptes par le champ fichier', () => {
-    expect(IDENTITY_DOCUMENT_ACCEPT).toBe('image/jpeg,image/png,image/webp,application/pdf')
+    expect(IDENTITY_DOCUMENT_ACCEPT).toBe('image/*,application/pdf')
   })
 })
 
