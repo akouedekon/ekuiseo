@@ -183,7 +183,8 @@ ekuiseo:
     # Comptes crees a l inscription et jamais verifies : purges apres ce delai, le numero redevient libre.
     pending-account-ttl-hours: ${PENDING_ACCOUNT_TTL_HOURS:24}
     # Attribut Secure du cookie HttpOnly ekuiseo_refresh (RefreshCookies). Vrai par defaut :
-    # les navigateurs acceptent un cookie Secure sur http://localhost, seul un hote HTTP
+    # Chromium et Firefox acceptent un cookie Secure sur http://localhost, pas WebKit (Safari,
+    # projet Playwright iphone-webkit : docker-compose.e2e.yml) ; seul un hote HTTP
     # autre que localhost (recette sans TLS) justifie AUTH_COOKIE_SECURE=false.
     cookie-secure: ${AUTH_COOKIE_SECURE:true}
   mail:

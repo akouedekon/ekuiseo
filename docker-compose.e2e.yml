@@ -30,6 +30,9 @@ services:
       OTP_SMS_FALLBACK: "false"
       SMS_MODE: log
       OTP_LOG_PLAIN_CODES: "true"
+      # WebKit (projet Playwright « iphone-webkit ») refuse un cookie Secure sur http://localhost,
+      # contrairement a Chromium : la session n'y survivrait a aucun rechargement de page.
+      AUTH_COOKIE_SECURE: "false"
       # Quotas (application.yml : ekuiseo.otp.*, ekuiseo.rate-limit.*).
       OTP_RATE_LIMIT_MAX_REQUESTS: "100"
       OTP_RATE_LIMIT_WINDOW_MINUTES: "10"
