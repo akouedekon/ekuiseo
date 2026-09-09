@@ -39,6 +39,7 @@ import { useTheme } from '@/hooks/useTheme'
 import { cn } from '@/lib/cn'
 import { CONTACT_EMAIL, LEGAL_PAGES } from '@/lib/legal'
 import { pageVariants } from '@/lib/motion'
+import { preloadPages } from '@/lib/lazyPage'
 import { transitionKeyOf } from '@/lib/navigation'
 import { AccountSuspendedPage } from '@/pages/SystemPages'
 
@@ -164,6 +165,11 @@ export function AppShell() {
 
   const user = me
   const isAdmin = user?.role === 'ADMIN'
+
+  // Back-office precharge pour un administrateur : l entree dans /admin ne suspend plus.
+  useEffect(() => {
+    if (isAdmin) void preloadPages('admin')
+  }, [isAdmin])
 
   return (
     <div className="flex min-h-dvh flex-col bg-bg">

@@ -19,7 +19,7 @@ import { Tooltip } from '@/components/ui/misc'
 import { Logo } from '@/components/layout/Logo'
 import { PageContainer } from '@/components/layout/PageContainer'
 import { useAdminOverview } from '@/hooks/useAdmin'
-import { preloadAdminPages } from '@/pages/admin/lazy'
+import { preloadPages } from '@/lib/lazyPage'
 import { cn } from '@/lib/cn'
 import type { AdminOverviewResponse } from '@/api/extended'
 
@@ -124,9 +124,9 @@ export function AdminLayout() {
   const overview = useAdminOverview()
 
   // Tous les ecrans du back-office sont charges en arriere-plan des l entree : aucun clic
-  // dans le menu ou sur une file d attente n attend plus un chunk (pages/admin/lazy.ts).
+  // dans le menu ou sur une file d attente ne suspend plus le rendu (lib/lazyPage.tsx).
   useEffect(() => {
-    preloadAdminPages()
+    void preloadPages('admin')
   }, [])
 
   const toggle = () => {
