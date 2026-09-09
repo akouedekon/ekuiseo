@@ -1,6 +1,7 @@
 package bj.ekuiseo.api.domain;
 
 import bj.ekuiseo.api.domain.enums.BookingStatus;
+import bj.ekuiseo.api.domain.enums.PassengerConfirmation;
 import bj.ekuiseo.api.domain.enums.PaymentMethod;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -83,6 +84,15 @@ public class Booking {
     /** Annulation gratuite ouverte jusqu a cet instant (V13) quand le conducteur a modifie l horaire d un trajet reserve. */
     @Column(name = "free_cancellation_until")
     private Instant freeCancellationUntil;
+
+    /** Constat du passager apres le depart (V21) : tacite (PENDING) passe 24 h, trajet effectue, ou conducteur absent. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "passenger_confirmation", nullable = false, length = 20)
+    @Builder.Default
+    private PassengerConfirmation passengerConfirmation = PassengerConfirmation.PENDING;
+
+    @Column(name = "passenger_confirmed_at")
+    private Instant passengerConfirmedAt;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)

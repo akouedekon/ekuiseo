@@ -1,6 +1,7 @@
 package bj.ekuiseo.api.dto.booking;
 
 import bj.ekuiseo.api.domain.enums.BookingStatus;
+import bj.ekuiseo.api.domain.enums.PassengerConfirmation;
 import bj.ekuiseo.api.domain.enums.ComfortLevel;
 import bj.ekuiseo.api.domain.enums.PaymentMethod;
 import bj.ekuiseo.api.domain.enums.TripType;
@@ -36,7 +37,10 @@ public record BookingDetailResponse(
         TripSummary trip,
         long unreadMessages,
         /** Vrai si le demandeur a deja note le conducteur pour ce trajet (un seul avis par trajet et par cible). */
-        boolean reviewedByMe
+        boolean reviewedByMe,
+        /** Constat du passager apres le depart (V21) : PENDING (tacite apres 24 h), TRIP_DONE ou DRIVER_NO_SHOW. */
+        PassengerConfirmation passengerConfirmation,
+        Instant passengerConfirmedAt
 ) {
 
     public record TripSummary(

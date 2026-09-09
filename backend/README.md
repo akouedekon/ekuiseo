@@ -94,6 +94,10 @@ Points structurants :
 - `POST /api/v1/reports` — signaler un utilisateur ou un trajet
 - `GET /api/v1/me/payouts/balance`, `GET /api/v1/me/payouts` — solde et historique de reversement (conducteur)
 - `GET /api/v1/me/subscription`, `POST /api/v1/me/subscription` — statut / souscription à l'abonnement conducteur
+- `POST /api/v1/bookings/{id}/trip-done`, `POST /api/v1/bookings/{id}/driver-no-show` `{ details? }` — constat du
+  passager après le départ (V21) : le trajet a eu lieu, ou le conducteur n'est pas venu (jusqu'à 24 h après le départ ;
+  au-delà, confirmation tacite). Un conducteur déclaré absent fait passer la réservation `DRIVER_NO_SHOW` — exclue des
+  reversements — et ouvre un signalement `NO_SHOW` lié à la réservation ; la modération décide du remboursement.
 - `POST /api/v1/bookings/{id}/accept`, `POST /api/v1/bookings/{id}/decline` `{ reason? }` — réponse du conducteur à une
   demande sur un trajet sans réservation immédiate (`trips.instant_booking = false`, V19, point n.13 de l'audit / F048).
   Le passager paie d'abord (acompte ou espèces), la réservation passe `PENDING_DRIVER_APPROVAL` avec

@@ -3,11 +3,14 @@ package bj.ekuiseo.api.service;
 import bj.ekuiseo.api.common.FeePolicy;
 import bj.ekuiseo.api.common.exception.BadRequestException;
 import bj.ekuiseo.api.common.exception.ConflictException;
+import bj.ekuiseo.api.common.exception.ForbiddenException;
 import bj.ekuiseo.api.domain.Booking;
+import bj.ekuiseo.api.domain.Report;
 import bj.ekuiseo.api.domain.Trip;
 import bj.ekuiseo.api.domain.User;
 import bj.ekuiseo.api.domain.enums.BookingStatus;
 import bj.ekuiseo.api.domain.enums.NotificationType;
+import bj.ekuiseo.api.domain.enums.PassengerConfirmation;
 import bj.ekuiseo.api.domain.enums.PaymentMethod;
 import bj.ekuiseo.api.domain.enums.TripStatus;
 import bj.ekuiseo.api.domain.enums.UserStatus;
@@ -16,11 +19,13 @@ import bj.ekuiseo.api.mapper.BookingMapper;
 import bj.ekuiseo.api.repository.BookingRepository;
 import bj.ekuiseo.api.repository.DriverSubscriptionRepository;
 import bj.ekuiseo.api.repository.MessageRepository;
+import bj.ekuiseo.api.repository.ReportRepository;
 import bj.ekuiseo.api.repository.ReviewRepository;
 import bj.ekuiseo.api.repository.TripRepository;
 import bj.ekuiseo.api.repository.TripStopRepository;
 import bj.ekuiseo.api.repository.UserRepository;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -50,9 +55,10 @@ class BookingServiceLifecycleTest {
     private final NotificationService notificationService = mock(NotificationService.class);
     private final PaymentService paymentService = mock(PaymentService.class);
     private final AuditService auditService = mock(AuditService.class);
+    private final ReportRepository reportRepository = mock(ReportRepository.class);
     private final BookingService service = new BookingService(bookingRepository, tripRepository,
             mock(TripStopRepository.class), userRepository, mock(DriverSubscriptionRepository.class),
-            mock(MessageRepository.class), mock(ReviewRepository.class), mock(BookingMapper.class),
+            mock(MessageRepository.class), mock(ReviewRepository.class), reportRepository, mock(BookingMapper.class),
             new CancellationPolicy(), new DriverCancellationPolicy(), notificationService, paymentService,
             auditService, new FeePolicy(0.08, 5, 1000), new DriverApprovalPolicy(24), 20);
 
@@ -152,5 +158,74 @@ class BookingServiceLifecycleTest {
         Booking late = booking(trip(TripStatus.COMPLETED, Instant.now().minus(3, ChronoUnit.DAYS)), BookingStatus.COMPLETED);
         assertThatThrownBy(() -> service.markNoShow(late.getId(), driver.getId()))
                 .isInstanceOf(BadRequestException.class).hasMessageContaining("48 h");
+    }
+
+    /* ------------------------------------------------ Constat du passager (V21) */
+
+    @Test
+    void confirmTripDone_afterDeparture_recordsTheConfirmation_withoutTouchingTheStatus() {
+        Trip trip = trip(TripStatus.COMPLETED, Instant.now().minus(7, ChronoUnit.HOURS));
+        Booking booking = booking(trip, BookingStatus.COMPLETED);
+
+        service.confirmTripDone(booking.getId(), passenger.getId());
+
+        assertThat(booking.getPassengerConfirmation()).isEqualTo(PassengerConfirmation.TRIP_DONE);
+        assertThat(booking.getPassengerConfirmedAt()).isNotNull();
+        assertThat(booking.getStatus()).isEqualTo(BookingStatus.COMPLETED);
+        verify(auditService).log(eq(passenger.getId()), eq("BOOKING_TRIP_CONFIRMED"), eq("booking"), eq(booking.getId()), any());
+        verify(reportRepository, never()).save(any());
+    }
+
+    @Test
+    void reportDriverNoShow_withinTheWindow_excludesTheBookingFromPayouts_opensAReport_andWarnsTheDriver() {
+        Trip trip = trip(TripStatus.ONGOING, Instant.now().minus(2, ChronoUnit.HOURS));
+        Booking booking = booking(trip, BookingStatus.CONFIRMED);
+        when(reportRepository.save(any())).thenAnswer(invocation -> {
+            Report report = invocation.getArgument(0);
+            report.setId(UUID.randomUUID());
+            return report;
+        });
+
+        service.reportDriverNoShow(booking.getId(), passenger.getId(), "  Attendu 40 minutes a la gare, personne.  ");
+
+        assertThat(booking.getStatus()).isEqualTo(BookingStatus.DRIVER_NO_SHOW);
+        assertThat(booking.getPassengerConfirmation()).isEqualTo(PassengerConfirmation.DRIVER_NO_SHOW);
+        ArgumentCaptor<Report> saved = ArgumentCaptor.forClass(Report.class);
+        verify(reportRepository).save(saved.capture());
+        assertThat(saved.getValue().getReporter()).isSameAs(passenger);
+        assertThat(saved.getValue().getReportedTrip()).isSameAs(trip);
+        assertThat(saved.getValue().getBookingId()).isEqualTo(booking.getId());
+        assertThat(saved.getValue().getReasonCode()).isEqualTo("NO_SHOW");
+        assertThat(saved.getValue().getDetails()).isEqualTo("Attendu 40 minutes a la gare, personne.");
+        // Aucun remboursement automatique : la moderation tranche apres avoir entendu les deux parties.
+        verify(paymentService, never()).refundBooking(any(), anyLong(), any());
+        verify(notificationService).notifyCritical(eq(driver), eq(NotificationType.DRIVER_NO_SHOW_REPORTED), any());
+        verify(auditService).log(eq(passenger.getId()), eq("BOOKING_DRIVER_NO_SHOW"), eq("booking"), eq(booking.getId()), any());
+    }
+
+    @Test
+    void passengerConfirmation_isRefused_beforeDeparture_forSomeoneElse_twice_andAfter24hForANoShow() {
+        Booking early = booking(trip(TripStatus.PUBLISHED, Instant.now().plus(1, ChronoUnit.HOURS)), BookingStatus.CONFIRMED);
+        assertThatThrownBy(() -> service.confirmTripDone(early.getId(), passenger.getId()))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("apres l heure de depart");
+
+        Booking departed = booking(trip(TripStatus.ONGOING, Instant.now().minus(1, ChronoUnit.HOURS)), BookingStatus.CONFIRMED);
+        assertThatThrownBy(() -> service.confirmTripDone(departed.getId(), driver.getId()))
+                .isInstanceOf(ForbiddenException.class);
+
+        service.confirmTripDone(departed.getId(), passenger.getId());
+        assertThatThrownBy(() -> service.reportDriverNoShow(departed.getId(), passenger.getId(), null))
+                .isInstanceOf(ConflictException.class).hasMessageContaining("deja");
+
+        Booking late = booking(trip(TripStatus.COMPLETED, Instant.now().minus(30, ChronoUnit.HOURS)), BookingStatus.COMPLETED);
+        assertThatThrownBy(() -> service.reportDriverNoShow(late.getId(), passenger.getId(), null))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("24 h");
+        // La confirmation explicite, elle, reste possible apres 24 h (sans effet sur l argent).
+        service.confirmTripDone(late.getId(), passenger.getId());
+        assertThat(late.getPassengerConfirmation()).isEqualTo(PassengerConfirmation.TRIP_DONE);
+
+        Booking cancelled = booking(trip(TripStatus.ONGOING, Instant.now().minus(1, ChronoUnit.HOURS)), BookingStatus.CANCELLED_BY_PASSENGER);
+        assertThatThrownBy(() -> service.reportDriverNoShow(cancelled.getId(), passenger.getId(), null))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("confirmee ou terminee");
     }
 }

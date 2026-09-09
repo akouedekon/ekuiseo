@@ -83,6 +83,37 @@ export function useCancelBooking() {
 }
 
 /**
+ * POST /api/v1/bookings/{id}/trip-done (V21) : le passager confirme que le trajet a eu lieu.
+ * La liste est rechargee : le serveur renvoie le constat et sa date.
+ */
+export function useConfirmTripDone() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (bookingId: string) => apiClient.post<BookingResponse>(`/api/v1/bookings/${bookingId}/trip-done`),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['bookings'] })
+    },
+  })
+}
+
+/**
+ * POST /api/v1/bookings/{id}/driver-no-show (V21) : le passager declare que le conducteur
+ * n est pas venu. La reservation passe DRIVER_NO_SHOW et un signalement est ouvert.
+ */
+export function useReportDriverNoShow() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { bookingId: string; details?: string }) =>
+      apiClient.post<BookingResponse>(`/api/v1/bookings/${input.bookingId}/driver-no-show`, {
+        details: input.details?.trim() || undefined,
+      }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['bookings'] })
+    },
+  })
+}
+
+/**
  * POST /api/v1/trips/{id}/booking-quote : devis serveur AVANT creation.
  * Si le serveur est injoignable (reseau), on affiche une ESTIMATION locale
  * signalee comme telle. Toute autre erreur (place indisponible, droits...)

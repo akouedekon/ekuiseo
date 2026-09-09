@@ -40,6 +40,7 @@ const STATUS_LABEL: Record<BookingStatus, string> = {
   CANCELLED_BY_PASSENGER: 'Annul. passager',
   CANCELLED_BY_DRIVER: 'Annul. conducteur',
   NO_SHOW: 'Non présentés',
+  DRIVER_NO_SHOW: 'Conducteur absent',
   EXPIRED: 'Expirées (acompte non reçu)',
 }
 
@@ -53,6 +54,8 @@ const STATUS_COLOR: Record<BookingStatus, string> = {
   CANCELLED_BY_PASSENGER: CHART.vermillon,
   CANCELLED_BY_DRIVER: CHART.vermillon,
   NO_SHOW: CHART.muted,
+  // Conducteur absent (V21) : une defaillance conducteur, meme famille que ses annulations.
+  DRIVER_NO_SHOW: CHART.vermillon,
   // Expiree = acompte jamais recu : une place liberee, pas une perte pour la plateforme.
   EXPIRED: CHART.muted,
 }

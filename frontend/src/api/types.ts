@@ -14,8 +14,13 @@ export type BookingStatus =
   | 'CANCELLED_BY_DRIVER'
   | 'COMPLETED'
   | 'NO_SHOW'
+  /** Conducteur absent, declare par le passager apres le depart (V21) : hors reversement, signalement ouvert. */
+  | 'DRIVER_NO_SHOW'
   /** Acompte non recu dans les 20 minutes : places liberees par le serveur. Aucune action possible. */
   | 'EXPIRED'
+
+/** Constat du passager apres le depart (V21) : PENDING vaut confirmation tacite passe 24 h. */
+export type PassengerConfirmation = 'PENDING' | 'TRIP_DONE' | 'DRIVER_NO_SHOW'
 // Alignes sur bj.ekuiseo.api.domain.enums.PaymentMethod : MOMO_DEPOSIT (acompte,
 // defaut), MOMO_FULL (paiement integral en ligne), CASH (rien en ligne).
 export type PaymentMethod = 'MOMO_DEPOSIT' | 'MOMO_FULL' | 'CASH'

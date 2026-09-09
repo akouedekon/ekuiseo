@@ -3,6 +3,7 @@ package bj.ekuiseo.api.web.controller;
 import bj.ekuiseo.api.dto.booking.BookingDetailResponse;
 import bj.ekuiseo.api.dto.booking.BookingResponse;
 import bj.ekuiseo.api.dto.booking.DeclineBookingRequest;
+import bj.ekuiseo.api.dto.booking.DriverNoShowRequest;
 import bj.ekuiseo.api.dto.message.MessageResponse;
 import bj.ekuiseo.api.dto.message.SendMessageRequest;
 import bj.ekuiseo.api.dto.payment.InitiateDepositRequest;
@@ -62,6 +63,18 @@ public class BookingController {
     @PostMapping("/{id}/no-show")
     public BookingResponse noShow(@PathVariable UUID id) {
         return bookingService.markNoShow(id, currentUser.id());
+    }
+
+    @Operation(summary = "Confirmer que le trajet a eu lieu", description = "Reserve au passager, apres l heure de depart, sur une reservation confirmee ou terminee sans constat prealable. Sans reponse dans les 24 h, la confirmation est tacite.")
+    @PostMapping("/{id}/trip-done")
+    public BookingResponse tripDone(@PathVariable UUID id) {
+        return bookingService.confirmTripDone(id, currentUser.id());
+    }
+
+    @Operation(summary = "Declarer que le conducteur n est pas venu", description = "Reserve au passager, entre l heure de depart et 24 h apres : la reservation passe DRIVER_NO_SHOW (hors reversement) et un signalement NO_SHOW est ouvert pour la moderation, qui decide du remboursement.")
+    @PostMapping("/{id}/driver-no-show")
+    public BookingResponse driverNoShow(@PathVariable UUID id, @Valid @RequestBody(required = false) DriverNoShowRequest req) {
+        return bookingService.reportDriverNoShow(id, currentUser.id(), req == null ? null : req.details());
     }
 
     @Operation(summary = "Annuler ma reservation", description = "Remboursement selon le bareme : integral si plus de 24h avant le depart, 50% retenus si moins de 24h, rien si apres le depart. Une demande encore en attente de l accord du conducteur s annule sans frais.")

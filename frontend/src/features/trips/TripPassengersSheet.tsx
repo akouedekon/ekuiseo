@@ -23,6 +23,7 @@ const STATUS_TONE: Record<TripBookingResponse['status'], 'success' | 'neutral' |
   CONFIRMED: 'success',
   COMPLETED: 'neutral',
   NO_SHOW: 'danger',
+  DRIVER_NO_SHOW: 'danger',
   PENDING_PAYMENT: 'warning',
   PENDING_DRIVER_APPROVAL: 'warning',
   CANCELLED_BY_DRIVER: 'danger',

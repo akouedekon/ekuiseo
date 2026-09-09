@@ -5,7 +5,7 @@
  * (`non_null`), un champ type `X | null` arrive donc comme `undefined` quand il
  * est vide - tester avec `== null` ou `??`, jamais avec `=== null`.
  */
-import type { BookingStatus, ComfortLevel, PaymentMethod, TripType, VehicleSummary } from './types'
+import type { BookingStatus, ComfortLevel, PassengerConfirmation, PaymentMethod, TripType, VehicleSummary } from './types'
 
 /* --------------------------------------------------------- Trajet detaille */
 
@@ -165,6 +165,9 @@ export interface BookingDetailResponse {
   unreadMessages: number
   /** Vrai si j'ai deja note le conducteur pour ce trajet (un seul avis par trajet). */
   reviewedByMe: boolean
+  /** Constat du passager apres le depart (V21) ; absent sur une reponse d'un serveur plus ancien. */
+  passengerConfirmation?: PassengerConfirmation | null
+  passengerConfirmedAt?: string | null
 }
 
 /* ------------------------------------------------------------- Preferences */

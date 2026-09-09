@@ -1,6 +1,7 @@
 package bj.ekuiseo.api.dto.booking;
 
 import bj.ekuiseo.api.domain.enums.BookingStatus;
+import bj.ekuiseo.api.domain.enums.PassengerConfirmation;
 import bj.ekuiseo.api.domain.enums.PaymentMethod;
 
 import java.time.Instant;
@@ -15,6 +16,9 @@ public record BookingResponse(
         long serviceFee,
         BookingStatus status,
         PaymentMethod paymentMethod,
-        Instant createdAt
+        Instant createdAt,
+        /** Constat du passager apres le depart (V21) : PENDING, TRIP_DONE ou DRIVER_NO_SHOW. */
+        PassengerConfirmation passengerConfirmation,
+        Instant passengerConfirmedAt
 ) {
 }

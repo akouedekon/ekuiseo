@@ -77,6 +77,7 @@ export const BOOKING_STATUS_LABEL: Record<BookingStatus, string> = {
   CANCELLED_BY_DRIVER: 'Annulée par le conducteur',
   COMPLETED: 'Terminée',
   NO_SHOW: 'Non présenté',
+  DRIVER_NO_SHOW: 'Conducteur absent (signalé)',
   EXPIRED: 'Expirée (acompte non reçu)',
 }
 

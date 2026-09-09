@@ -26,6 +26,7 @@ import { ReviewDialog } from '@/components/feedback/ReviewDialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Textarea } from '@/components/ui/input'
 import { Avatar, Separator } from '@/components/ui/misc'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { EmptyState, ErrorState, ListSkeleton } from '@/components/ui/states'
@@ -34,13 +35,14 @@ import { PageMeta } from '@/components/layout/PageMeta'
 import { DepositCountdown } from '@/components/booking/Countdown'
 import { EditTripSheet } from '@/features/trips/EditTripSheet'
 import { TripPassengersSheet } from '@/features/trips/TripPassengersSheet'
-import { useCancelBooking, useMyBookings } from '@/hooks/useBookings'
+import { useCancelBooking, useConfirmTripDone, useMyBookings, useReportDriverNoShow } from '@/hooks/useBookings'
 import { useCancelTrip, useMyTrips } from '@/hooks/useTrips'
 import { cn } from '@/lib/cn'
 import { describeError } from '@/lib/errors'
 import { formatDateTime, formatDayShort, formatFcfa, formatRelativeDay, formatTime } from '@/lib/format'
 import { BOOKING_STATUS_LABEL } from '@/lib/labels'
 import { listContainer, listItem } from '@/lib/motion'
+import { tripConfirmationState } from '@/lib/tripConfirmation'
 import type { BookingDetailResponse } from '@/api/extended'
 import type { BookingStatus, TripResponse } from '@/api/types'
 
@@ -67,6 +69,7 @@ const BOOKING_STATUS: Record<
   CANCELLED_BY_DRIVER: { label: BOOKING_STATUS_LABEL.CANCELLED_BY_DRIVER, tone: 'danger', icon: Ban },
   COMPLETED: { label: BOOKING_STATUS_LABEL.COMPLETED, tone: 'neutral', icon: History },
   NO_SHOW: { label: BOOKING_STATUS_LABEL.NO_SHOW, tone: 'danger', icon: XCircle },
+  DRIVER_NO_SHOW: { label: BOOKING_STATUS_LABEL.DRIVER_NO_SHOW, tone: 'danger', icon: Ban },
   EXPIRED: { label: BOOKING_STATUS_LABEL.EXPIRED, tone: 'neutral', icon: TimerOff },
 }
 
@@ -79,6 +82,7 @@ function isPastBooking(booking: BookingDetailResponse): boolean {
   return (
     booking.status === 'COMPLETED' ||
     booking.status === 'NO_SHOW' ||
+    booking.status === 'DRIVER_NO_SHOW' ||
     isClosedBooking(booking.status) ||
     new Date(booking.trip.departureAt).getTime() < Date.now()
   )
@@ -104,13 +108,14 @@ function describeRecurrence(rule: string | null): string {
   return days.length === 7 ? 'tous les jours' : days.join(', ')
 }
 
-/** Un avis se laisse apres le depart, sur une reservation honoree (confirmee ou terminee). */
+/**
+ * Un avis se laisse apres le depart, sur une reservation honoree (confirmee ou terminee),
+ * une fois le constat donne ou tacite (V21) : on ne note pas un conducteur avant d avoir
+ * dit si le trajet a eu lieu, et jamais un conducteur declare absent.
+ */
 function canReview(booking: BookingDetailResponse): boolean {
-  return (
-    (booking.status === 'COMPLETED' || booking.status === 'CONFIRMED') &&
-    !booking.reviewedByMe &&
-    new Date(booking.trip.departureAt).getTime() < Date.now()
-  )
+  const state = tripConfirmationState(booking)
+  return (state === 'done' || state === 'tacit') && !booking.reviewedByMe
 }
 
 /**
@@ -174,6 +179,11 @@ export function MyTripsPage({ defaultTab = 'upcoming' }: { defaultTab?: TabKey }
     awaitingDriver?: boolean
   } | null>(null)
   const [reviewing, setReviewing] = useState<BookingDetailResponse | null>(null)
+  // Constat du passager (V21) : confirmation directe, ou declaration d absence apres confirmation.
+  const confirmTripDone = useConfirmTripDone()
+  const reportDriverNoShow = useReportDriverNoShow()
+  const [noShowTarget, setNoShowTarget] = useState<BookingDetailResponse | null>(null)
+  const [noShowDetails, setNoShowDetails] = useState('')
   const [editing, setEditing] = useState<TripResponse | null>(null)
   const [viewingPassengers, setViewingPassengers] = useState<TripResponse | null>(null)
 
@@ -187,6 +197,29 @@ export function MyTripsPage({ defaultTab = 'upcoming' }: { defaultTab?: TabKey }
     [drivingAll],
   )
   const drivingGroups = drivingScope === 'upcoming' ? drivingUpcoming : drivingPast
+
+  const markTripDone = (booking: BookingDetailResponse) =>
+    confirmTripDone.mutate(booking.id, {
+      onSuccess: () => toast.success('Merci, trajet confirmé', { description: 'Vous pouvez maintenant noter le conducteur.' }),
+      onError: (error) => toast.error(describeError(error, "La confirmation n'a pas abouti.")),
+    })
+
+  const confirmDriverNoShow = () => {
+    if (!noShowTarget) return
+    reportDriverNoShow.mutate(
+      { bookingId: noShowTarget.id, details: noShowDetails },
+      {
+        onSuccess: () => {
+          setNoShowTarget(null)
+          setNoShowDetails('')
+          toast.success('Absence du conducteur signalée', {
+            description: "La modération examine votre signalement et vous tiendra informé du remboursement.",
+          })
+        },
+        onError: (error) => toast.error(describeError(error, "Le signalement n'a pas abouti.")),
+      },
+    )
+  }
 
   const confirmCancel = () => {
     if (!confirm) return
@@ -246,6 +279,9 @@ export function MyTripsPage({ defaultTab = 'upcoming' }: { defaultTab?: TabKey }
             booking={booking}
             past={pastTab}
             onReview={canReview(booking) ? () => setReviewing(booking) : undefined}
+            onTripDone={pastTab ? () => markTripDone(booking) : undefined}
+            onDriverNoShow={pastTab ? () => setNoShowTarget(booking) : undefined}
+            confirming={confirmTripDone.isPending && confirmTripDone.variables === booking.id}
             onCancel={
               pastTab
                 ? undefined
@@ -400,6 +436,39 @@ export function MyTripsPage({ defaultTab = 'upcoming' }: { defaultTab?: TabKey }
         onConfirm={confirmCancel}
       />
 
+      <ConfirmDialog
+        open={noShowTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setNoShowTarget(null)
+            setNoShowDetails('')
+          }
+        }}
+        title="Le conducteur n'est pas venu ?"
+        description={
+          noShowTarget
+            ? `Trajet ${noShowTarget.trip.originLabel} → ${noShowTarget.trip.destLabel}. Votre réservation est mise de côté : le conducteur ne sera pas payé pour votre place, et la modération examinera votre signalement avant de décider du remboursement de votre acompte. Cette déclaration est définitive.`
+            : undefined
+        }
+        tone="danger"
+        confirmLabel="Signaler l'absence"
+        loading={reportDriverNoShow.isPending}
+        onConfirm={confirmDriverNoShow}
+      >
+        <div className="space-y-1.5">
+          <label htmlFor="driver-no-show-details" className="text-label font-medium text-ink">
+            Précisions pour la modération (facultatif)
+          </label>
+          <Textarea
+            id="driver-no-show-details"
+            value={noShowDetails}
+            onChange={(event) => setNoShowDetails(event.target.value.slice(0, 500))}
+            rows={3}
+            placeholder="Où et combien de temps avez-vous attendu ? Le conducteur a-t-il répondu à vos messages ?"
+          />
+        </div>
+      </ConfirmDialog>
+
       {reviewing ? (
         <ReviewDialog
           open
@@ -435,14 +504,22 @@ function BookingCard({
   booking,
   onCancel,
   onReview,
+  onTripDone,
+  onDriverNoShow,
+  confirming = false,
   past = false,
 }: {
   booking: BookingDetailResponse
   onCancel?: () => void
   onReview?: () => void
+  /** Constat du passager (V21) : le trajet a eu lieu / le conducteur n'est pas venu. */
+  onTripDone?: () => void
+  onDriverNoShow?: () => void
+  confirming?: boolean
   past?: boolean
 }) {
   const status = BOOKING_STATUS[booking.status]
+  const confirmation = tripConfirmationState(booking)
   const StatusIcon = status.icon
   const pending = booking.status === 'PENDING_PAYMENT'
   const awaitingDriver = booking.status === 'PENDING_DRIVER_APPROVAL'
@@ -550,6 +627,29 @@ function BookingCard({
               </Button>
             ) : null}
           </div>
+        ) : confirmation === 'ask' && onTripDone && onDriverNoShow ? (
+          /* Constat du passager (V21) : pose une fois, dans les 24 h qui suivent le depart. */
+          <div className="border-t border-rule px-3 py-3">
+            <p className="text-label font-medium text-ink">Ce trajet a-t-il eu lieu ?</p>
+            <p className="mt-0.5 text-caption text-muted">
+              Sans réponse de votre part sous 24 h, le trajet est considéré comme effectué.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button size="sm" onClick={onTripDone} loading={confirming}>
+                <CheckCircle2 className="size-4" aria-hidden />
+                Oui, le trajet a eu lieu
+              </Button>
+              <Button size="sm" variant="ghost" className="text-danger-ink" onClick={onDriverNoShow} disabled={confirming}>
+                <Ban className="size-4" aria-hidden />
+                Le conducteur n'est pas venu
+              </Button>
+            </div>
+          </div>
+        ) : confirmation === 'driver-no-show' ? (
+          <p className="border-t border-rule px-3 py-2 text-caption text-muted">
+            Absence du conducteur signalée{booking.passengerConfirmedAt ? ` le ${formatDateTime(booking.passengerConfirmedAt)}` : ''} :
+            la modération examine votre dossier et vous informera du remboursement.
+          </p>
         ) : onReview ? (
           <div className="flex items-center gap-2 border-t border-rule px-3 py-2">
             <Button asChild variant="ghost" size="sm">

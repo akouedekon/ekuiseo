@@ -12,6 +12,8 @@ package bj.ekuiseo.api.domain.enums;
  *   <li>{@code EXPIRED} : acompte jamais recu dans le delai, places liberees par le
  *       scheduler (V16, constats F010/F116/F232) - distinct d une annulation volontaire.</li>
  *   <li>{@code COMPLETED} / {@code NO_SHOW} : trajet effectue / passager absent.</li>
+ *   <li>{@code DRIVER_NO_SHOW} : conducteur absent, declare par le passager apres le depart (V21) :
+ *       la reservation sort des reversements et un signalement NO_SHOW est ouvert pour la moderation.</li>
  * </ul>
  */
 public enum BookingStatus {
@@ -22,5 +24,6 @@ public enum BookingStatus {
     CANCELLED_BY_DRIVER,
     COMPLETED,
     NO_SHOW,
+    DRIVER_NO_SHOW,
     EXPIRED
 }

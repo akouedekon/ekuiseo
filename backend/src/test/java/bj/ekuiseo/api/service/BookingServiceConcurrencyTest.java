@@ -89,7 +89,7 @@ class BookingServiceConcurrencyTest {
         when(userRepository.findById(passenger2Id)).thenReturn(Optional.of(passenger2));
         when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
         when(bookingMapper.toResponse(any(Booking.class))).thenReturn(
-                new BookingResponse(UUID.randomUUID(), tripId, null, 1, 1000, 100, null, PaymentMethod.MOMO_DEPOSIT, Instant.now()));
+                new BookingResponse(UUID.randomUUID(), tripId, null, 1, 1000, 100, null, PaymentMethod.MOMO_DEPOSIT, Instant.now(), null, null));
 
         // Simule l'UPDATE conditionnel atomique : ne decremente que si assez de places.
         when(tripRepository.decrementSeatsIfAvailable(eq(tripId), anyInt())).thenAnswer(inv -> {
@@ -104,7 +104,7 @@ class BookingServiceConcurrencyTest {
         });
 
         BookingService bookingService = new BookingService(bookingRepository, tripRepository, mock(bj.ekuiseo.api.repository.TripStopRepository.class), userRepository,
-                driverSubscriptionRepository, messageRepository, mock(bj.ekuiseo.api.repository.ReviewRepository.class), bookingMapper, new CancellationPolicy(), new DriverCancellationPolicy(),
+                driverSubscriptionRepository, messageRepository, mock(bj.ekuiseo.api.repository.ReviewRepository.class), mock(bj.ekuiseo.api.repository.ReportRepository.class), bookingMapper, new CancellationPolicy(), new DriverCancellationPolicy(),
                 notificationService, paymentService, auditService, feePolicy, new DriverApprovalPolicy(24), 20);
 
         CreateBookingRequest request = new CreateBookingRequest(1, null, null, PaymentMethod.MOMO_DEPOSIT);

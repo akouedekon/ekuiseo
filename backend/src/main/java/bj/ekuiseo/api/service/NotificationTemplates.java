@@ -70,6 +70,8 @@ public final class NotificationTemplates {
             case TRIP_REMINDER:
             case TRIP_UPDATED:
                 return "/bookings";
+            case DRIVER_NO_SHOW_REPORTED:
+                return "/trips/mine";
             case BOOKING_CONFIRMED:
                 return Boolean.TRUE.equals(p.get("forPassenger")) ? "/bookings" : "/trips/mine";
             case NEW_MESSAGE: {
@@ -340,6 +342,16 @@ public final class NotificationTemplates {
                         "Votre abonnement conducteur est actif pour 30 jours : aucune commission n'est prelevee sur vos trajets "
                                 + "pendant cette periode.",
                         "Ekuiseo : votre abonnement conducteur est actif, vous ne payez plus de commission ce mois-ci.");
+            case DRIVER_NO_SHOW_REPORTED:
+                // Au conducteur (V21) : l identite et les details du passager ne sont pas transmis.
+                return finish("Un passager signale votre absence au depart",
+                        "Un passager de votre trajet" + (tripLine.isEmpty() ? "" : " " + tripLine)
+                                + " declare que vous n'etiez pas au depart. Sa reservation est mise de cote et "
+                                + "ne sera pas comptee dans votre prochain reversement tant que la moderation n'a pas tranche."
+                                + "\n\nSi vous avez bien effectue ce trajet, repondez a ce message ou ecrivez a la moderation "
+                                + "depuis l'application : votre version sera examinee avant toute decision.",
+                        "Ekuiseo : un passager signale votre absence au depart" + (tripLine.isEmpty() ? "" : " " + tripLine)
+                                + ". Repondez-nous si vous avez bien effectue le trajet.");
             case REPORT_RECEIVED:
                 // Adressee a la personne visee (constat F550), sans jamais reveler l identite de l auteur.
                 return finish("Un signalement vous concerne",

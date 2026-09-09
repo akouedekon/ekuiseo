@@ -7,12 +7,15 @@ import bj.ekuiseo.api.common.exception.ConflictException;
 import bj.ekuiseo.api.common.exception.ForbiddenException;
 import bj.ekuiseo.api.common.exception.NotFoundException;
 import bj.ekuiseo.api.domain.Booking;
+import bj.ekuiseo.api.domain.Report;
 import bj.ekuiseo.api.domain.Trip;
 import bj.ekuiseo.api.domain.TripStop;
 import bj.ekuiseo.api.domain.User;
 import bj.ekuiseo.api.domain.enums.BookingStatus;
 import bj.ekuiseo.api.domain.enums.NotificationType;
+import bj.ekuiseo.api.domain.enums.PassengerConfirmation;
 import bj.ekuiseo.api.domain.enums.PaymentMethod;
+import bj.ekuiseo.api.domain.enums.ReportReason;
 import bj.ekuiseo.api.domain.enums.TripStatus;
 import bj.ekuiseo.api.domain.enums.UserStatus;
 import bj.ekuiseo.api.dto.booking.BookingDetailResponse;
@@ -26,6 +29,7 @@ import bj.ekuiseo.api.mapper.BookingMapper;
 import bj.ekuiseo.api.repository.BookingRepository;
 import bj.ekuiseo.api.repository.DriverSubscriptionRepository;
 import bj.ekuiseo.api.repository.MessageRepository;
+import bj.ekuiseo.api.repository.ReportRepository;
 import bj.ekuiseo.api.repository.ReviewRepository;
 import bj.ekuiseo.api.repository.TripRepository;
 import bj.ekuiseo.api.repository.TripStopRepository;
@@ -74,6 +78,7 @@ public class BookingService {
     private final DriverSubscriptionRepository driverSubscriptionRepository;
     private final MessageRepository messageRepository;
     private final ReviewRepository reviewRepository;
+    private final ReportRepository reportRepository;
     private final BookingMapper bookingMapper;
     private final CancellationPolicy cancellationPolicy;
     private final DriverCancellationPolicy driverCancellationPolicy;
@@ -86,7 +91,8 @@ public class BookingService {
 
     public BookingService(BookingRepository bookingRepository, TripRepository tripRepository,
                            TripStopRepository tripStopRepository, UserRepository userRepository, DriverSubscriptionRepository driverSubscriptionRepository,
-                           MessageRepository messageRepository, ReviewRepository reviewRepository, BookingMapper bookingMapper,
+                           MessageRepository messageRepository, ReviewRepository reviewRepository, ReportRepository reportRepository,
+                           BookingMapper bookingMapper,
                            CancellationPolicy cancellationPolicy, DriverCancellationPolicy driverCancellationPolicy,
                            NotificationService notificationService, PaymentService paymentService,
                            AuditService auditService, FeePolicy feePolicy, DriverApprovalPolicy driverApprovalPolicy,
@@ -98,6 +104,7 @@ public class BookingService {
         this.driverSubscriptionRepository = driverSubscriptionRepository;
         this.messageRepository = messageRepository;
         this.reviewRepository = reviewRepository;
+        this.reportRepository = reportRepository;
         this.bookingMapper = bookingMapper;
         this.cancellationPolicy = cancellationPolicy;
         this.driverCancellationPolicy = driverCancellationPolicy;
@@ -386,7 +393,8 @@ public class BookingService {
         return new BookingDetailResponse(booking.getId(), trip.getId(), booking.getPassenger().getId(),
                 booking.getSeats(), booking.getAmount(), booking.getServiceFee(), booking.getStatus(),
                 booking.getPaymentMethod(), booking.getCreatedAt(), buildPaymentPlan(booking), tripSummary, unread,
-                reviewRepository.existsByTripIdAndAuthorIdAndTargetId(trip.getId(), requesterId, driver.getId()));
+                reviewRepository.existsByTripIdAndAuthorIdAndTargetId(trip.getId(), requesterId, driver.getId()),
+                booking.getPassengerConfirmation(), booking.getPassengerConfirmedAt());
     }
 
     /**
@@ -700,6 +708,11 @@ public class BookingService {
 
     /** Fenetre pendant laquelle le conducteur peut signaler l absence d un passager apres le depart. */
     static final Duration NO_SHOW_WINDOW = Duration.ofHours(48);
+    /**
+     * Fenetre du constat passager (V21) : jusqu a l eligibilite au reversement (24 h apres le
+     * depart, PayoutService). Passe ce delai, la confirmation est tacite.
+     */
+    static final Duration PASSENGER_CONFIRMATION_WINDOW = Duration.ofHours(24);
 
     /**
      * Signalement d absence par le conducteur (POST /api/v1/bookings/{id}/no-show,
@@ -733,6 +746,84 @@ public class BookingService {
                 Map.of("bookingId", booking.getId().toString(), "tripId", trip.getId().toString(),
                         "retainedAmountFcfa", booking.getDepositAmount()));
         return bookingMapper.toResponse(booking);
+    }
+
+    /**
+     * Le passager confirme que le trajet a eu lieu (V21). Ouvert des l heure de depart, sur une
+     * reservation honoree (CONFIRMED ou COMPLETED) sans constat prealable. Sans reponse dans les
+     * {@link #PASSENGER_CONFIRMATION_WINDOW}, la confirmation est tacite : rien ne change.
+     */
+    @Transactional
+    public BookingResponse confirmTripDone(UUID id, UUID passengerId) {
+        Booking booking = findBooking(id);
+        requirePassengerConfirmable(booking, passengerId);
+        booking.setPassengerConfirmation(PassengerConfirmation.TRIP_DONE);
+        booking.setPassengerConfirmedAt(Instant.now());
+        bookingRepository.save(booking);
+        auditService.log(passengerId, "BOOKING_TRIP_CONFIRMED", "booking", booking.getId(),
+                Map.of("tripId", booking.getTrip().getId().toString()));
+        return bookingMapper.toResponse(booking);
+    }
+
+    /**
+     * Le passager declare que le conducteur n est pas venu (V21), entre l heure de depart et
+     * {@link #PASSENGER_CONFIRMATION_WINDOW} apres (au-dela, la reservation est eligible au
+     * reversement et la confirmation tacite). La reservation passe DRIVER_NO_SHOW - elle sort
+     * des reversements (PayoutService ne verse que CONFIRMED / COMPLETED / NO_SHOW) - et un
+     * signalement NO_SHOW est ouvert pour la moderation, qui decide du remboursement de
+     * l acompte apres avoir entendu les deux parties. Le conducteur est prevenu (critique :
+     * son argent est en jeu), sans les details du passager.
+     */
+    @Transactional
+    public BookingResponse reportDriverNoShow(UUID id, UUID passengerId, String details) {
+        Booking booking = findBooking(id);
+        requirePassengerConfirmable(booking, passengerId);
+        Trip trip = booking.getTrip();
+        Instant now = Instant.now();
+        if (now.isAfter(trip.getDepartureAt().plus(PASSENGER_CONFIRMATION_WINDOW))) {
+            throw new BadRequestException("Le delai pour signaler l absence du conducteur (24 h apres le depart) est depasse");
+        }
+        booking.setStatus(BookingStatus.DRIVER_NO_SHOW);
+        booking.setPassengerConfirmation(PassengerConfirmation.DRIVER_NO_SHOW);
+        booking.setPassengerConfirmedAt(now);
+        bookingRepository.save(booking);
+
+        String trimmed = details == null ? null : details.trim();
+        Report report = reportRepository.save(Report.builder()
+                .reporter(booking.getPassenger())
+                .reportedTrip(trip)
+                .bookingId(booking.getId())
+                .reasonCode(ReportReason.NO_SHOW.name())
+                .details(trimmed == null || trimmed.isEmpty()
+                        ? "Le passager declare que le conducteur n est pas venu au depart."
+                        : trimmed)
+                .build());
+
+        auditService.log(passengerId, "BOOKING_DRIVER_NO_SHOW", "booking", booking.getId(),
+                Map.of("tripId", trip.getId().toString(), "reportId", report.getId().toString(),
+                        "depositAmountFcfa", booking.getDepositAmount()));
+        notificationService.notifyCritical(trip.getDriver(), NotificationType.DRIVER_NO_SHOW_REPORTED,
+                Map.of("bookingId", booking.getId().toString(), "tripId", trip.getId().toString(),
+                        "reportId", report.getId().toString(),
+                        "route", trip.getOriginLabel() + " -> " + trip.getDestLabel(),
+                        "departureAt", trip.getDepartureAt().toString()));
+        return bookingMapper.toResponse(booking);
+    }
+
+    /** Garde commune des deux constats du passager : sa reservation, honoree, apres le depart, sans constat prealable. */
+    private void requirePassengerConfirmable(Booking booking, UUID passengerId) {
+        if (!booking.getPassenger().getId().equals(passengerId)) {
+            throw new ForbiddenException("Cette reservation n est pas la votre");
+        }
+        if (booking.getStatus() != BookingStatus.CONFIRMED && booking.getStatus() != BookingStatus.COMPLETED) {
+            throw new BadRequestException("Seule une reservation confirmee ou terminee peut faire l objet d un constat");
+        }
+        if (booking.getPassengerConfirmation() != PassengerConfirmation.PENDING) {
+            throw new ConflictException("Vous avez deja donne votre constat pour ce trajet");
+        }
+        if (Instant.now().isBefore(booking.getTrip().getDepartureAt())) {
+            throw new BadRequestException("Le constat ne peut etre donne qu apres l heure de depart");
+        }
     }
 
     /**

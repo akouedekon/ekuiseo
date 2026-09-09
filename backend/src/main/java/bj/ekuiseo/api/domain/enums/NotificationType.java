@@ -47,5 +47,7 @@ public enum NotificationType {
     /** Demande de reservation sur un trajet a accord conducteur (V19) : au conducteur (critique) et au passager (accuse). */
     BOOKING_REQUESTED,
     /** Demande refusee par le conducteur, ou restee sans reponse dans le delai : acompte rembourse integralement. */
-    BOOKING_DECLINED
+    BOOKING_DECLINED,
+    /** Au conducteur (critique) : un passager declare qu il n est pas venu au depart (V21) ; la reservation sort des reversements, la moderation tranche. */
+    DRIVER_NO_SHOW_REPORTED
 }

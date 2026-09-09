@@ -78,7 +78,12 @@ GitHub Actions, cible de déploiement : VPS Hostinger.
     les réservations confirmées ; un trajet parti ne se réserve ni ne s annule plus. Le
     conducteur peut signaler un **no-show** jusqu à 48 h après le départ (acompte acquis,
     reversé net au conducteur). Un changement d horaire par le conducteur ouvre 24 h
-    d annulation gratuite (`bookings.free_cancellation_until`).
+    d annulation gratuite (`bookings.free_cancellation_until`). **Constat du passager (V21)** :
+    après le départ, le passager confirme que le trajet a eu lieu (`POST /bookings/{id}/trip-done`)
+    ou déclare le conducteur absent (`POST /bookings/{id}/driver-no-show`, jusqu à 24 h après le
+    départ) ; sans réponse sous 24 h, confirmation tacite. Un conducteur déclaré absent fait
+    passer la réservation en `DRIVER_NO_SHOW` : hors reversement, signalement `NO_SHOW` ouvert
+    pour la modération, qui décide du remboursement de l acompte (jamais automatique).
 10. **Abonnement conducteur** : 2 000 FCFA/mois, commission ramenée à 0 %.
 
 ## Conventions
@@ -88,7 +93,7 @@ GitHub Actions, cible de déploiement : VPS Hostinger.
   Classement par distance de détour, écart horaire et note du conducteur.
 - Erreurs HTTP en **RFC 7807** (`ProblemDetail`).
 - Migrations Flyway **numérotées à la suite**. Ne jamais modifier une migration déjà
-  écrite — V1 à V20 existent (la prochaine est V21).
+  écrite — V1 à V21 existent (la prochaine est V22).
 - Le front ne recalcule jamais un montant pour une réservation existante : il lit le
   `paymentPlan` renvoyé par l'API. Les estimations locales sont autorisées **avant**
   création, et doivent être affichées comme telles.
@@ -102,7 +107,7 @@ GitHub Actions, cible de déploiement : VPS Hostinger.
 Complet et cohérent de bout en bout : API, interface, back-office d'administration,
 chaîne de déploiement, jeu de démonstration, documentation d'exploitation.
 
-- `backend/` — 20 migrations. Kkiapay (initiation, webhook signé et
+- `backend/` — 21 migrations. Kkiapay (initiation, webhook signé et
   idempotent, vérification serveur, remboursements), codes de connexion par e-mail (SMS en repli) avec limitation de débit,
   géocodage des villes béninoises en base, rôles et back-office, reversements, signalements,
   journal d'audit, alertes de recherche, abonnements, trace des recherches (`search_events`,

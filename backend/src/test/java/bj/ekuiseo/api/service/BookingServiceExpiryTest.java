@@ -43,7 +43,7 @@ class BookingServiceExpiryTest {
     private final AuditService auditService = mock(AuditService.class);
     private final BookingService service = new BookingService(bookingRepository, tripRepository,
             mock(TripStopRepository.class), mock(UserRepository.class), mock(DriverSubscriptionRepository.class),
-            mock(MessageRepository.class), mock(ReviewRepository.class), mock(BookingMapper.class),
+            mock(MessageRepository.class), mock(ReviewRepository.class), mock(bj.ekuiseo.api.repository.ReportRepository.class), mock(BookingMapper.class),
             new CancellationPolicy(), new DriverCancellationPolicy(), notificationService, mock(PaymentService.class),
             auditService, new FeePolicy(0.08, 5, 1000), new DriverApprovalPolicy(24), 20);
 

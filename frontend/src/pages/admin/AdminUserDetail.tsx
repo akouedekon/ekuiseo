@@ -85,6 +85,7 @@ const BOOKING_STATUS_LABEL: Record<string, { label: string; tone: 'success' | 'd
   CANCELLED_BY_PASSENGER: { label: 'Annulée (passager)', tone: 'danger' },
   CANCELLED_BY_DRIVER: { label: 'Annulée (conducteur)', tone: 'danger' },
   NO_SHOW: { label: 'Non présenté', tone: 'danger' },
+  DRIVER_NO_SHOW: { label: 'Conducteur absent (signalé)', tone: 'danger' },
   EXPIRED: { label: 'Expirée', tone: 'neutral' },
 }
 

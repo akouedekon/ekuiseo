@@ -127,6 +127,37 @@ class BookingControllerWebMvcTest extends AbstractWebMvcTest {
         verify(bookingService).markNoShow(bookingId, passenger.getId());
     }
 
+    /** V21 : constat du passager apres le depart, l identifiant du passager vient du jeton. */
+    @Test
+    void tripDone_andDriverNoShow_areRecordedForTheTokenSubject() throws Exception {
+        when(bookingService.confirmTripDone(bookingId, passenger.getId())).thenReturn(booking(bookingId, BookingStatus.COMPLETED));
+        mockMvc.perform(authed(post("/api/v1/bookings/" + bookingId + "/trip-done"), bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETED"));
+        verify(bookingService).confirmTripDone(bookingId, passenger.getId());
+
+        when(bookingService.reportDriverNoShow(bookingId, passenger.getId(), "Personne au depart"))
+                .thenReturn(booking(bookingId, BookingStatus.DRIVER_NO_SHOW));
+        mockMvc.perform(authed(post("/api/v1/bookings/" + bookingId + "/driver-no-show"), bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"details\":\"Personne au depart\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DRIVER_NO_SHOW"));
+        verify(bookingService).reportDriverNoShow(bookingId, passenger.getId(), "Personne au depart");
+
+        // Sans corps : accepte, details nuls. Details trop longs : 400 avant le service.
+        when(bookingService.reportDriverNoShow(bookingId, passenger.getId(), null))
+                .thenReturn(booking(bookingId, BookingStatus.DRIVER_NO_SHOW));
+        mockMvc.perform(authed(post("/api/v1/bookings/" + bookingId + "/driver-no-show"), bearer))
+                .andExpect(status().isOk());
+        mockMvc.perform(authed(post("/api/v1/bookings/" + bookingId + "/driver-no-show"), bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"details\":\"" + "x".repeat(501) + "\"}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(fromNewIp(post("/api/v1/bookings/" + bookingId + "/trip-done")))
+                .andExpect(status().isUnauthorized());
+    }
+
     /** V19 : accord et refus du conducteur, l identifiant du conducteur vient du jeton. */
     @Test
     void accept_confirmsTheRequest_forTheTokenSubject() throws Exception {
@@ -251,6 +282,6 @@ class BookingControllerWebMvcTest extends AbstractWebMvcTest {
 
     private static BookingResponse booking(UUID id, BookingStatus status) {
         return new BookingResponse(id, UUID.randomUUID(), UUID.randomUUID(), 1, 2500, 200, status,
-                PaymentMethod.MOMO_DEPOSIT, Instant.now());
+                PaymentMethod.MOMO_DEPOSIT, Instant.now(), null, null);
     }
 }
