@@ -1,15 +1,25 @@
 import { useEffect, useRef, useState } from 'react'
+import type { Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl'
 import { Map as MapIcon, Maximize2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/cn'
 import { estimateDurationMinutes, haversineKm } from '@/lib/cities'
 import { formatDuration } from '@/lib/format'
+import { projectOntoRoute } from '@/lib/liveTracking'
 
 export interface RouteMapPoint {
   label: string
   lat: number
   lng: number
   kind: 'origin' | 'stop' | 'destination'
+}
+
+/** Vehicule suivi en direct (V23) : position, cap eventuel, et fraicheur (`stale` = position perimee). */
+export interface RouteMapVehicle {
+  lat: number
+  lng: number
+  heading?: number | null
+  stale?: boolean
 }
 
 /**
@@ -31,10 +41,13 @@ export function RouteMap({
   className,
   interactive = true,
   activation = 'always',
+  vehicle,
 }: {
   points: RouteMapPoint[]
   className?: string
   interactive?: boolean
+  /** Position du vehicule en direct : marqueur deplace sans recreer la carte. */
+  vehicle?: RouteMapVehicle | null
   /**
    * `always` : la carte repond au doigt des l'affichage. `on-demand` (mobile,
    * audit L8) : elle n'intercepte ni le defilement ni le pincement tant que
@@ -44,11 +57,11 @@ export function RouteMap({
 }) {
   const [activated, setActivated] = useState(activation === 'always')
   if (!MAP_STYLE_URL || points.length < 2) {
-    return <StylisedRoute points={points} className={className} />
+    return <StylisedRoute points={points} className={className} vehicle={vehicle} />
   }
   return (
     <div className={cn('relative', className)}>
-      <LiveMap points={points} className="size-full" interactive={interactive && activated} />
+      <LiveMap points={points} className="size-full" interactive={interactive && activated} vehicle={vehicle} />
       {!activated ? (
         <div className="absolute inset-x-0 bottom-3 flex justify-center">
           <Button variant="secondary" size="sm" onClick={() => setActivated(true)}>
@@ -70,17 +83,82 @@ function readToken(name: string, fallback: string): string {
   return value || fallback
 }
 
+/** Marqueur du vehicule : pastille primaire, fleche orientee selon le cap, attenuee si la position est perimee. */
+function vehicleMarkerElement(): HTMLSpanElement {
+  const el = document.createElement('span')
+  el.setAttribute('role', 'img')
+  el.style.cssText =
+    'display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--primary);border:2px solid var(--surface);box-shadow:0 1px 4px rgba(0,0,0,.4);transition:opacity .3s'
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  svg.setAttribute('viewBox', '0 0 24 24')
+  svg.setAttribute('width', '14')
+  svg.setAttribute('height', '14')
+  svg.setAttribute('aria-hidden', 'true')
+  svg.style.transition = 'transform .3s'
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+  path.setAttribute('d', 'M12 3l7 17-7-4-7 4z')
+  path.setAttribute('fill', 'var(--surface)')
+  svg.appendChild(path)
+  el.appendChild(svg)
+  return el
+}
+
+function applyVehicleStyle(el: HTMLElement, vehicle: RouteMapVehicle) {
+  const hasHeading = vehicle.heading !== null && vehicle.heading !== undefined
+  el.setAttribute('aria-label', vehicle.stale ? 'Véhicule (dernière position connue)' : 'Véhicule')
+  el.style.opacity = vehicle.stale ? '0.45' : '1'
+  const arrow = el.firstElementChild as HTMLElement | null
+  if (arrow) {
+    arrow.style.transform = hasHeading ? `rotate(${vehicle.heading}deg)` : 'none'
+    arrow.style.visibility = hasHeading ? 'visible' : 'hidden'
+  }
+}
+
 function LiveMap({
   points,
   className,
   interactive,
+  vehicle,
 }: {
   points: RouteMapPoint[]
   className?: string
   interactive: boolean
+  vehicle?: RouteMapVehicle | null
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [failed, setFailed] = useState(false)
+  // La carte et la classe Marker (import dynamique) sont gardees en ref : le vehicule se
+  // deplace sans recreer la carte ni relancer fitBounds (un fitBounds a chaque position
+  // rendrait la carte inutilisable au doigt).
+  const mapRef = useRef<MapLibreMap | null>(null)
+  const markerClassRef = useRef<typeof MapLibreMarker | null>(null)
+  const vehicleMarkerRef = useRef<MapLibreMarker | null>(null)
+  const vehicleRef = useRef<RouteMapVehicle | null | undefined>(null)
+
+  const syncVehicle = () => {
+    const map = mapRef.current
+    const MarkerClass = markerClassRef.current
+    if (!map || !MarkerClass) return
+    const current = vehicleRef.current
+    if (!current) {
+      vehicleMarkerRef.current?.remove()
+      vehicleMarkerRef.current = null
+      return
+    }
+    if (!vehicleMarkerRef.current) {
+      vehicleMarkerRef.current = new MarkerClass({ element: vehicleMarkerElement() })
+        .setLngLat([current.lng, current.lat])
+        .addTo(map)
+    } else {
+      vehicleMarkerRef.current.setLngLat([current.lng, current.lat])
+    }
+    applyVehicleStyle(vehicleMarkerRef.current.getElement(), current)
+  }
+
+  useEffect(() => {
+    vehicleRef.current = vehicle
+    syncVehicle()
+  }, [vehicle])
 
   useEffect(() => {
     let disposed = false
@@ -104,6 +182,8 @@ function LiveMap({
           attributionControl: { compact: true },
         })
         map = instance
+        mapRef.current = instance
+        markerClassRef.current = Marker
 
         // Couleur du trace lue dans le theme (audit F319), reappliquee au changement clair / sombre.
         const applyLineColor = () => {
@@ -144,6 +224,8 @@ function LiveMap({
           new LngLatBounds([points[0].lng, points[0].lat], [points[0].lng, points[0].lat]),
         )
         instance.fitBounds(bounds, { padding: 48, duration: 0 })
+        // Vehicule deja connu au moment ou la carte devient prete (lu via la ref).
+        syncVehicle()
       } catch {
         if (!disposed) setFailed(true)
       }
@@ -152,11 +234,15 @@ function LiveMap({
     return () => {
       disposed = true
       observer?.disconnect()
+      vehicleMarkerRef.current?.remove()
+      vehicleMarkerRef.current = null
+      mapRef.current = null
+      markerClassRef.current = null
       map?.remove()
     }
   }, [points, interactive])
 
-  if (failed) return <StylisedRoute points={points} className={className} />
+  if (failed) return <StylisedRoute points={points} className={className} vehicle={vehicle} />
 
   return (
     <div
@@ -203,10 +289,26 @@ function project(
   }))
 }
 
-function StylisedRoute({ points, className }: { points: RouteMapPoint[]; className?: string }) {
+function StylisedRoute({
+  points,
+  className,
+  vehicle,
+}: {
+  points: RouteMapPoint[]
+  className?: string
+  vehicle?: RouteMapVehicle | null
+}) {
   const W = 360
   const H = 220
   const placed = points.length >= 2 ? project(points, W, H, 26, 52) : []
+  // Sans fond de carte, une position brute n aurait aucun sens : on la ramene sur le trace
+  // (projection geographique, lib/liveTracking), puis dans le meme cadre que les points.
+  const placedVehicle =
+    vehicle && points.length >= 2
+      ? project([...points, { label: 'Véhicule', ...projectOntoRoute(vehicle, points), kind: 'stop' }], W, H, 26, 52)[
+          points.length
+        ]
+      : null
   const km =
     points.length >= 2
       ? haversineKm(points[0].lat, points[0].lng, points[points.length - 1].lat, points[points.length - 1].lng)
@@ -293,6 +395,22 @@ function StylisedRoute({ points, className }: { points: RouteMapPoint[]; classNa
                 )}
               </g>
             ))}
+            {placedVehicle ? (
+              <g
+                transform={`translate(${placedVehicle.x} ${placedVehicle.y})`}
+                opacity={vehicle?.stale ? 0.45 : 1}
+                role="img"
+                aria-label={vehicle?.stale ? 'Véhicule (dernière position connue)' : 'Véhicule'}
+              >
+                <circle r="10" fill="var(--primary)" opacity="0.2">
+                  {!vehicle?.stale ? <animate attributeName="r" values="8;14;8" dur="2s" repeatCount="indefinite" /> : null}
+                </circle>
+                <circle r="7" fill="var(--primary)" stroke="var(--surface)" strokeWidth="2" />
+                {vehicle?.heading !== null && vehicle?.heading !== undefined ? (
+                  <path d="M0 -4.5l3.5 8-3.5-2-3.5 2z" fill="var(--surface)" transform={`rotate(${vehicle.heading})`} />
+                ) : null}
+              </g>
+            ) : null}
           </>
         ) : null}
       </svg>

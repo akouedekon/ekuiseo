@@ -250,6 +250,10 @@ ekuiseo:
     # Pieces d identite televersees (V20) : fichiers et lignes supprimes ce nombre de jours
     # apres la decision (APPROVED/REJECTED) du moderateur ; immediatement a l anonymisation.
     identity-documents-days: ${IDENTITY_DOCUMENTS_RETENTION_DAYS:30}
+    # Suivi en direct (V23) : positions du vehicule supprimees apres ce nombre d heures ; le
+    # partage est coupe et le jeton public efface sur les trajets termines ou annules depuis
+    # aussi longtemps (TripLiveService laisse le lien repondre 6 h apres la fin).
+    trip-positions-hours: ${TRIP_POSITIONS_RETENTION_HOURS:24}
   storage:
     # Pieces d identite (V20) : repertoire des fichiers chiffres, relatif au repertoire de travail
     # du conteneur (/app) -> a monter sur un volume nomme en production (docker-compose.prod.yml).
@@ -305,6 +309,15 @@ ekuiseo:
     client-errors:
       max-requests: ${RATE_LIMIT_CLIENT_ERRORS_MAX:30}
       window-seconds: ${RATE_LIMIT_CLIENT_ERRORS_WINDOW_SECONDS:600}
+    # Suivi en direct (V23) : positions envoyees par le conducteur (POST /trips/{id}/live/positions),
+    # par utilisateur authentifie - le navigateur en envoie au plus une toutes les 10 s.
+    live:
+      max-requests: ${RATE_LIMIT_LIVE_MAX:120}
+      window-seconds: ${RATE_LIMIT_LIVE_WINDOW_SECONDS:60}
+    # Lien public de suivi (GET /live/{token}), par IP : chaque proche interroge toutes les 10 s.
+    live-public:
+      max-requests: ${RATE_LIMIT_LIVE_PUBLIC_MAX:120}
+      window-seconds: ${RATE_LIMIT_LIVE_PUBLIC_WINDOW_SECONDS:60}
 
 logging:
   level:

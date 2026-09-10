@@ -194,6 +194,67 @@ export interface TripResponse {
   segmentPriceFcfa?: number | null
 }
 
+/* ------------------------------------------------------------ Suivi en direct (V23) */
+
+/** PUT /api/v1/trips/{id}/live : etat du partage de position vu par le conducteur. */
+export interface LiveSharingResponse {
+  enabled: boolean
+  shareToken: string | null
+  /** Chemin du lien public a partager (/live/{token}) ; l origine est celle du site. */
+  sharePath: string | null
+  lastPositionAt: string | null
+}
+
+/** POST /api/v1/trips/{id}/live/positions : une position du vehicule (202 sans corps). */
+export interface LivePositionRequest {
+  lat: number
+  lng: number
+  /** Cap en degres, 0 = nord, sens horaire. */
+  heading?: number | null
+  speedKmh?: number | null
+  accuracyM?: number | null
+  /** Instant de la mesure (ISO) ; absent = a la reception. */
+  recordedAt?: string
+}
+
+export interface LivePosition {
+  lat: number
+  lng: number
+  heading: number | null
+  speedKmh: number | null
+  accuracyM: number | null
+  recordedAt: string
+}
+
+/** GET /api/v1/trips/{id}/live : conducteur ou passager du trajet. */
+export interface LivePositionResponse {
+  enabled: boolean
+  /** Null tant qu aucune position n a ete recue (ou partage coupe). */
+  position: LivePosition | null
+  /** Age de la position a l instant de la reponse, en secondes ; null sans position. */
+  staleSeconds: number | null
+  tripStatus: TripStatus
+  departureAt: string
+  /** Jeton du lien public, present quand le partage est actif. */
+  shareToken: string | null
+}
+
+/** GET /api/v1/live/{token} : suivi public sans compte, aucune donnee personnelle au-dela du prenom. */
+export interface PublicLiveResponse {
+  originLabel: string
+  originLat: number
+  originLng: number
+  destLabel: string
+  destLat: number
+  destLng: number
+  departureAt: string
+  tripStatus: TripStatus
+  driverFirstName: string
+  vehicle: { brand: string; model: string; color: string | null } | null
+  position: LivePosition | null
+  staleSeconds: number | null
+}
+
 /** Reservation d un trajet vue par son conducteur (GET /api/v1/trips/{id}/bookings). */
 export interface TripBookingResponse {
   id: string

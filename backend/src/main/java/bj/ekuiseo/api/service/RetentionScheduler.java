@@ -1,11 +1,14 @@
 package bj.ekuiseo.api.service;
 
 import bj.ekuiseo.api.common.Tz;
+import bj.ekuiseo.api.domain.enums.TripStatus;
 import bj.ekuiseo.api.repository.ConversationRepository;
 import bj.ekuiseo.api.repository.MessageRepository;
 import bj.ekuiseo.api.repository.NotificationRepository;
 import bj.ekuiseo.api.repository.OtpCodeRepository;
 import bj.ekuiseo.api.repository.SearchAlertRepository;
+import bj.ekuiseo.api.repository.TripPositionRepository;
+import bj.ekuiseo.api.repository.TripRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,6 +20,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.function.IntSupplier;
 
 /**
@@ -31,7 +35,10 @@ import java.util.function.IntSupplier;
  *   <li>{@code search_alerts} : desactivation des alertes dont la fenetre est passee, suppression
  *       des alertes inactives depuis plus de {@code ekuiseo.retention.search-alerts-days} (90 j) ;</li>
  *   <li>{@code identity_documents} (V20) : pieces des dossiers decides (APPROVED/REJECTED) depuis plus
- *       de {@code ekuiseo.retention.identity-documents-days} (30 j), fichiers chiffres compris.</li>
+ *       de {@code ekuiseo.retention.identity-documents-days} (30 j), fichiers chiffres compris ;</li>
+ *   <li>{@code trip_positions} (V23) : positions du suivi en direct plus vieilles que
+ *       {@code ekuiseo.retention.trip-positions-hours} (24 h), puis partage coupe et jeton public
+ *       efface sur les trajets termines ou annules depuis aussi longtemps.</li>
  * </ul>
  * Chaque purge tourne dans sa propre transaction et sous son propre try/catch : l echec de
  * l une n annule ni ne bloque les autres, et le nombre de lignes touchees est journalise.
@@ -48,34 +55,42 @@ public class RetentionScheduler {
     private final ConversationRepository conversationRepository;
     private final SearchAlertRepository searchAlertRepository;
     private final IdentityDocumentService identityDocumentService;
+    private final TripPositionRepository tripPositionRepository;
+    private final TripRepository tripRepository;
     private final TransactionTemplate transaction;
     private final long otpRetentionHours;
     private final int notificationsRetentionDays;
     private final int messagesRetentionDays;
     private final int searchAlertsRetentionDays;
     private final int identityDocumentsRetentionDays;
+    private final long tripPositionsRetentionHours;
 
     public RetentionScheduler(OtpCodeRepository otpCodeRepository, NotificationRepository notificationRepository,
                               MessageRepository messageRepository, ConversationRepository conversationRepository,
                               SearchAlertRepository searchAlertRepository, IdentityDocumentService identityDocumentService,
+                              TripPositionRepository tripPositionRepository, TripRepository tripRepository,
                               PlatformTransactionManager transactionManager,
                               @Value("${ekuiseo.retention.otp-hours:24}") long otpRetentionHours,
                               @Value("${ekuiseo.retention.notifications-days:180}") int notificationsRetentionDays,
                               @Value("${ekuiseo.retention.messages-days:180}") int messagesRetentionDays,
                               @Value("${ekuiseo.retention.search-alerts-days:90}") int searchAlertsRetentionDays,
-                              @Value("${ekuiseo.retention.identity-documents-days:30}") int identityDocumentsRetentionDays) {
+                              @Value("${ekuiseo.retention.identity-documents-days:30}") int identityDocumentsRetentionDays,
+                              @Value("${ekuiseo.retention.trip-positions-hours:24}") long tripPositionsRetentionHours) {
         this.otpCodeRepository = otpCodeRepository;
         this.notificationRepository = notificationRepository;
         this.messageRepository = messageRepository;
         this.conversationRepository = conversationRepository;
         this.searchAlertRepository = searchAlertRepository;
         this.identityDocumentService = identityDocumentService;
+        this.tripPositionRepository = tripPositionRepository;
+        this.tripRepository = tripRepository;
         this.transaction = new TransactionTemplate(transactionManager);
         this.otpRetentionHours = otpRetentionHours;
         this.notificationsRetentionDays = notificationsRetentionDays;
         this.messagesRetentionDays = messagesRetentionDays;
         this.searchAlertsRetentionDays = searchAlertsRetentionDays;
         this.identityDocumentsRetentionDays = identityDocumentsRetentionDays;
+        this.tripPositionsRetentionHours = tripPositionsRetentionHours;
     }
 
     /** Chaque nuit a 03:30 (heure du serveur), apres la recurrence (03:00) et les traces de recherche (03:15). */
@@ -104,6 +119,15 @@ public class RetentionScheduler {
         // plus de N jours (docs/CONFORMITE.md 3.2) ; la purge supprime aussi les fichiers sur disque.
         total += purge("pieces d identite de dossiers decides depuis plus de " + identityDocumentsRetentionDays + " jours",
                 () -> identityDocumentService.purgeDecidedBefore(now.minus(identityDocumentsRetentionDays, ChronoUnit.DAYS)));
+        // V23 : donnees de localisation du suivi en direct (docs/CONFORMITE.md 3.2). Le jeton public n est
+        // efface qu une fois le trajet termine ou annule depuis la meme duree : le lien repond encore
+        // 6 h apres la fin (TripLiveService), jamais au-dela de cette purge.
+        Instant positionsCutoff = now.minus(tripPositionsRetentionHours, ChronoUnit.HOURS);
+        total += purge("positions du suivi en direct de plus de " + tripPositionsRetentionHours + " heures",
+                () -> tripPositionRepository.deleteByRecordedAtBefore(positionsCutoff));
+        total += purge("partage de position coupe sur les trajets termines ou annules",
+                () -> tripRepository.disableLiveSharingForStatusesUpdatedBefore(
+                        List.of(TripStatus.COMPLETED, TripStatus.CANCELLED), positionsCutoff));
         return total;
     }
 

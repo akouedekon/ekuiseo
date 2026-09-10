@@ -38,6 +38,8 @@ const NotificationsPage = lazyPage(() => import('@/pages/NotificationsPage'), 'N
 const LoginPage = lazyPage(() => import('@/pages/LoginPage'), 'LoginPage', 'public')
 const RegisterPage = lazyPage(() => import('@/pages/LoginPage'), 'RegisterPage', 'public')
 const LegalPage = lazyPage(() => import('@/pages/LegalPage'), 'LegalPage', 'public')
+// Suivi en direct par jeton (V23) : ouvert depuis un lien WhatsApp, sans compte.
+const LiveTrackingPage = lazyPage(() => import('@/pages/LiveTrackingPage'), 'LiveTrackingPage', 'public')
 
 /*
  * Le back-office est charge a la demande : il embarque Recharts et ne
@@ -110,6 +112,7 @@ export default function App() {
         <Route path="/cgu" element={<Deferred><LegalPage slug="cgu" /></Deferred>} />
         <Route path="/confidentialite" element={<Deferred><LegalPage slug="confidentialite" /></Deferred>} />
         <Route path="/mentions-legales" element={<Deferred><LegalPage slug="mentions-legales" /></Deferred>} />
+        <Route path="/live/:token" element={<Deferred><LiveTrackingPage /></Deferred>} />
         {StyleGuidePage ? <Route path="/charte" element={<Deferred><StyleGuidePage /></Deferred>} /> : null}
 
         {/* --- Parcours authentifie --- */}

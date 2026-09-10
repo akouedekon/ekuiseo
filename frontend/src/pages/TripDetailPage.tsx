@@ -27,11 +27,15 @@ import { RouteMap, type RouteMapPoint } from '@/components/trip/RouteMap'
 import { VehicleTypeBadge, VehicleTypeIcon } from '@/components/trip/VehicleTypeIcon'
 import { RouteTimeline } from '@/components/trip/RouteTimeline'
 import { ShareTripButton } from '@/components/trip/ShareTripButton'
+import { LiveSharingControl } from '@/features/trips/LiveSharingControl'
+import { LiveTrackingCard } from '@/features/trips/LiveTrackingCard'
 import { buildRoutePoints, estimateArrival } from '@/lib/route'
 import { estimatePaymentPlan } from '@/lib/payments'
 import { useIsAuthenticated, useMe } from '@/hooks/useAuth'
+import { useMyBookings } from '@/hooks/useBookings'
+import { useNow } from '@/hooks/useNow'
 import { usePublicUser, useUserReviews } from '@/hooks/useReviews'
-import { useTrip, useTripStops } from '@/hooks/useTrips'
+import { useTrip, useTripLive, useTripStops } from '@/hooks/useTrips'
 import { useIsDesktop } from '@/hooks/useMediaQuery'
 import { describeError, isDefinitiveError } from '@/lib/errors'
 import {
@@ -44,6 +48,7 @@ import {
   toInputDate,
 } from '@/lib/format'
 import { COMFORT_LABEL, DRIVER_APPROVAL_BADGE } from '@/lib/labels'
+import { isSharingWindowOpen, liveAgeSeconds, toVehicle } from '@/lib/liveTracking'
 import type { TripResponse } from '@/api/types'
 
 /** Recherche equivalente a un trajet (retour depuis un lien partage) ou son inverse (« Trajet retour »). */
@@ -89,6 +94,26 @@ export function TripDetailPage() {
 
   const data = trip.data
   const stopList = stops.data
+  /*
+   * Suivi en direct (V23) : visible du conducteur et d un passager avec une reservation
+   * active sur ce trajet, dans la fenetre du trajet (une heure avant le depart -> fin).
+   * On ne demande /live qu a ceux qui y ont droit : un visiteur sans reservation
+   * recevrait 403 a chaque fiche consultee.
+   */
+  const ownerOfTrip = !!data && me.data?.id === data.driver.id
+  const myBookings = useMyBookings(authed && !!data && !ownerOfTrip)
+  const hasActiveBooking =
+    !!data &&
+    (myBookings.data ?? []).some(
+      (b) => b.tripId === data.id && (b.status === 'CONFIRMED' || b.status === 'COMPLETED' || b.status === 'PENDING_DRIVER_APPROVAL'),
+    )
+  // Horloge de page (30 s) : la fenetre s ouvre pendant que la fiche est affichee.
+  const pageNow = useNow(true, 30_000)
+  const liveVisible = !!data && (ownerOfTrip || hasActiveBooking) && isSharingWindowOpen(data, pageNow)
+  const live = useTripLive(data?.id, { enabled: liveVisible, live: true })
+  const liveNow = useNow(liveVisible && (live.data?.enabled ?? false))
+  const liveAge = liveVisible && live.data?.enabled ? liveAgeSeconds(live.data.staleSeconds, live.dataUpdatedAt, liveNow) : null
+  const vehicle = liveVisible && live.data?.enabled ? toVehicle(live.data.position, liveAge) : null
   /* Points de la carte : une nouvelle reference a chaque rendu recreerait la carte MapLibre (audit F241). */
   const mapPoints = useMemo<RouteMapPoint[]>(() => {
     if (!data) return []
@@ -242,8 +267,12 @@ export function TripDetailPage() {
               ) : null}
             </Card>
 
+            {/* Suivi en direct : interrupteur du conducteur, puis carte et chiffres pour lui et ses passagers. */}
+            {liveVisible && isOwnTrip ? <LiveSharingControl trip={data} /> : null}
+            {liveVisible ? <LiveTrackingCard trip={data} live={live} points={mapPoints} showMap={!desktop} /> : null}
+
             {/* Une seule instance de carte a la fois : mobile ici (plus basse, activee a la demande), desktop dans la colonne laterale. */}
-            {!desktop ? <RouteMap points={mapPoints} className="h-[180px]" activation="on-demand" /> : null}
+            {!desktop && !liveVisible ? <RouteMap points={mapPoints} className="h-[180px]" activation="on-demand" /> : null}
 
             {/* --- Conducteur --- */}
             <Card>
@@ -424,7 +453,7 @@ export function TripDetailPage() {
           {/* --- Colonne de reservation (desktop) --- */}
           <aside className="hidden lg:block">
             <div className="sticky top-24 space-y-3">
-              {desktop ? <RouteMap points={mapPoints} className="h-[240px]" /> : null}
+              {desktop ? <RouteMap points={mapPoints} className="h-[240px]" vehicle={vehicle} /> : null}
               <Card className="p-4">
                 <PriceBlock pricePerSeat={data.pricePerSeat} />
                 {isOwnTrip ? (

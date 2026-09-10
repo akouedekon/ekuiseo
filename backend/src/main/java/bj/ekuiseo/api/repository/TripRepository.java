@@ -54,6 +54,21 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
     @Query("select t from Trip t where t.id = :id")
     Optional<Trip> findByIdForUpdate(@Param("id") UUID id);
 
+    /** Lien public de suivi en direct (GET /api/v1/live/{token}, V23). */
+    Optional<Trip> findByLiveShareToken(String liveShareToken);
+
+    /**
+     * Purge nocturne du suivi en direct (RetentionScheduler, V23) : coupe le partage et efface
+     * le jeton des trajets termines ou annules depuis plus longtemps que la retention des
+     * positions, pour que le lien public cesse de repondre.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update Trip t set t.liveSharingEnabled = false, t.liveShareToken = null "
+            + "where (t.liveSharingEnabled = true or t.liveShareToken is not null) "
+            + "and t.status in :statuses and t.updatedAt < :before")
+    int disableLiveSharingForStatusesUpdatedBefore(@Param("statuses") List<bj.ekuiseo.api.domain.enums.TripStatus> statuses,
+                                                    @Param("before") Instant before);
+
     /**
      * Decrementation atomique des places disponibles. La clause WHERE garantit,
      * au niveau de la base de donnees, qu'on ne decremente jamais en dessous de

@@ -34,6 +34,7 @@ import { PageContainer, PageHeader } from '@/components/layout/PageContainer'
 import { PageMeta } from '@/components/layout/PageMeta'
 import { DepositCountdown } from '@/components/booking/Countdown'
 import { EditTripSheet } from '@/features/trips/EditTripSheet'
+import { LiveSharingControl } from '@/features/trips/LiveSharingControl'
 import { TripPassengersSheet } from '@/features/trips/TripPassengersSheet'
 import { useCancelBooking, useConfirmTripDone, useMyBookings, useReportDriverNoShow } from '@/hooks/useBookings'
 import { useCancelTrip, useMyTrips } from '@/hooks/useTrips'
@@ -42,6 +43,7 @@ import { describeError } from '@/lib/errors'
 import { formatDateTime, formatDayShort, formatFcfa, formatRelativeDay, formatTime } from '@/lib/format'
 import { BOOKING_STATUS_LABEL } from '@/lib/labels'
 import { listContainer, listItem } from '@/lib/motion'
+import { isSharingWindowOpen } from '@/lib/liveTracking'
 import { tripConfirmationState } from '@/lib/tripConfirmation'
 import type { BookingDetailResponse } from '@/api/extended'
 import type { BookingStatus, TripResponse } from '@/api/types'
@@ -754,6 +756,8 @@ function DrivingCard({
             ) : null}
           </div>
         ) : null}
+        {/* Suivi en direct (V23) : d une heure avant le depart jusqu a la fin du trajet. */}
+        {!template && isSharingWindowOpen(trip) ? <LiveSharingControl trip={trip} compact /> : null}
       </Card>
     </m.div>
   )
