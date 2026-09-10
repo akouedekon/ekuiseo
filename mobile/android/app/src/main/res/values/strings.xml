@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Ekuiseo</string>
+    <string name="title_activity_main">Ekuiseo</string>
+    <string name="package_name">bj.ekuiseo.app</string>
+    <string name="custom_url_scheme">bj.ekuiseo.app</string>
+</resources>
