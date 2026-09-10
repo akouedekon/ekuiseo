@@ -58,58 +58,47 @@ test.describe('Litige conducteur absent', () => {
     await expect(passengerPage.getByText(/Le conducteur peut contester jusqu'au/)).toBeVisible()
   })
 
-  test('le conducteur conteste depuis la liste des passagers', async ({ browser }) => {
-    const driverPage = await browser.newPage(projectContextOptions())
-    try {
-      await loginViaUi(driverPage, SEED_DRIVER)
-      await driverPage.goto('/bookings')
-      await driverPage.getByRole('tab', { name: /Je conduis/ }).click()
+  // Le conducteur et la moderation utilisent la fixture `page` : en cas d echec, la capture et
+  // le contexte d erreur du rapport montrent leur ecran, pas celui du passager.
+  test('le conducteur conteste depuis la liste des passagers', async ({ page: driverPage }) => {
+    await loginViaUi(driverPage, SEED_DRIVER)
+    await driverPage.goto('/bookings')
+    await driverPage.getByRole('tab', { name: /Je conduis/ }).click()
 
-      // Carte du trajet E2E (en cours, donc dans « À venir » des trajets conduits).
-      const card = driverPage
-        .locator('div')
-        .filter({ hasText: route })
-        .filter({ has: driverPage.getByRole('button', { name: 'Passagers' }) })
-        .last()
-      await card.getByRole('button', { name: 'Passagers' }).click()
+    // Carte du trajet E2E (le conducteur du seed a d autres trajets sur le meme axe : on vise l identifiant).
+    const card = driverPage.locator(`[data-trip-id="${E2E_TRIP_ID}"]`)
+    await expect(card).toContainText(route)
+    await card.getByRole('button', { name: 'Passagers' }).click()
 
-      await expect(driverPage.getByRole('dialog', { name: 'Passagers' })).toBeVisible()
-      await expect(driverPage.getByText(/Ce passager déclare que vous n'étiez pas au départ/)).toBeVisible()
-      await driverPage.getByRole('button', { name: 'Contester' }).click()
+    await expect(driverPage.getByRole('dialog', { name: 'Passagers' })).toBeVisible()
+    await expect(driverPage.getByText(/Ce passager déclare que vous n'étiez pas au départ/)).toBeVisible()
+    await driverPage.getByRole('button', { name: 'Contester' }).click()
 
-      await expect(driverPage.getByText(/Contester l'absence déclarée par/)).toBeVisible()
-      await driverPage.getByLabel('Votre version des faits').fill("J'étais à la gare Jonquet à 9 h, le passager n'a pas répondu au téléphone.")
-      await driverPage.getByRole('button', { name: 'Envoyer ma version' }).click()
+    await expect(driverPage.getByText(/Contester l'absence déclarée par/)).toBeVisible()
+    await driverPage.getByLabel('Votre version des faits').fill("J'étais à la gare Jonquet à 9 h, le passager n'a pas répondu au téléphone.")
+    await driverPage.getByRole('button', { name: 'Envoyer ma version' }).click()
 
-      await expect(driverPage.getByText('Contestation enregistrée').first()).toBeVisible()
-      await expect(driverPage.getByText(/Vous avez contesté/)).toBeVisible()
-    } finally {
-      await driverPage.close()
-    }
+    await expect(driverPage.getByText('Contestation enregistrée').first()).toBeVisible()
+    await expect(driverPage.getByText(/Vous avez contesté/)).toBeVisible()
   })
 
-  test('la modération tranche « trajet maintenu » et le passager en est informé', async ({ browser }) => {
-    const adminPage = await browser.newPage(projectContextOptions())
-    try {
-      await loginViaUi(adminPage, SEED_ADMIN)
-      await adminPage.goto('/admin/reports')
-      await adminPage.getByRole('tab', { name: 'En cours' }).click()
+  test('la modération tranche « trajet maintenu » et le passager en est informé', async ({ page: adminPage }) => {
+    await loginViaUi(adminPage, SEED_ADMIN)
+    await adminPage.goto('/admin/reports')
+    await adminPage.getByRole('tab', { name: 'En cours' }).click()
 
-      const dossier = adminPage.locator('[data-testid="no-show-dispute"]').filter({ hasText: 'Version du conducteur' }).first()
-      await expect(dossier).toBeVisible()
-      await expect(dossier).toContainText("J'étais à la gare Jonquet")
-      await adminPage.getByRole('button', { name: 'Trajet maintenu, payer le conducteur' }).first().click()
+    const dossier = adminPage.locator('[data-testid="no-show-dispute"]').filter({ hasText: 'Version du conducteur' }).first()
+    await expect(dossier).toBeVisible()
+    await expect(dossier).toContainText("J'étais à la gare Jonquet")
+    await adminPage.getByRole('button', { name: 'Trajet maintenu, payer le conducteur' }).first().click()
 
-      await expect(adminPage.getByText('Maintenir le trajet et payer le conducteur ?')).toBeVisible()
-      await adminPage.getByLabel('Note de décision').fill('Messages vérifiés : le passager a renoncé sans prévenir.')
-      await adminPage.getByRole('button', { name: 'Maintenir et payer le conducteur' }).click()
-      await expect(adminPage.getByText('Trajet maintenu : réservation reversée au conducteur').first()).toBeVisible()
+    await expect(adminPage.getByText('Maintenir le trajet et payer le conducteur ?')).toBeVisible()
+    await adminPage.getByLabel('Note de décision').fill('Messages vérifiés : le passager a renoncé sans prévenir.')
+    await adminPage.getByRole('button', { name: 'Maintenir et payer le conducteur' }).click()
+    await expect(adminPage.getByText('Trajet maintenu : réservation reversée au conducteur').first()).toBeVisible()
 
-      await adminPage.getByRole('tab', { name: 'Résolus' }).click()
-      await expect(adminPage.getByText('Trajet maintenu, reversé au conducteur').first()).toBeVisible()
-    } finally {
-      await adminPage.close()
-    }
+    await adminPage.getByRole('tab', { name: 'Résolus' }).click()
+    await expect(adminPage.getByText('Trajet maintenu, reversé au conducteur').first()).toBeVisible()
 
     // Le passager voit la decision sur sa reservation.
     await passengerPage.goto('/bookings?tab=past')

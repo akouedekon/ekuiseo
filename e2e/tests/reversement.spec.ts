@@ -15,9 +15,10 @@ const PASSENGER_ID = 'a0000000-0000-0000-0000-000000000026'
 const VEHICLE_ID = 'b0000000-0000-0000-0000-000000000006'
 
 test.describe('Reversement conducteur', () => {
-  const stamp = Date.now().toString(36)
-  const tripId = `e2e00000-0000-4000-8000-${stamp.padStart(12, '0').slice(-12)}`
-  const bookingId = `e2e00000-0000-4000-8001-${stamp.padStart(12, '0').slice(-12)}`
+  // Identifiants uniques par execution, en hexadecimal (contrainte du type uuid).
+  const stamp = Date.now().toString(16).padStart(12, '0').slice(-12)
+  const tripId = `e2e00000-0000-4000-8000-${stamp}`
+  const bookingId = `e2e00000-0000-4000-8001-${stamp}`
   const reference = `E2E-${stamp.toUpperCase()}`
 
   test.beforeAll(async () => {

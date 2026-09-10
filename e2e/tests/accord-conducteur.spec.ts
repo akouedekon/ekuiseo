@@ -41,30 +41,23 @@ test.describe('Accord du conducteur', () => {
     await expect(passengerPage.getByText('En attente du conducteur').first()).toBeVisible()
   })
 
-  test('le conducteur accepte et la place est confirmée', async ({ browser }) => {
-    const driverPage = await browser.newPage(projectContextOptions())
-    try {
-      await loginViaUi(driverPage, SEED_DRIVER)
-      await driverPage.goto('/bookings')
-      await driverPage.getByRole('tab', { name: /Je conduis/ }).click()
-      const card = driverPage
-        .locator('div')
-        .filter({ hasText: route })
-        .filter({ has: driverPage.getByRole('button', { name: 'Passagers' }) })
-        .last()
-      await card.getByRole('button', { name: 'Passagers' }).click()
+  test('le conducteur accepte et la place est confirmée', async ({ page: driverPage }) => {
+    await loginViaUi(driverPage, SEED_DRIVER)
+    await driverPage.goto('/bookings')
+    await driverPage.getByRole('tab', { name: /Je conduis/ }).click()
+    // Carte du trajet E2E (le conducteur du seed a d autres trajets sur le meme axe : on vise l identifiant).
+    const card = driverPage.locator(`[data-trip-id="${E2E_TRIP_ID}"]`)
+    await expect(card).toContainText(route)
+    await card.getByRole('button', { name: 'Passagers' }).click()
 
-      await expect(driverPage.getByRole('dialog', { name: 'Passagers' })).toBeVisible()
-      await expect(driverPage.getByText(/demande à traiter/)).toBeVisible()
-      await driverPage.getByRole('button', { name: 'Accepter', exact: true }).first().click()
-      // Deux dialogues ouverts (le volet Passagers et la confirmation) : on vise celui de la confirmation.
-      const confirmation = driverPage.getByRole('dialog').filter({ hasText: 'Le passager est prévenu' })
-      await expect(confirmation).toBeVisible()
-      await confirmation.getByRole('button', { name: 'Accepter', exact: true }).click()
-      await expect(driverPage.getByText(/est confirmé/).first()).toBeVisible()
-    } finally {
-      await driverPage.close()
-    }
+    await expect(driverPage.getByRole('dialog', { name: 'Passagers' })).toBeVisible()
+    await expect(driverPage.getByText(/demande à traiter/)).toBeVisible()
+    await driverPage.getByRole('button', { name: 'Accepter', exact: true }).first().click()
+    // Deux dialogues ouverts (le volet Passagers et la confirmation) : on vise celui de la confirmation.
+    const confirmation = driverPage.getByRole('dialog').filter({ hasText: 'Le passager est prévenu' })
+    await expect(confirmation).toBeVisible()
+    await confirmation.getByRole('button', { name: 'Accepter', exact: true }).click()
+    await expect(driverPage.getByText(/est confirmé/).first()).toBeVisible()
 
     await passengerPage.goto('/bookings')
     await expect(passengerPage.getByText('Confirmée').first()).toBeVisible()

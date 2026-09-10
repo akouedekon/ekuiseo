@@ -715,6 +715,7 @@ function DrivingCard({
   return (
     <m.div variants={listItem}>
       <Card
+        data-trip-id={trip.id}
         className={
           cancelled
             ? 'border-l-[3px] border-l-danger'

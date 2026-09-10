@@ -10,8 +10,10 @@ import bj.ekuiseo.api.common.exception.UnauthorizedException;
 import bj.ekuiseo.api.service.kkiapay.KkiapayUnavailableException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
+import org.apache.catalina.connector.ClientAbortException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -236,6 +238,16 @@ public class GlobalExceptionHandler {
      * pour retrouver la trace a partir d un ticket utilisateur. Le message interne n est
      * jamais expose.
      */
+    /**
+     * Le client a ferme la connexion pendant l ecriture de la reponse (navigation, onglet ferme,
+     * reseau mobile coupe) : rien a corriger cote serveur, rien a repondre non plus. Journalise en
+     * debug seulement, pour que le journal d erreurs ne se remplisse pas de « Broken pipe ».
+     */
+    @ExceptionHandler({AsyncRequestNotUsableException.class, ClientAbortException.class})
+    public void handleClientAbort(Exception ex, HttpServletRequest req) {
+        log.debug("Connexion fermee par le client sur {} {} : {}", req.getMethod(), req.getRequestURI(), ex.getMessage());
+    }
+
     @ExceptionHandler(Exception.class)
     public ProblemDetail handleGeneric(Exception ex, HttpServletRequest req) {
         String errorId = newErrorId();
