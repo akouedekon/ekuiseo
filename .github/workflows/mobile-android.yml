@@ -1,0 +1,153 @@
+name: Mobile Android
+
+# Construit l application Android (habillage Capacitor de la PWA, dossier mobile/,
+# docs/MOBILE.md). Independant de ci.yml et deploy-prod.yml : l application charge
+# https://ekuiseo.com et n a donc pas besoin d etre reconstruite a chaque evolution
+# du front, seulement quand le projet natif change.
+#
+# Deux APK sont publies en artefacts :
+#  - ekuiseo-android-debug   : signe avec la cle de debogage, installable sur un
+#                              telephone de test (sources inconnues), jamais publiable ;
+#  - ekuiseo-android-release : signe avec le keystore du fondateur SI les quatre secrets
+#                              ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
+#                              ANDROID_KEY_ALIAS et ANDROID_KEY_PASSWORD existent
+#                              (APK + AAB pour le Play Store) ; sinon un APK release NON
+#                              SIGNE, produit pour valider la compilation seulement.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "mobile/**"
+      - ".github/workflows/mobile-android.yml"
+
+concurrency:
+  group: mobile-android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: APK Android (debug + release)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      # Vrai seulement si les quatre secrets de signature sont renseignes.
+      HAS_SIGNING: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && secrets.ANDROID_KEYSTORE_PASSWORD != '' && secrets.ANDROID_KEY_ALIAS != '' && secrets.ANDROID_KEY_PASSWORD != '' }}
+      # versionCode croissant (exige par le Play Store) et versionName lisible.
+      APP_VERSION_CODE: ${{ github.run_number }}
+      APP_VERSION_NAME: 1.0.${{ github.run_number }}
+    steps:
+      - name: Recuperer le code
+        uses: actions/checkout@v4
+
+      # Capacitor 6 / Android Gradle Plugin 8 exigent un JDK 17. Le cache Gradle evite de
+      # retelecharger la distribution et les dependances AndroidX a chaque run.
+      - name: Installer le JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+          cache-dependency-path: |
+            mobile/android/gradle/wrapper/gradle-wrapper.properties
+            mobile/android/build.gradle
+            mobile/android/app/build.gradle
+            mobile/android/variables.gradle
+
+      - name: Installer Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Installer les dependances (npm ci)
+        run: npm ci
+
+      # Copie www/ et la configuration dans le projet natif, met a jour les plugins.
+      - name: Synchroniser le projet natif (cap sync)
+        run: npx cap sync android
+
+      # Le SDK Android est preinstalle sur ubuntu-latest ; accepter les licences permet a
+      # Gradle de completer une plateforme ou des build-tools manquants sans echouer.
+      - name: Accepter les licences du SDK Android
+        run: |
+          SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          if [ -x "$SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
+            yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          fi
+
+      - name: Rendre le wrapper Gradle executable
+        run: chmod +x android/gradlew
+
+      - name: Construire l APK de debogage (assembleDebug)
+        working-directory: mobile/android
+        run: >-
+          ./gradlew --no-daemon assembleDebug
+          -PversionCode=$APP_VERSION_CODE -PversionName=$APP_VERSION_NAME
+
+      # --- Release signee : uniquement si les quatre secrets existent -------------------
+      - name: Installer le keystore de signature
+        if: env.HAS_SIGNING == 'true'
+        working-directory: mobile/android
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > app/release.keystore
+          {
+            echo "storeFile=app/release.keystore"
+            echo "storePassword=$ANDROID_KEYSTORE_PASSWORD"
+            echo "keyAlias=$ANDROID_KEY_ALIAS"
+            echo "keyPassword=$ANDROID_KEY_PASSWORD"
+          } > keystore.properties
+          chmod 600 app/release.keystore keystore.properties
+
+      - name: Construire la release signee (assembleRelease + bundleRelease)
+        if: env.HAS_SIGNING == 'true'
+        working-directory: mobile/android
+        run: >-
+          ./gradlew --no-daemon assembleRelease bundleRelease
+          -PversionCode=$APP_VERSION_CODE -PversionName=$APP_VERSION_NAME
+
+      - name: Construire la release NON signee (secrets de signature absents)
+        if: env.HAS_SIGNING != 'true'
+        working-directory: mobile/android
+        run: |
+          echo "::notice::Secrets ANDROID_* absents : APK release non signe (compilation seulement). Voir docs/MOBILE.md."
+          ./gradlew --no-daemon assembleRelease \
+            -PversionCode=$APP_VERSION_CODE -PversionName=$APP_VERSION_NAME
+
+      # Le keystore ne doit pas survivre au job, meme sur un runner ephemere.
+      - name: Effacer le keystore
+        if: always() && env.HAS_SIGNING == 'true'
+        working-directory: mobile/android
+        run: rm -f app/release.keystore keystore.properties
+
+      - name: Publier l APK de debogage
+        uses: actions/upload-artifact@v4
+        with:
+          name: ekuiseo-android-debug
+          path: mobile/android/app/build/outputs/apk/debug/*.apk
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Publier la release (APK, et AAB si signee)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ekuiseo-android-release
+          path: |
+            mobile/android/app/build/outputs/apk/release/*.apk
+            mobile/android/app/build/outputs/bundle/release/*.aab
+          retention-days: 30
+          if-no-files-found: error
