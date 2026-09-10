@@ -5,15 +5,24 @@ import { cn } from '@/lib/cn'
 
 export const Tabs = TabsPrimitive.Root
 
+/**
+ * Liste d onglets. Par defaut, un segment plein largeur (trois onglets au plus tiennent
+ * sur un telephone). `scroll` : une rangee de puces qui defile horizontalement, sans
+ * ascenseur, en debordant jusqu aux bords de l ecran sous 640 px pour que la coupe se
+ * fasse au bord et non au milieu d un onglet (compte : six sections).
+ */
 export const TabsList = forwardRef<
   ElementRef<typeof TabsPrimitive.List>,
-  ComponentPropsWithoutRef<typeof TabsPrimitive.List>
->(function TabsList({ className, ...props }, ref) {
+  ComponentPropsWithoutRef<typeof TabsPrimitive.List> & { scroll?: boolean }
+>(function TabsList({ className, scroll = false, ...props }, ref) {
   return (
     <TabsPrimitive.List
       ref={ref}
+      data-scroll={scroll || undefined}
       className={cn(
-        'scroll-thin flex items-center gap-1 overflow-x-auto rounded-[var(--radius-control)] bg-surface-2 p-1',
+        scroll
+          ? 'scroll-hide -mx-4 flex items-center gap-2 overflow-x-auto px-4 py-1 sm:mx-0 sm:px-0'
+          : 'scroll-thin flex items-center gap-1 overflow-x-auto rounded-[var(--radius-control)] bg-surface-2 p-1',
         className,
       )}
       {...props}
@@ -21,7 +30,7 @@ export const TabsList = forwardRef<
   )
 })
 
-/** Onglet : 44 px de haut, cible tactile de la charte (audit F324). */
+/** Onglet : 44 px de haut, cible tactile de la charte (audit F324). Puce a contour dans une liste `scroll`. */
 export const TabsTrigger = forwardRef<
   ElementRef<typeof TabsPrimitive.Trigger>,
   ComponentPropsWithoutRef<typeof TabsPrimitive.Trigger>
@@ -30,8 +39,10 @@ export const TabsTrigger = forwardRef<
     <TabsPrimitive.Trigger
       ref={ref}
       className={cn(
-        'inline-flex min-h-11 flex-1 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[7px] px-3 text-label font-semibold text-ink-2 transition-[background-color,color,box-shadow] duration-150 hover:text-ink',
+        'inline-flex min-h-11 flex-1 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[7px] px-3 text-label font-semibold text-ink-2 transition-[background-color,color,box-shadow,border-color] duration-150 hover:text-ink active:scale-[0.98]',
         'data-[state=active]:bg-surface data-[state=active]:text-ink data-[state=active]:shadow-e1',
+        '[[data-scroll]>&]:flex-none [[data-scroll]>&]:rounded-[var(--radius-pill)] [[data-scroll]>&]:border [[data-scroll]>&]:border-rule-strong [[data-scroll]>&]:bg-surface [[data-scroll]>&]:px-4',
+        '[[data-scroll]>&]:data-[state=active]:border-primary [[data-scroll]>&]:data-[state=active]:bg-primary-soft [[data-scroll]>&]:data-[state=active]:text-primary-ink [[data-scroll]>&]:data-[state=active]:shadow-none',
         className,
       )}
       {...props}

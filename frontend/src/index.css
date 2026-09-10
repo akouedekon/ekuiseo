@@ -457,7 +457,7 @@
     border-color: var(--rule-strong);
   }
   .ek-lift:active {
-    transform: translateY(0) scale(0.995);
+    transform: translateY(0) scale(0.98);
     box-shadow: var(--shadow-1);
   }
 }

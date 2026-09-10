@@ -544,20 +544,18 @@ function BookingCard({
         }
       >
         <div className="p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              {/* Deux lignes au plus : un axe long ne doit ni deborder sous la puce ni etre coupe a la premiere ville. */}
-              <Link
-                to={`/trips/${booking.tripId}`}
-                className="line-clamp-2 block font-display text-lead font-bold leading-tight hover:underline"
-              >
-                {booking.trip.originLabel} → {booking.trip.destLabel}
-              </Link>
-              <p className="tnum mt-0.5 text-label text-muted">
-                {formatRelativeDay(booking.trip.departureAt)} · {formatTime(booking.trip.departureAt)} ·{' '}
-                {booking.seats} place{booking.seats > 1 ? 's' : ''}
-              </p>
-            </div>
+          {/* L axe prend toute la largeur (deux lignes au plus) ; la puce d etat partage la ligne de l horaire. */}
+          <Link
+            to={`/trips/${booking.tripId}`}
+            className="line-clamp-2 block font-display text-lead font-bold leading-tight hover:underline"
+          >
+            {booking.trip.originLabel} → {booking.trip.destLabel}
+          </Link>
+          <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <p className="tnum text-label text-muted">
+              {formatRelativeDay(booking.trip.departureAt)} · {formatTime(booking.trip.departureAt)} ·{' '}
+              {booking.seats} place{booking.seats > 1 ? 's' : ''}
+            </p>
             <Badge tone={status.tone} className="shrink-0">
               <StatusIcon aria-hidden />
               {status.label}
@@ -714,18 +712,16 @@ function DrivingCard({
               : 'border-l-[3px] border-l-primary'
         }
       >
-        <Link to={`/trips/${trip.id}`} className="block p-4 transition-colors hover:bg-surface-2">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="truncate font-display text-lead font-bold leading-tight">
-                {trip.originLabel} → {trip.destLabel}
-              </p>
-              <p className="tnum mt-0.5 text-label text-muted">
-                {template
-                  ? `Navette · ${describeRecurrence(trip.recurrenceRule)} à ${formatTime(trip.departureAt)}`
-                  : `${formatRelativeDay(trip.departureAt)} · ${formatTime(trip.departureAt)}`}
-              </p>
-            </div>
+        <Link to={`/trips/${trip.id}`} className="block p-4 transition-colors hover:bg-surface-2 active:bg-surface-2">
+          <p className="line-clamp-2 font-display text-lead font-bold leading-tight">
+            {trip.originLabel} → {trip.destLabel}
+          </p>
+          <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <p className="tnum text-label text-muted">
+              {template
+                ? `Navette · ${describeRecurrence(trip.recurrenceRule)} à ${formatTime(trip.departureAt)}`
+                : `${formatRelativeDay(trip.departureAt)} · ${formatTime(trip.departureAt)}`}
+            </p>
             <div className="flex shrink-0 items-center gap-2">
               <TripStatusBadge trip={trip} />
               <ChevronRight className="size-4 text-muted" aria-hidden />
@@ -806,15 +802,13 @@ function ShuttleGroupCard({
     <m.div variants={listItem}>
       <Card className={cn('border-l-[3px]', cancelledTemplate ? 'border-l-danger' : 'border-l-primary')}>
         <div className="p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="truncate font-display text-lead font-bold leading-tight">
-                {head.originLabel} → {head.destLabel}
-              </p>
-              <p className="tnum mt-0.5 text-label text-muted">
-                Navette · {describeRecurrence(head.recurrenceRule)} à {formatTime(head.departureAt)}
-              </p>
-            </div>
+          <p className="line-clamp-2 font-display text-lead font-bold leading-tight">
+            {head.originLabel} → {head.destLabel}
+          </p>
+          <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <p className="tnum text-label text-muted">
+              Navette · {describeRecurrence(head.recurrenceRule)} à {formatTime(head.departureAt)}
+            </p>
             <Badge tone={cancelledTemplate ? 'danger' : 'neutral'}>
               <Repeat aria-hidden />
               Navette

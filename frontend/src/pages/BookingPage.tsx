@@ -7,6 +7,9 @@ import { ErrorState, OfflineState } from '@/components/ui/states'
 import { StepIndicator } from '@/components/feedback/StepIndicator'
 import { PageContainer, PageHeader } from '@/components/layout/PageContainer'
 import { PageMeta } from '@/components/layout/PageMeta'
+import { stickyClearanceAlwaysClass } from '@/components/layout/StickyActionBar'
+import { useIsCompactShell } from '@/hooks/useMediaQuery'
+import { cn } from '@/lib/cn'
 import { AwaitingDriverStep } from '@/features/booking/AwaitingDriverStep'
 import { ConfirmedStep } from '@/features/booking/ConfirmedStep'
 import { CancelledStep, ExpiredStep, FailedStep, RefundStep } from '@/features/booking/ExpiredStep'
@@ -27,6 +30,7 @@ export function BookingPage() {
   const navigate = useNavigate()
   const flow = useBookingFlow(tripId)
   const { trip, booking, bookingId, data, step } = flow
+  const compact = useIsCompactShell()
 
   if (trip.isPending && trip.fetchStatus === 'paused') {
     return (
@@ -91,7 +95,8 @@ export function BookingPage() {
   const title = step === 'confirmed' ? 'Réservation confirmée' : step === 'awaiting' ? 'Demande transmise' : 'Réserver'
 
   return (
-    <PageContainer width="md" className="pb-12">
+    // Etape 1 sur mobile : le bouton principal est dans une barre collante (RecapStep), on lui reserve sa hauteur.
+    <PageContainer width="md" className={cn('pb-12', compact && step === 'recap' && stickyClearanceAlwaysClass)}>
       <PageMeta title={`${title} · ${data.originLabel} → ${data.destLabel}`} noindex />
       <PageHeader
         title={title}

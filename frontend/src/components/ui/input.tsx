@@ -15,8 +15,11 @@ export const Label = forwardRef<
   )
 })
 
-/* Anatomie commune des champs : voir .ek-field dans index.css (repos, survol, focus, erreur, desactive). */
-const controlBase = 'ek-field w-full rounded-[var(--radius-control)] px-3 text-base placeholder:text-muted'
+/*
+ * Anatomie commune des champs : voir .ek-field dans index.css (repos, survol, focus, erreur,
+ * desactive). 16 px sur mobile : en dessous, Safari iOS zoome sur le champ au focus.
+ */
+const controlBase = 'ek-field w-full rounded-[var(--radius-control)] px-3 text-lead placeholder:text-muted sm:text-base'
 
 /** Message d'erreur sous un champ : encre danger (6,5:1 sur surface), jamais la teinte pleine (audit F314). */
 export function FieldError({ id, children }: { id?: string; children: ReactNode }) {

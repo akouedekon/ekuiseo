@@ -1,12 +1,14 @@
 import { m } from 'motion/react'
 import { ChevronRight, MessagesSquare } from 'lucide-react'
 import { Link } from 'react-router'
+import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Avatar, Skeleton } from '@/components/ui/misc'
 import { EmptyState, ErrorState } from '@/components/ui/states'
 import { PageContainer, PageHeader } from '@/components/layout/PageContainer'
 import { PageMeta } from '@/components/layout/PageMeta'
 import { useConversations } from '@/hooks/useMessages'
+import { cn } from '@/lib/cn'
 import { formatFromNow, formatRelativeDay } from '@/lib/format'
 import { listContainer, listItem } from '@/lib/motion'
 
@@ -39,15 +41,20 @@ export function MessagesPage() {
           icon={MessagesSquare}
           title="Aucune conversation"
           description="Vous pourrez écrire au conducteur dès votre première réservation."
+          action={
+            <Button asChild>
+              <Link to="/">Chercher un trajet</Link>
+            </Button>
+          }
         />
       ) : (
         <m.ul variants={listContainer} initial="hidden" animate="show" className="space-y-2">
           {list.map((conversation) => (
             <m.li key={conversation.bookingId} variants={listItem}>
-              <Card className={conversation.unreadCount > 0 ? 'border-l-[3px] border-l-primary' : ''}>
+              <Card className={cn('ek-press overflow-hidden', conversation.unreadCount > 0 && 'border-l-[3px] border-l-primary')}>
                 <Link
                   to={`/bookings/${conversation.bookingId}/messages`}
-                  className="flex items-center gap-3 p-4 transition-colors hover:bg-surface-2"
+                  className="flex items-center gap-3 p-4 transition-colors hover:bg-surface-2 active:bg-surface-2"
                 >
                   <Avatar
                     firstName={conversation.counterpart.firstName}

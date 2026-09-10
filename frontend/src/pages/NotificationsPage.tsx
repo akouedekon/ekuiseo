@@ -426,15 +426,15 @@ export function NotificationsPage() {
                   <Card
                     className={
                       unreadItem
-                        ? 'border-l-[3px] border-l-primary bg-surface'
-                        : 'border-l-[3px] border-l-transparent'
+                        ? 'ek-press overflow-hidden border-l-[3px] border-l-primary bg-surface'
+                        : 'ek-press overflow-hidden border-l-[3px] border-l-transparent'
                     }
                   >
                     {target ? (
                       <Link
                         to={target}
                         onClick={() => unreadItem && markRead.mutate(notification.id)}
-                        className="block transition-colors hover:bg-surface-2"
+                        className="block transition-colors hover:bg-surface-2 active:bg-surface-2"
                       >
                         {body}
                       </Link>

@@ -154,7 +154,7 @@ export function CityAutocomplete({
             if (rootRef.current?.contains(event.relatedTarget as Node | null)) return
             commit()
           }}
-          className="ek-field h-12 w-full rounded-[var(--radius-control)] pl-10 pr-10 text-base font-medium placeholder:font-normal placeholder:text-muted"
+          className="ek-field h-12 w-full rounded-[var(--radius-control)] pl-10 pr-10 text-lead font-medium placeholder:font-normal placeholder:text-muted sm:text-base"
         />
         {value || query ? (
           <button

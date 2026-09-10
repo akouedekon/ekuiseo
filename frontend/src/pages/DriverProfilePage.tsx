@@ -114,7 +114,8 @@ export function DriverProfilePage() {
         description={`${fullName} sur Ekuiseo : ${user.tripsCompleted} trajet${user.tripsCompleted > 1 ? 's' : ''} effectué${user.tripsCompleted > 1 ? 's' : ''}, ${user.ratingCount} avis.`}
       />
       {/* En-tete avec retour (audit F221) : un lien partage arrive ici sans historique, le repli mene a l'accueil. */}
-      <PageHeader title={isDriver ? 'Profil conducteur' : 'Profil'} backTo="/" className="mb-4" />
+      {/* Sous 768 px la barre haute dit deja « Profil » : la carte d identite ouvre l ecran. */}
+      <PageHeader title={isDriver ? 'Profil conducteur' : 'Profil'} backTo="/" className="mb-4" mobileTitle={false} />
 
       {/* --- Identite --- */}
       <Card className="p-5">
