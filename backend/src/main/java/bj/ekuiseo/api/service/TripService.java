@@ -15,6 +15,7 @@ import bj.ekuiseo.api.domain.enums.TripStatus;
 import bj.ekuiseo.api.domain.enums.TripType;
 import bj.ekuiseo.api.domain.enums.VehicleType;
 import bj.ekuiseo.api.dto.trip.CreateTripRequest;
+import bj.ekuiseo.api.dto.trip.NearbyTripResponse;
 import bj.ekuiseo.api.dto.trip.PopularRouteResponse;
 import bj.ekuiseo.api.dto.trip.StopRequest;
 import bj.ekuiseo.api.dto.trip.TripResponse;
@@ -54,6 +55,11 @@ public class TripService {
     static final Duration MAX_STOP_DELAY = Duration.ofHours(24);
     /** Position conventionnelle de la destination parmi les points candidats d un trajet (voir TripRepository#search). */
     static final int DESTINATION_POSITION = 1_000_000;
+    /** « Autour de moi » (GET /api/v1/trips/nearby) : rayon par defaut, bornes et plafond de resultats. Memes valeurs que TripController. */
+    static final double DEFAULT_NEARBY_RADIUS_KM = 10.0;
+    static final double MIN_NEARBY_RADIUS_KM = 1.0;
+    static final double MAX_NEARBY_RADIUS_KM = 30.0;
+    static final int MAX_NEARBY_LIMIT = 50;
 
     /**
      * Tri serveur de la recherche (constat F137). {@code DEPARTURE} par defaut ; la valeur est
@@ -621,6 +627,52 @@ public class TripService {
                 + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
                 * Math.sin(dLng / 2) * Math.sin(dLng / 2);
         return 6371.0 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    /**
+     * Departs autour d un point (GET /api/v1/trips/nearby, ecran « Autour de moi »). Trajets
+     * PUBLISHED a venir avec au moins une place dont l origine ou un arret intermediaire est
+     * a moins de {@code radiusKm} du point, avec la distance et le point de montee le plus
+     * proche ; tri par distance puis depart. Le trajet est expose comme dans la recherche
+     * (conducteur anonymise pour un appelant anonyme, {@link #forRequester}). Aucune trace
+     * dans search_events : ce n est pas une recherche d axe.
+     *
+     * @param requesterId utilisateur connecte, ou null (endpoint public)
+     * @param radiusKm    rayon, {@link #MIN_NEARBY_RADIUS_KM} a {@link #MAX_NEARBY_RADIUS_KM} ;
+     *                    null = {@link #DEFAULT_NEARBY_RADIUS_KM}
+     * @param vehicleType voiture, moto ou tricycle (V22) ; null = tous
+     * @param limit       1 a {@link #MAX_NEARBY_LIMIT} resultats
+     */
+    @Transactional(readOnly = true)
+    public List<NearbyTripResponse> nearby(UUID requesterId, double lat, double lng, Double radiusKm,
+                                           VehicleType vehicleType, int limit) {
+        double radius = radiusKm != null ? radiusKm : DEFAULT_NEARBY_RADIUS_KM;
+        if (radius < MIN_NEARBY_RADIUS_KM || radius > MAX_NEARBY_RADIUS_KM) {
+            throw new BadRequestException("Le rayon doit etre compris entre " + (int) MIN_NEARBY_RADIUS_KM
+                    + " et " + (int) MAX_NEARBY_RADIUS_KM + " km");
+        }
+        int bounded = Math.max(1, Math.min(MAX_NEARBY_LIMIT, limit));
+        List<TripRepository.NearbyTripRow> rows = tripRepository.findNearby(lat, lng, radius * 1000.0,
+                vehicleType != null ? vehicleType.name() : null, Instant.now(), bounded);
+        if (rows.isEmpty()) {
+            return List.of();
+        }
+        // Une requete pour les entites, dans l ordre des lignes (distance puis depart).
+        Map<UUID, Trip> byId = new HashMap<>();
+        for (Trip trip : tripRepository.findAllById(rows.stream().map(r -> UUID.fromString(r.getTripId())).toList())) {
+            byId.put(trip.getId(), trip);
+        }
+        List<NearbyTripResponse> result = new ArrayList<>(rows.size());
+        for (TripRepository.NearbyTripRow row : rows) {
+            Trip trip = byId.get(UUID.fromString(row.getTripId()));
+            if (trip == null) {
+                continue;
+            }
+            result.add(new NearbyTripResponse(forRequester(tripMapper.toResponse(trip), requesterId),
+                    Math.round(row.getDistanceM()) / 1000.0, row.getBoardingLabel(),
+                    row.getBoardingLat(), row.getBoardingLng()));
+        }
+        return result;
     }
 
     /** Axes les plus proposes en ce moment (GET /api/v1/trips/popular), public, borne a 12 resultats. */

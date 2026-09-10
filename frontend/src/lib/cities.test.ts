@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FALLBACK_PLACES, haversineKm, searchPlaces, searchRadiusKm, type CityOption } from './cities'
+import { FALLBACK_PLACES, haversineKm, myPositionOption, nearestPlace, searchPlaces, searchRadiusKm, type CityOption } from './cities'
 
 function place(label: string): CityOption {
   const found = FALLBACK_PLACES.find((city) => city.label === label)
@@ -65,5 +65,28 @@ describe('searchPlaces', () => {
 
   it('accepte les alias usuels', () => {
     expect(searchPlaces(places, 'calavi', 3)[0]?.label).toBe('Abomey-Calavi')
+  })
+})
+
+describe('myPositionOption', () => {
+  const places: CityOption[] = [
+    ...FALLBACK_PLACES,
+    { id: 'agla', label: 'Agla — Cotonou', region: 'Littoral', lat: 6.3801, lng: 2.3712, kind: 'DISTRICT', parentName: 'Cotonou' },
+  ]
+
+  it('libelle la position par le lieu du referentiel le plus proche, quartier et ville, sans la memoriser', () => {
+    const option = myPositionOption(places, 6.3805, 2.3705)
+    expect(option.label).toBe('Ma position (Agla — Cotonou)')
+    // Les coordonnees restent celles de l appareil, pas celles du quartier ; sa nature serre le rayon.
+    expect(option.lat).toBe(6.3805)
+    expect(option.lng).toBe(2.3705)
+    expect(option.kind).toBe('DISTRICT')
+    expect(option.transient).toBe(true)
+  })
+
+  it('se contente de la ville quand aucun quartier n est plus proche, et reste lisible sans referentiel', () => {
+    expect(myPositionOption(places, 9.34, 2.63).label).toBe('Ma position (Parakou)')
+    expect(nearestPlace([], 6.37, 2.39)).toBeNull()
+    expect(myPositionOption([], 6.37, 2.39).label).toBe('Ma position')
   })
 })

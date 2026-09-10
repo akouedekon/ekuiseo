@@ -87,6 +87,14 @@ export function formatDuration(minutes: number): string {
   return m === 0 ? `${h} h` : `${h} h ${String(m).padStart(2, '0')}`
 }
 
+/** Distance courte en km -> « 800 m » sous 1 km, « 2,4 km » au-dela (au dixieme, sans decimale a partir de 10 km). */
+export function formatDistanceKm(km: number): string {
+  const safe = Math.max(0, km)
+  if (safe < 1) return `${Math.max(10, Math.round(safe * 100) * 10)} m`
+  if (safe < 10) return `${(Math.round(safe * 10) / 10).toLocaleString('fr-FR')} km`
+  return `${Math.round(safe)} km`
+}
+
 /** Compte a rebours mm:ss (acompte, renvoi d'OTP). */
 export function formatCountdown(totalSeconds: number): string {
   const s = Math.max(0, Math.floor(totalSeconds))

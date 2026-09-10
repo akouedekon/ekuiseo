@@ -6,6 +6,7 @@ import { cn } from '@/lib/cn'
 import { estimateDurationMinutes, haversineKm } from '@/lib/cities'
 import { formatDuration } from '@/lib/format'
 import { projectOntoRoute } from '@/lib/liveTracking'
+import { readToken } from '@/lib/theme'
 
 export interface RouteMapPoint {
   label: string
@@ -75,13 +76,6 @@ export function RouteMap({
 }
 
 /* ------------------------------------------------------------- Vraie carte */
-
-/** Lit un token de couleur du theme courant (ex. `--primary`), tel que resolu sur <html>. */
-function readToken(name: string, fallback: string): string {
-  if (typeof window === 'undefined') return fallback
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
-  return value || fallback
-}
 
 /** Marqueur du vehicule : pastille primaire, fleche orientee selon le cap, attenuee si la position est perimee. */
 function vehicleMarkerElement(): HTMLSpanElement {

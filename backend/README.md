@@ -89,6 +89,19 @@ Points structurants :
 ### Publics / semi-publics
 - `GET /api/v1/users/{id}` — profil public
 - `GET /api/v1/geo/search?q=...` — autocomplétion villes/quartiers
+- `GET /api/v1/trips/nearby?lat=&lng=&radiusKm=&vehicleType=&limit=` — **« Autour de moi »** (écran carte de la
+  PWA et de l'application mobile, façon VTC) : trajets `PUBLISHED` à venir avec au moins une place, conducteur
+  `ACTIVE`, dont l'origine **ou un arrêt intermédiaire** est à moins de `radiusKm` (10 km par défaut, borné 1–30)
+  du point donné. Réponse : liste de `{ trip, distanceKm, boardingLabel, boardingLat, boardingLng }` — le trajet
+  tel que la recherche l'expose (conducteur anonymisé sans jeton), la distance au **point de montée le plus
+  proche** (origine ou arrêt, jamais la destination) et ce point. Tri par distance puis départ ;
+  `vehicleType` (`CAR`, `MOTO`, `TRICYCLE`) facultatif ; `limit` 1–50 (30 par défaut) ; coordonnées hors plage,
+  rayon ou limite hors bornes → 400 `validation-error`. `permitAll` et quota `search:` par IP
+  (`RateLimitingFilter`). Requête native `TripRepository#findNearby` (CTE `cand` sur les index GIST de
+  `trips.origin_point` et `trip_stops.point`, `distinct on` par trajet). **Aucune trace dans `search_events`** :
+  ce n'est pas une recherche d'axe, et la position du passager n'est ni conservée ni journalisée. Le modèle
+  reste celui des départs planifiés : pas de course à la demande, la fiche `/trips/{id}` se réserve comme
+  d'habitude.
 
 ### Utilisateur connecté
 - `POST /api/v1/reports` — signaler un utilisateur ou un trajet

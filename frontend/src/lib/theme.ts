@@ -31,6 +31,16 @@ export function applyTheme(mode: ThemeMode): void {
   void syncStatusBar(dark)
 }
 
+/**
+ * Lit un jeton de couleur du theme courant (ex. `--primary`), tel que resolu sur <html> :
+ * pour les surfaces dessinees hors du DOM stylable (couches MapLibre de RouteMap et NearbyMap).
+ */
+export function readToken(name: string, fallback: string): string {
+  if (typeof window === 'undefined') return fallback
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return value || fallback
+}
+
 export function storeTheme(mode: ThemeMode): void {
   try {
     localStorage.setItem(STORAGE_KEY, mode)

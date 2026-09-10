@@ -337,6 +337,78 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
                        @Param("vehicleType") String vehicleType,
                        Pageable pageable);
 
+    /** Depart proche d un point et son point de montee le plus proche, pour {@link #findNearby}. */
+    interface NearbyTripRow {
+        /** Identifiant du trajet, en texte (cast en SQL : projection native portable). */
+        String getTripId();
+
+        /** Distance (metres) entre le point cherche et le point de montee le plus proche. */
+        double getDistanceM();
+
+        String getBoardingLabel();
+
+        double getBoardingLat();
+
+        double getBoardingLng();
+    }
+
+    /**
+     * Departs autour d un point (GET /api/v1/trips/nearby, ecran « Autour de moi »). Meme
+     * esprit que {@link #search} : {@code cand} preselectionne, par les index GIST, les
+     * trajets PUBLISHED a venir avec au moins une place dont l origine OU un arret
+     * intermediaire est a moins de {@code radiusMeters} du point ; {@code pts} n enumere que
+     * leurs points de montee (origine, position 0, et arrets ; jamais la destination : on n y
+     * monte pas) ; {@code nearest} garde, par trajet, le point le plus proche. Conducteur
+     * ACTIVE, filtre de type de vehicule comme dans la recherche. Tri : distance puis depart.
+     * Aucune trace dans search_events : ce n est pas une recherche d axe.
+     */
+    @Query(value = """
+            with cand as (
+                select t.id
+                from trips t
+                where t.status = 'PUBLISHED'
+                  and t.departure_at >= :now
+                  and t.seats_available > 0
+                  and (cast(:vehicleType as varchar) is null
+                       or exists (select 1 from vehicles v where v.id = t.vehicle_id and v.vehicle_type = cast(:vehicleType as varchar)))
+                  and (ST_DWithin(t.origin_point, ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography, :radiusMeters)
+                       or exists (select 1 from trip_stops s where s.trip_id = t.id
+                                  and ST_DWithin(s.point, ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography, :radiusMeters)))
+            ),
+            pts as (
+                select t.id as trip_id, t.origin_label as label, t.origin_lat as lat, t.origin_lng as lng, 0 as position,
+                       ST_Distance(t.origin_point, ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography) as distance_m
+                from trips t join cand c on c.id = t.id
+                union all
+                select s.trip_id, s.label, s.lat, s.lng, s.position,
+                       ST_Distance(s.point, ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography)
+                from trip_stops s join cand c on c.id = s.trip_id
+            ),
+            nearest as (
+                select distinct on (p.trip_id) p.trip_id, p.label, p.lat, p.lng, p.distance_m
+                from pts p
+                where p.distance_m <= :radiusMeters
+                order by p.trip_id, p.distance_m asc, p.position asc
+            )
+            select cast(n.trip_id as varchar) as trip_id,
+                   n.distance_m as distance_m,
+                   n.label as boarding_label,
+                   n.lat as boarding_lat,
+                   n.lng as boarding_lng
+            from nearest n
+            join trips t on t.id = n.trip_id
+            join users d on d.id = t.driver_id
+            where d.status = 'ACTIVE'
+            order by n.distance_m asc, t.departure_at asc
+            limit :limit
+            """, nativeQuery = true)
+    List<NearbyTripRow> findNearby(@Param("lat") double lat,
+                                   @Param("lng") double lng,
+                                   @Param("radiusMeters") double radiusMeters,
+                                   @Param("vehicleType") String vehicleType,
+                                   @Param("now") Instant now,
+                                   @Param("limit") int limit);
+
     /** Axe propose en ce moment, pour {@link #findPopularRoutes}. */
     interface PopularRouteStats {
         String getOriginLabel();

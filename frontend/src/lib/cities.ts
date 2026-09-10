@@ -22,6 +22,8 @@ export interface CityOption {
   parentName?: string | null
   /** Formes alternatives saisies par les usagers (sans accents, surnoms). */
   aliases?: string[]
+  /** Point de passage (« Ma position ») : jamais memorise dans les villes recentes, ses coordonnees ne valent qu une fois. */
+  transient?: boolean
 }
 
 export const FALLBACK_PLACES: CityOption[] = [
@@ -92,6 +94,39 @@ export function haversineKm(aLat: number, aLng: number, bLat: number, bLng: numb
   const lat2 = (bLat * Math.PI) / 180
   const h = Math.sin(dLat / 2) ** 2 + Math.sin(dLng / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2)
   return 2 * R * Math.asin(Math.sqrt(h))
+}
+
+/** Lieu du referentiel le plus proche d un point (« Ma position » -> « Ma position (Agla — Cotonou) ») ; null sur une liste vide. */
+export function nearestPlace(places: readonly CityOption[], lat: number, lng: number): CityOption | null {
+  let best: CityOption | null = null
+  let bestKm = Number.POSITIVE_INFINITY
+  for (const place of places) {
+    const km = haversineKm(lat, lng, place.lat, place.lng)
+    if (km < bestKm) {
+      best = place
+      bestKm = km
+    }
+  }
+  return best
+}
+
+/**
+ * Point de depart « Ma position » : les coordonnees exactes de l appareil (c est elles que le
+ * serveur compare), libellees par le lieu du referentiel le plus proche, avec sa nature (un
+ * quartier serre le rayon de recherche). Jamais memorise dans les villes recentes.
+ */
+export function myPositionOption(places: readonly CityOption[], lat: number, lng: number): CityOption {
+  const nearest = nearestPlace(places, lat, lng)
+  const name = nearest ? (nearest.parentName ? `${shortName(nearest)} — ${nearest.parentName}` : nearest.label) : null
+  return {
+    label: name ? `Ma position (${name})` : 'Ma position',
+    lat,
+    lng,
+    region: nearest?.region ?? '',
+    kind: nearest?.kind,
+    parentName: null,
+    transient: true,
+  }
 }
 
 /** Deux lieux sont confondus (meme point) en deca de cette distance : un doublon, pas deux suggestions. */
