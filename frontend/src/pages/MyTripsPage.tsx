@@ -545,8 +545,12 @@ function BookingCard({
       >
         <div className="p-4">
           <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <Link to={`/trips/${booking.tripId}`} className="truncate font-display text-lead font-bold leading-tight hover:underline">
+            <div className="min-w-0 flex-1">
+              {/* Deux lignes au plus : un axe long ne doit ni deborder sous la puce ni etre coupe a la premiere ville. */}
+              <Link
+                to={`/trips/${booking.tripId}`}
+                className="line-clamp-2 block font-display text-lead font-bold leading-tight hover:underline"
+              >
                 {booking.trip.originLabel} → {booking.trip.destLabel}
               </Link>
               <p className="tnum mt-0.5 text-label text-muted">

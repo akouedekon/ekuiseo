@@ -423,7 +423,7 @@ export function HomeSearchPage() {
 
         {/* --- Axes proposes en ce moment (donnees serveur) ; rien n'est affiche s'il n'y en a aucun (audit L9) --- */}
         {popular.isPending || popular.isError || popularRoutes.length > 0 ? (
-          <section aria-labelledby="popular-title" className="mt-12">
+          <section aria-labelledby="popular-title" className="mx-auto mt-12 max-w-3xl">
             <SectionTitle>
               <span id="popular-title">Départs proposés en ce moment</span>
             </SectionTitle>
@@ -447,7 +447,8 @@ export function HomeSearchPage() {
                 className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
               >
                 {popularRoutes.map((route) => (
-                  <m.li key={`${route.originLabel}-${route.destLabel}`} variants={listItem}>
+                  /* min-w-0 : sans lui, un axe au long libelle elargit la colonne de la grille au-dela de l ecran. */
+                  <m.li key={`${route.originLabel}-${route.destLabel}`} variants={listItem} className="min-w-0">
                     <button
                       type="button"
                       onClick={() => goToPopular(route)}
@@ -477,7 +478,7 @@ export function HomeSearchPage() {
         ) : null}
 
         {/* --- Promesses produit --- */}
-        <section aria-label="Ce qui distingue Ekuiseo" className="mt-12">
+        <section aria-label="Ce qui distingue Ekuiseo" className="mx-auto mt-12 max-w-3xl">
           <m.div
             variants={listContainer}
             initial="hidden"

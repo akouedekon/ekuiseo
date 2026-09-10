@@ -73,7 +73,7 @@ export function VehiclesSection() {
         <m.ul variants={listContainer} initial="hidden" animate="show" className="space-y-2">
           {list.map((vehicle) => (
             <m.li key={vehicle.id} variants={listItem}>
-              <Card className="flex items-center gap-3 p-4">
+              <Card className="flex items-start gap-3 p-4">
                 <span className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-surface-2 text-ink-2">
                   <VehicleTypeIcon type={vehicle.vehicleType} className="size-5" />
                 </span>
@@ -85,18 +85,19 @@ export function VehiclesSection() {
                     {VEHICLE_TYPE_LABEL[vehicle.vehicleType ?? 'CAR']} · {vehicle.plate} · {vehicle.seats} place{vehicle.seats > 1 ? 's' : ''}
                     {vehicle.color ? ` · ${vehicle.color}` : ''}
                   </p>
+                  {/*
+                   * Pas de file de verification des vehicules cote administration (audit F227) :
+                   * seul un vehicule reellement atteste par l'equipe porte un badge ; les autres
+                   * n'affichent aucune promesse d'« attente ». Sous le texte : sur un telephone, a
+                   * cote il ecrasait la marque a une lettre.
+                   */}
+                  {vehicle.verified ? (
+                    <Badge tone="success" className="mt-1.5">
+                      <BadgeCheck aria-hidden />
+                      Attesté par Ekuiseo
+                    </Badge>
+                  ) : null}
                 </div>
-                {/*
-                 * Pas de file de verification des vehicules cote administration (audit F227) :
-                 * seul un vehicule reellement atteste par l'equipe porte un badge ; les autres
-                 * n'affichent aucune promesse d'« attente ».
-                 */}
-                {vehicle.verified ? (
-                  <Badge tone="success">
-                    <BadgeCheck aria-hidden />
-                    Attesté par Ekuiseo
-                  </Badge>
-                ) : null}
                 <Button
                   variant="ghost"
                   size="icon"

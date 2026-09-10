@@ -12,7 +12,9 @@
     "test:ui": "playwright test --ui",
     "report": "playwright show-report",
     "browsers": "playwright install --with-deps chromium webkit",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "visual": "playwright test --config playwright.visual.config.ts",
+    "visual:app": "playwright test --config playwright.visual.config.ts --project=app"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

@@ -7,6 +7,7 @@ import com.google.auth.oauth2.AccessToken;
 import com.google.auth.oauth2.GoogleCredentials;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
@@ -44,6 +45,8 @@ public class FcmSender {
     private final String projectId;
     private final Supplier<String> accessToken;
 
+    /** Constructeur Spring ; les deux autres servent aux tests (plusieurs constructeurs : l annotation est obligatoire). */
+    @Autowired
     public FcmSender(RestClient.Builder restClientBuilder,
                      @Value("${ekuiseo.push.fcm.service-account:}") String serviceAccount) {
         this(restClientBuilder.build(), serviceAccount);
