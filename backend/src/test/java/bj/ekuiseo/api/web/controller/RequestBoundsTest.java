@@ -118,6 +118,45 @@ class RequestBoundsTest {
                 .andExpect(status().isOk());
     }
 
+    /** « Autour de moi » (GET /trips/nearby) : memes garde-fous que la recherche, rayon 1 a 30 km, 1 a 50 resultats. */
+    @ParameterizedTest(name = "nearby {0}={1} -> 400")
+    @CsvSource({
+            "lat, 91",
+            "lat, -90.5",
+            "lng, 180.1",
+            "lng, -181",
+            "radiusKm, 0.9",
+            "radiusKm, 31",
+            "limit, 0",
+            "limit, 51",
+            "vehicleType, BUS",
+    })
+    void nearby_rejectsOutOfRangeParameters_withoutCallingTheService(String param, String value) throws Exception {
+        Map<String, String> params = new LinkedHashMap<>(Map.of("lat", "6.37", "lng", "2.39"));
+        params.put(param, value);
+        MockHttpServletRequestBuilder request = get("/api/v1/trips/nearby");
+        params.forEach(request::param);
+        mvc.perform(request)
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+        verify(tripService, never()).nearby(any(), anyDouble(), anyDouble(), any(), any(), anyInt());
+    }
+
+    @Test
+    void nearby_withinBounds_reachesTheService_withDefaults() throws Exception {
+        when(tripService.nearby(any(), anyDouble(), anyDouble(), any(), any(), anyInt())).thenReturn(List.of());
+        mvc.perform(get("/api/v1/trips/nearby").param("lat", "6.37").param("lng", "2.39"))
+                .andExpect(status().isOk())
+                .andExpect(content().json("[]"));
+        // Rayon absent (le service applique 10 km), limite par defaut 30, tous les vehicules.
+        verify(tripService).nearby(null, 6.37, 2.39, null, null, 30);
+
+        mvc.perform(get("/api/v1/trips/nearby").param("lat", "6.37").param("lng", "2.39")
+                        .param("radiusKm", "30").param("vehicleType", "MOTO").param("limit", "50"))
+                .andExpect(status().isOk());
+        verify(tripService).nearby(null, 6.37, 2.39, 30.0, bj.ekuiseo.api.domain.enums.VehicleType.MOTO, 50);
+    }
+
     @ParameterizedTest(name = "{0}")
     @MethodSource("oversizedPayloads")
     void oversizedOrOutOfRangePayload_isRejected(String label, Object payload, String field) {

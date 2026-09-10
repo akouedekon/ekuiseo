@@ -9,6 +9,7 @@ import bj.ekuiseo.api.dto.payment.PaymentPlanResponse;
 import bj.ekuiseo.api.dto.review.CreateReviewRequest;
 import bj.ekuiseo.api.dto.review.ReviewResponse;
 import bj.ekuiseo.api.dto.trip.CreateTripRequest;
+import bj.ekuiseo.api.dto.trip.NearbyTripResponse;
 import bj.ekuiseo.api.dto.trip.PopularRouteResponse;
 import bj.ekuiseo.api.dto.trip.TripResponse;
 import bj.ekuiseo.api.dto.trip.TripStopResponse;
@@ -92,6 +93,21 @@ public class TripController {
         return tripService.search(currentUser.idOrNull(), originLabel, destLabel,
                 originLat, originLng, destLat, destLng, date, seats, radiusKm, tripType,
                 sort, maxPrice, minRating, verifiedOnly, vehicleType, pageable);
+    }
+
+    /**
+     * Ecran « Autour de moi » : endpoint public, donc borne comme la recherche (coordonnees
+     * dans leur plage, rayon de 1 a 30 km, 1 a 50 resultats) et soumis au quota search: de
+     * RateLimitingFilter. Rien n est trace dans search_events.
+     */
+    @Operation(summary = "Departs autour d un point", description = "Public. Trajets PUBLISHED a venir avec au moins une place dont l origine ou un arret intermediaire est a moins de radiusKm (10 km par defaut, 1 a 30) du point donne, avec la distance (km) et le point de montee le plus proche (origine ou arret, jamais la destination). Tri par distance puis depart ; vehicleType (CAR, MOTO, TRICYCLE) facultatif ; limit de 1 a 50 (30 par defaut). Le trajet reste un depart planifie a reserver : pas de course a la demande.")
+    @GetMapping("/nearby")
+    public List<NearbyTripResponse> nearby(@RequestParam @DecimalMin("-90") @DecimalMax("90") double lat,
+                                           @RequestParam @DecimalMin("-180") @DecimalMax("180") double lng,
+                                           @RequestParam(required = false) @DecimalMin("1") @DecimalMax("30") Double radiusKm,
+                                           @RequestParam(required = false) VehicleType vehicleType,
+                                           @RequestParam(defaultValue = "30") @Min(1) @Max(50) int limit) {
+        return tripService.nearby(currentUser.idOrNull(), lat, lng, radiusKm, vehicleType, limit);
     }
 
     @Operation(summary = "Axes les plus proposes", description = "Public. Trajets PUBLISHED a venir avec au moins une place, regroupes par origine/destination, classes par nombre de departs. Alimente les raccourcis de l'accueil.")

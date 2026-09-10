@@ -48,7 +48,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers("/api/v1/payments/kkiapay/webhook").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/trips/search", "/api/v1/trips/*", "/api/v1/trips/*/stops").permitAll()
+                        // /trips/nearby (ecran « Autour de moi ») : public comme la recherche, quota search: par IP.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/trips/search", "/api/v1/trips/nearby", "/api/v1/trips/*", "/api/v1/trips/*/stops").permitAll()
                         // Apercu de partage (Open Graph) servi aux robots WhatsApp/Facebook (ShareController, constat F341).
                         .requestMatchers(HttpMethod.GET, "/share/trips/*").permitAll()
                         // Suivi en direct par jeton (TripLiveController, V23) : un proche du passager suit le

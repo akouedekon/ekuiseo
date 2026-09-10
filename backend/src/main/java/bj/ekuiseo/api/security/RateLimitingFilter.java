@@ -67,7 +67,8 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     private static final String AUTH_PREFIX = "/api/v1/auth/";
     /** Demandes de code : envoi reel d e-mails, enumeration de numeros -> quota propre, plus strict. */
     private static final Set<String> OTP_PATHS = Set.of("/api/v1/auth/otp/request", "/api/v1/auth/otp/register");
-    private static final Set<String> SEARCH_PATHS = Set.of("/api/v1/trips/search", "/api/v1/geo/search", "/api/v1/geo/places");
+    private static final Set<String> SEARCH_PATHS = Set.of("/api/v1/trips/search", "/api/v1/trips/nearby",
+            "/api/v1/geo/search", "/api/v1/geo/places");
     private static final Pattern MESSAGES_PATH = Pattern.compile("^/api/v1/bookings/[^/]+/messages$");
     private static final String ALERTS_PATH = "/api/v1/trip-alerts";
     /** Rapports d erreur du navigateur (ClientErrorController) : public, donc borne par IP. */
