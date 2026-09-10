@@ -99,6 +99,24 @@ GitHub Actions, cible de déploiement : VPS Hostinger.
     désactivable), conducteur prévenu (`PAYOUT_PREPARED`) ; le virement mobile money reste
     manuel (`settle` / `fail` depuis `/admin/payouts`) faute d API de décaissement Kkiapay
     confirmée. Le passager voit le sort de son argent (`BookingDetailResponse.refund`).
+    **Registre financier et remboursements (V26, lot A)** : chaque paiement vérifié, remboursement
+    confirmé, reversement réglé, solde en espèces réglé et correction admin laisse une écriture
+    dans `ledger_entries` (`LedgerService`, ajout seul garanti par trigger ; équilibre
+    `PASSENGER_PAYMENT = PLATFORM_COMMISSION + DRIVER_SHARE`, `PROVIDER_FEE` à part ; un
+    remboursement contre-passe au prorata). Les remboursements vivent dans `refunds`
+    (`REQUESTED → PROCESSING → SUCCEEDED | FAILED | MANUAL_REVIEW`, un seul vivant par paiement,
+    `payments.status` synchronisé, `/admin/refunds/**`). Chaque transition de paiement écrit
+    `payment_events` ; chaque webhook est persisté avant traitement dans
+    `payment_webhook_events` (rejeu = `DUPLICATE`, signature invalide = `REJECTED` acquitté 200).
+    Rapprochement quotidien Kkiapay (`ReconciliationService`, 04:00, `/admin/finance/reconciliation/**`).
+    En-tête `Idempotency-Key` sur les quatre écritures financières du passager
+    (`idempotency_keys`, 24 h). État consolidé : `GET /bookings/{id}/payment-state`.
+    **Espèces (V27)** : `bookings.cash_status` = `EXPECTED` dès la confirmation avec solde à
+    bord ; après le départ `POST /bookings/{id}/cash/driver-confirm` / `passenger-confirm`
+    (`SETTLED` aux deux confirmations, ou tacite 48 h après le départ, écriture `CASH_ON_BOARD`)
+    ou `POST /bookings/{id}/cash/dispute` (`DISPUTED`, signalement `CASH_DISPUTE`).
+    Revenus conducteur : `GET /me/earnings` ; niveau de confiance `trustLevel`
+    (`TrustPolicy`, `users.trips_completed_as_driver`) ; réservations admin `/admin/bookings`.
 10. **Abonnement conducteur** : 2 000 FCFA/mois, commission ramenée à 0 %.
 
 ## Conventions
@@ -108,7 +126,7 @@ GitHub Actions, cible de déploiement : VPS Hostinger.
   Classement par distance de détour, écart horaire et note du conducteur.
 - Erreurs HTTP en **RFC 7807** (`ProblemDetail`).
 - Migrations Flyway **numérotées à la suite**. Ne jamais modifier une migration déjà
-  écrite — V1 à V25 existent (la prochaine est V26).
+  écrite — V1 à V27 existent (V28 est réservée au lot GPS temps réel ; la prochaine libre est V29).
 - Le front ne recalcule jamais un montant pour une réservation existante : il lit le
   `paymentPlan` renvoyé par l'API. Les estimations locales sont autorisées **avant**
   création, et doivent être affichées comme telles.
@@ -122,8 +140,10 @@ GitHub Actions, cible de déploiement : VPS Hostinger.
 Complet et cohérent de bout en bout : API, interface, back-office d'administration,
 chaîne de déploiement, jeu de démonstration, documentation d'exploitation.
 
-- `backend/` — 24 migrations. Kkiapay (initiation, webhook signé et
-  idempotent, vérification serveur, remboursements), codes de connexion par e-mail (SMS en repli) avec limitation de débit,
+- `backend/` — 27 migrations. Kkiapay derrière l interface `PaymentProvider` (initiation, webhook signé,
+  persisté et dédoublonné, vérification serveur, remboursements en machine d état, registre financier
+  en ajout seul, rapprochement quotidien, espèces à bord — lot A, V26/V27, voir `backend/README.md` §11),
+  codes de connexion par e-mail (SMS en repli) avec limitation de débit,
   géocodage des villes béninoises en base, rôles et back-office, reversements, signalements,
   journal d'audit, alertes de recherche, abonnements, trace des recherches (`search_events`,
   V9) et indicateurs de liquidité (`/api/v1/admin/stats/liquidity`, export CSV).
@@ -135,7 +155,8 @@ chaîne de déploiement, jeu de démonstration, documentation d'exploitation.
   `features/<domaine>` (sections d'écran et formulaires RHF + Zod, schémas dans
   `lib/validation.ts`), `pages/` (orchestration seulement). Toute action destructrice ou
   financière passe par `ConfirmDialog` ; les toasts de succès ne partent qu'en `onSuccess`.
-- `docs/` — `DEPLOIEMENT.md`, `EXPLOITATION.md`, `CONFORMITE.md`, `LANCEMENT.md`,
+- `docs/` — `DEPLOIEMENT.md`, `EXPLOITATION.md` (dont « Registre financier et rapprochement » :
+  lire un écart, traiter une anomalie, importer l export Kkiapay), `CONFORMITE.md`, `LANCEMENT.md`,
   `donnees-demo.sql` (jeu de démonstration réellement rejoué contre PostGIS, idempotent).
 - `backend/README.md` — architecture, modèle de données, endpoints, règles métier
   implémentées, et une section honnête sur ce qui reste incertain.
