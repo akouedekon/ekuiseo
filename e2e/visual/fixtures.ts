@@ -260,16 +260,20 @@ export async function mockApi(pageObj: Page, options: MockOptions = {}): Promise
   })
 }
 
-/** Pont Capacitor factice : l application se croit dans l APK (classe app-native, greffons neutres). */
+/**
+ * Pont Capacitor factice : l application se croit dans l APK (classe app-native, greffons
+ * neutres). @capacitor/core detecte Android par la presence de `window.androidBridge`
+ * (il recalcule lui-meme `isNativePlatform`) ; sans greffon natif enregistre, chaque appel
+ * (barre d etat, bouton retour, clavier) est rejete « not implemented » et rattrape par
+ * lib/native.ts. L invite de permissions du premier lancement est marquee comme deja vue.
+ */
 export async function fakeNativeBridge(pageObj: Page): Promise<void> {
   await pageObj.addInitScript(() => {
-    ;(window as unknown as { Capacitor: unknown }).Capacitor = {
-      platform: 'android',
-      isNativePlatform: () => true,
-      isNative: true,
-      getPlatform: () => 'android',
-      isPluginAvailable: () => false,
-      Plugins: {},
+    ;(window as unknown as { androidBridge: unknown }).androidBridge = { postMessage: () => undefined }
+    try {
+      localStorage.setItem('ekuiseo.native.permissionsAsked', '1')
+    } catch {
+      /* stockage indisponible */
     }
   })
 }

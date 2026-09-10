@@ -69,7 +69,7 @@ export function BookingMessagesPage() {
       : null
 
   return (
-    <PageContainer width="sm" className="flex min-h-[calc(100dvh-6rem)] flex-col pb-4">
+    <PageContainer width="sm" className="flex min-h-[calc(100dvh-var(--header-h)-var(--bottom-nav-h)-env(safe-area-inset-bottom,0px)-3rem)] flex-col pb-2">
       <PageMeta title={counterpart ? `Conversation avec ${counterpart.firstName}` : 'Conversation'} noindex />
       <PageHeader
         title={counterpart ? `${counterpart.firstName} ${counterpart.lastName}` : 'Conversation'}

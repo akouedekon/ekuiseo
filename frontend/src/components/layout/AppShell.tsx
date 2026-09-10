@@ -1,41 +1,20 @@
 import { AnimatePresence, m, useReducedMotion } from 'motion/react'
-import {
-  Bell,
-  Car,
-  LayoutDashboard,
-  LogOut,
-  MessageSquare,
-  Monitor,
-  Moon,
-  Plus,
-  Search,
-  Sun,
-  Ticket,
-  User,
-} from 'lucide-react'
+import { Car, MessageSquare, Plus, Search, Ticket, User } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { authStore, suspensionStore } from '@/api/client'
-import { Avatar } from '@/components/ui/misc'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { AppTopBar } from '@/components/layout/AppTopBar'
+import { AccountMenu, NotificationBell, UnreadPill } from '@/components/layout/HeaderControls'
 import { StatusBanners } from '@/components/layout/OfflineBanner'
 import { Logo } from '@/components/layout/Logo'
 import { PAGE_TITLE_EVENT } from '@/components/layout/PageMeta'
 import { PwaInstallBanner } from '@/components/layout/PwaInstallBanner'
 import { TermsGate } from '@/features/account/TermsGate'
 import { resetSession, useIsAuthenticated, useLogout, useMe } from '@/hooks/useAuth'
+import { useIsCompactShell } from '@/hooks/useMediaQuery'
 import { useUnreadMessagesCount } from '@/hooks/useMessages'
-import { useUnreadNotificationCount } from '@/hooks/useNotifications'
-import { useTheme } from '@/hooks/useTheme'
 import { cn } from '@/lib/cn'
 import { CONTACT_EMAIL, LEGAL_PAGES } from '@/lib/legal'
 import { pageVariants } from '@/lib/motion'
@@ -113,10 +92,10 @@ export function AppShell() {
     if (!authed) setSuspendedReason(null)
   }, [authed])
 
-  const unread = useUnreadNotificationCount()
   const unreadMessages = useUnreadMessagesCount()
-  const { mode, setTheme } = useTheme()
   const reduce = useReducedMotion()
+  // Coque « application » (barre haute + barre basse) en dessous de 768 px, en-tete web au-dela.
+  const compact = useIsCompactShell()
 
   /*
    * Direction de la transition : on compare la profondeur de l'ecran quitte a
@@ -172,8 +151,9 @@ export function AppShell() {
     if (isAdmin) void preloadPages('admin')
   }, [isAdmin])
 
+  // La marge basse de la coque reserve la barre basse (60 px + zone sure) a tous les ecrans : aucun ne finit dessous.
   return (
-    <div className="flex min-h-dvh flex-col bg-bg">
+    <div className="flex min-h-dvh flex-col bg-bg pb-[calc(var(--bottom-nav-h)+12px+env(safe-area-inset-bottom,0px))] md:pb-0">
       <div className="sr-only" aria-live="polite" aria-atomic="true">
         {announcedTitle}
       </div>
@@ -184,174 +164,83 @@ export function AppShell() {
         Aller au contenu
       </a>
 
-      <header className="ek-glass app-safe-top sticky top-0 z-40 border-b border-rule">
-        <div className="mx-auto flex h-16 max-w-[1200px] items-center gap-3 px-4 sm:px-6">
-          <Link to="/" className="shrink-0 rounded-[var(--radius-control)]" aria-label="Ekuiseo, accueil">
-            <Logo size={32} className="[&>span]:hidden sm:[&>span]:flex" />
-          </Link>
+      {/*
+       * Une seule logique de coque : en dessous de 768 px, barre haute d application (titre
+       * de l ecran, retour, cloche, compte) et barre basse ; au-dela, l en-tete web avec ses
+       * onglets. La coque native (APK) ne change que la zone sure, pas la structure.
+       */}
+      {compact ? (
+        <AppTopBar className="sticky top-0 z-40" />
+      ) : (
+        <header className="ek-glass app-safe-top sticky top-0 z-40 border-b border-rule">
+          <div className="mx-auto flex h-16 max-w-[1200px] items-center gap-3 px-4 sm:px-6">
+            <Link to="/" className="shrink-0 rounded-[var(--radius-control)]" aria-label="Ekuiseo, accueil">
+              <Logo size={32} />
+            </Link>
 
-          {/* Navigation principale : onglets en pilule au-dela de 768 px, barre basse en dessous. */}
-          <nav
-            className="ml-2 hidden flex-1 items-center gap-0.5 rounded-[var(--radius-control)] md:flex"
-            aria-label="Navigation principale"
-          >
-            {TOP_NAV.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                aria-label={item.label}
-                title={item.label}
-                className={({ isActive }) =>
-                  cn(
-                    'relative flex h-10 items-center gap-2 whitespace-nowrap rounded-[var(--radius-control)] px-3 text-body font-medium transition-colors',
-                    isActive ? 'text-primary-ink' : 'text-ink-2 hover:bg-surface-2 hover:text-ink',
-                  )
-                }
-              >
-                {({ isActive }) => (
-                  <>
-                    {/* Pilule statique : les animations de mise en page (layoutId) ne font pas partie de domAnimation. */}
-                    {isActive ? (
-                      <span aria-hidden className="absolute inset-0 rounded-[var(--radius-control)] bg-primary-soft" />
-                    ) : null}
-                    <item.icon className="relative size-[18px]" aria-hidden />
-                    <span className="relative hidden lg:inline">{item.label}</span>
-                    {item.to === '/messages' && authed && unreadMessages > 0 ? (
-                      <UnreadPill count={unreadMessages} className="relative -ml-0.5" />
-                    ) : null}
-                  </>
-                )}
-              </NavLink>
-            ))}
-          </nav>
-
-          <div className="ml-auto flex items-center gap-1.5">
-            {authed ? (
-              <Button asChild size="sm" className="hidden md:inline-flex">
-                <Link to="/publish">
-                  <Plus aria-hidden />
-                  <span className="hidden lg:inline">Publier un trajet</span>
-                  <span className="lg:hidden">Publier</span>
-                </Link>
-              </Button>
-            ) : null}
-
-            {authed ? (
-              <Link
-                to="/notifications"
-                aria-label={unread > 0 ? `Notifications, ${unread} non lues` : 'Notifications'}
-                className="relative flex size-11 items-center justify-center rounded-[var(--radius-control)] text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink"
-              >
-                <Bell className="size-5" aria-hidden />
-                {unread > 0 ? (
-                  <span className="tnum absolute right-1 top-1 flex min-w-[17px] items-center justify-center rounded-full bg-danger px-1 text-micro font-bold leading-[17px] text-on-danger ring-2 ring-bg">
-                    {unread > 9 ? '9+' : unread}
-                  </span>
-                ) : null}
-              </Link>
-            ) : null}
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  className="flex size-11 items-center justify-center rounded-full text-ink-2 transition-[box-shadow,color] hover:text-ink data-[state=open]:ring-2 data-[state=open]:ring-primary-soft-2"
-                  aria-label={authed && user ? `Menu du compte de ${user.firstName}` : 'Menu du compte'}
+            {/* Navigation principale : onglets en pilule. */}
+            <nav
+              className="ml-2 flex flex-1 items-center gap-0.5 rounded-[var(--radius-control)]"
+              aria-label="Navigation principale"
+            >
+              {TOP_NAV.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.end}
+                  aria-label={item.label}
+                  title={item.label}
+                  className={({ isActive }) =>
+                    cn(
+                      'relative flex h-10 items-center gap-2 whitespace-nowrap rounded-[var(--radius-control)] px-3 text-body font-medium transition-colors',
+                      isActive ? 'text-primary-ink' : 'text-ink-2 hover:bg-surface-2 hover:text-ink',
+                    )
+                  }
                 >
-                  {authed && user ? (
-                    <Avatar firstName={user.firstName} lastName={user.lastName} photoUrl={user.photoUrl} size={34} />
-                  ) : (
-                    <span className="flex size-9 items-center justify-center rounded-full bg-surface-2">
-                      <User className="size-[18px]" aria-hidden />
-                    </span>
+                  {({ isActive }) => (
+                    <>
+                      {/* Pilule statique : les animations de mise en page (layoutId) ne font pas partie de domAnimation. */}
+                      {isActive ? (
+                        <span aria-hidden className="absolute inset-0 rounded-[var(--radius-control)] bg-primary-soft" />
+                      ) : null}
+                      <item.icon className="relative size-[18px]" aria-hidden />
+                      <span className="relative hidden lg:inline">{item.label}</span>
+                      {item.to === '/messages' && authed && unreadMessages > 0 ? (
+                        <UnreadPill count={unreadMessages} className="relative -ml-0.5" />
+                      ) : null}
+                    </>
                   )}
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="min-w-60">
-                {authed && user ? (
-                  <>
-                    <div className="flex items-center gap-3 px-2.5 py-2">
-                      <Avatar firstName={user.firstName} lastName={user.lastName} photoUrl={user.photoUrl} size={36} />
-                      <div className="min-w-0">
-                        <p className="truncate text-body font-semibold text-ink">
-                          {user.firstName} {user.lastName}
-                        </p>
-                        <p className="truncate text-caption text-muted">{user.phone}</p>
-                      </div>
-                    </div>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem asChild>
-                      <Link to="/me">
-                        <User aria-hidden />
-                        Mon compte
-                      </Link>
-                    </DropdownMenuItem>
-                    {/* Repli d'acces a la messagerie quand la barre basse est masquee (audit F318). */}
-                    <DropdownMenuItem asChild>
-                      <Link to="/messages">
-                        <MessageSquare aria-hidden />
-                        Messages
-                        {unreadMessages > 0 ? <UnreadPill count={unreadMessages} className="ml-auto" /> : null}
-                      </Link>
-                    </DropdownMenuItem>
-                    {isAdmin ? (
-                      <DropdownMenuItem asChild>
-                        <Link to="/admin">
-                          <LayoutDashboard aria-hidden />
-                          Back-office
-                        </Link>
-                      </DropdownMenuItem>
-                    ) : null}
-                    <DropdownMenuSeparator />
-                  </>
-                ) : null}
+                </NavLink>
+              ))}
+            </nav>
 
-                <DropdownMenuLabel>Apparence</DropdownMenuLabel>
-                {(
-                  [
-                    { value: 'light', label: 'Clair', icon: Sun },
-                    { value: 'dark', label: 'Sombre', icon: Moon },
-                    { value: 'system', label: 'Système', icon: Monitor },
-                  ] as const
-                ).map((option) => (
-                  <DropdownMenuItem key={option.value} onSelect={() => setTheme(option.value)}>
-                    <option.icon aria-hidden />
-                    {option.label}
-                    {mode === option.value ? (
-                      <>
-                        <span aria-hidden className="ml-auto size-1.5 rounded-full bg-primary" />
-                        <span className="sr-only">Thème actif</span>
-                      </>
-                    ) : null}
-                  </DropdownMenuItem>
-                ))}
-
-                {authed ? (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem tone="danger" onSelect={logout}>
-                      <LogOut aria-hidden />
-                      Déconnexion
-                    </DropdownMenuItem>
-                  </>
-                ) : null}
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            {!authed ? (
-              <Button asChild size="sm" className="ml-1">
-                <Link to="/login">Connexion</Link>
-              </Button>
-            ) : null}
+            <div className="ml-auto flex items-center gap-1.5">
+              {authed ? (
+                <Button asChild size="sm">
+                  <Link to="/publish">
+                    <Plus aria-hidden />
+                    <span className="hidden lg:inline">Publier un trajet</span>
+                    <span className="lg:hidden">Publier</span>
+                  </Link>
+                </Button>
+              ) : null}
+              <NotificationBell />
+              <AccountMenu />
+              {!authed ? (
+                <Button asChild size="sm" className="ml-1">
+                  <Link to="/login">Connexion</Link>
+                </Button>
+              ) : null}
+            </div>
           </div>
-        </div>
-        {/* Filet tricolore : signature graphique, 3 px, jamais decoratif ailleurs. */}
-        <div aria-hidden className="banner-rule h-[3px]" />
-      </header>
+          {/* Filet tricolore : signature graphique, 3 px, jamais decoratif ailleurs. */}
+          <div aria-hidden className="banner-rule h-[3px]" />
+        </header>
+      )}
 
       <StatusBanners />
 
-      <main id="contenu" ref={mainRef} tabIndex={-1} className="flex-1 pb-8 outline-none md:pb-12">
+      <main id="contenu" ref={mainRef} tabIndex={-1} className="flex-1 pb-6 outline-none md:pb-12">
         {/* Compte suspendu : rien d'autre n'est accessible, la deconnexion reste possible. */}
         {authed && suspendedReason !== null ? (
           <AccountSuspendedPage reason={suspendedReason || undefined} onLogout={logout} />
@@ -375,9 +264,9 @@ export function AppShell() {
       </main>
 
       {/* Dans l application, les textes legaux vivent dans « Compte » et l installation n a pas de sens. */}
-      {!isNativeApp() ? <SiteFooter /> : <div className="pb-24 md:pb-0" aria-hidden />}
+      {!isNativeApp() ? <SiteFooter /> : null}
       {!isNativeApp() ? <PwaInstallBanner /> : null}
-      <BottomNav unreadMessages={authed ? unreadMessages : 0} />
+      {compact ? <BottomNav unreadMessages={authed ? unreadMessages : 0} /> : null}
     </div>
   )
 }
@@ -395,11 +284,11 @@ function isLegalPath(pathname: string): boolean {
 
 /**
  * Pied de page leger (audit F510) : les trois textes legaux et l'adresse de
- * contact, sur toutes les pages. Sur mobile il vit au-dessus de la barre basse.
+ * contact, sur toutes les pages. Sur mobile il vit au-dessus de la barre basse (marge de la coque).
  */
 function SiteFooter() {
   return (
-    <footer className="border-t border-rule bg-bg pb-24 md:pb-0">
+    <footer className="border-t border-rule bg-bg">
       <div className="mx-auto flex max-w-[1200px] flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-4 text-caption text-muted sm:px-6">
         <span className="font-semibold text-ink-2">Ekuiseo</span>
         {LEGAL_PAGES.map((page) => (
@@ -412,21 +301,6 @@ function SiteFooter() {
         </a>
       </div>
     </footer>
-  )
-}
-
-/** Pastille de non-lus, partagee entre les deux navigations. */
-function UnreadPill({ count, className }: { count: number; className?: string }) {
-  return (
-    <span
-      className={cn(
-        'tnum flex min-w-[17px] items-center justify-center rounded-full bg-danger px-1 text-micro font-bold leading-[17px] text-on-danger',
-        className,
-      )}
-      aria-hidden
-    >
-      {count > 9 ? '9+' : count}
-    </span>
   )
 }
 
@@ -474,7 +348,8 @@ function BottomNav({ unreadMessages }: { unreadMessages: number }) {
       className="ek-glass safe-bottom fixed inset-x-0 bottom-0 z-40 border-t border-rule md:hidden"
       aria-label="Navigation principale"
     >
-      <ul className="mx-auto flex max-w-lg items-end">
+      {/* Hauteur fixe (--bottom-nav-h = 60 px) : la marge basse de la coque et les barres collantes s y calent. */}
+      <ul className="mx-auto flex h-[var(--bottom-nav-h)] max-w-lg items-stretch">
         {items.map((item) => {
           const active = item.match ? item.match(pathname) : item.end ? pathname === item.to : pathname.startsWith(item.to)
           const badge = item.badge ?? 0
@@ -486,7 +361,7 @@ function BottomNav({ unreadMessages }: { unreadMessages: number }) {
                   to={item.to}
                   aria-label={item.label}
                   aria-current={active ? 'page' : undefined}
-                  className="flex min-h-[60px] flex-col items-center justify-end gap-1 pb-1.5"
+                  className="flex h-full flex-col items-center justify-end gap-1 pb-1.5"
                 >
                   <span
                     className={cn(
@@ -496,7 +371,7 @@ function BottomNav({ unreadMessages }: { unreadMessages: number }) {
                   >
                     <item.icon className="size-6" strokeWidth={2.4} aria-hidden />
                   </span>
-                  <span className="text-micro font-semibold leading-none text-primary-ink">{item.label}</span>
+                  <span className="text-micro font-semibold leading-none text-primary">{item.label}</span>
                 </Link>
               ) : (
                 <Link
@@ -504,21 +379,22 @@ function BottomNav({ unreadMessages }: { unreadMessages: number }) {
                   aria-current={active ? 'page' : undefined}
                   aria-label={badge > 0 ? `${item.label}, ${badge} non lu${badge > 1 ? 's' : ''}` : undefined}
                   className={cn(
-                    'relative flex min-h-[60px] flex-col items-center justify-center gap-1 px-1 pt-2 pb-1.5 transition-colors',
-                    active ? 'text-primary-ink' : 'text-muted',
+                    'relative flex h-full flex-col items-center justify-center gap-1 px-1 pt-1.5 pb-1.5 transition-colors active:bg-surface-2',
+                    active ? 'text-primary' : 'text-muted',
                   )}
                 >
                   <span
                     className={cn(
-                      'relative flex h-7 w-12 items-center justify-center rounded-full transition-colors',
+                      'relative flex h-8 w-14 items-center justify-center rounded-full transition-colors',
                       active && 'bg-primary-soft',
                     )}
                   >
-                    <item.icon className="size-[22px]" strokeWidth={active ? 2.3 : 1.9} aria-hidden />
+                    {/* Icone 24 px, libelle 11 px, actif en --primary : la grammaire d une barre d onglets native. */}
+                    <item.icon className="size-6" strokeWidth={active ? 2.3 : 1.9} aria-hidden />
                     {badge > 0 ? <UnreadPill count={badge} className="absolute -right-1 -top-1.5 ring-2 ring-bg" /> : null}
                   </span>
                   {/* Cran `text-micro` (11 px) : reserve a la barre basse et aux pastilles, conformement a la charte. */}
-                  <span className="text-micro font-medium leading-none">{item.label}</span>
+                  <span className={cn('text-micro leading-none', active ? 'font-semibold' : 'font-medium')}>{item.label}</span>
                 </Link>
               )}
             </li>

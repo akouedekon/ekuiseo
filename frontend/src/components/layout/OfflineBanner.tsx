@@ -8,14 +8,14 @@ import { cn } from '@/lib/cn'
  * Bandeau d'etat reseau : hors ligne, on consulte ce qui a ete enregistre et
  * les envois sont refuses tant que la connexion ne revient pas - aucune file
  * d'attente n'est promise (audit F340). Annonce par aria-live, il n'occupe
- * aucune place quand il est inutile. Se place sous l'en-tete (64 px + filet de 3 px).
+ * aucune place quand il est inutile. Se place sous l'en-tete (hauteur --header-h, index.css).
  */
 export function StatusBanners({ className }: { className?: string }) {
   const online = useOnlineStatus()
   const fetching = useIsFetching()
 
   return (
-    <div className={cn('sticky top-[67px] z-30', className)} aria-live="polite">
+    <div className={cn('sticky top-[var(--header-h)] z-30', className)} aria-live="polite">
       <AnimatePresence initial={false}>
         {!online ? (
           <m.div

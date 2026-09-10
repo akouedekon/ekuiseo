@@ -7,3 +7,4 @@ playwright/.cache/
 stack-logs.txt
 visual/output/
 visual/test-results/
+visual/before/

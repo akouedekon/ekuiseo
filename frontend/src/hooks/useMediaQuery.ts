@@ -22,3 +22,11 @@ function useMediaQuery(query: string): boolean {
 export function useIsDesktop(): boolean {
   return useMediaQuery('(min-width: 1024px)')
 }
+
+/**
+ * Coque « application » (barre haute + barre basse) en dessous de `md`, en-tete web au-dela :
+ * le meme seuil que `md:hidden` sur la barre basse, pour qu une seule logique decide.
+ */
+export function useIsCompactShell(): boolean {
+  return !useMediaQuery('(min-width: 768px)')
+}
