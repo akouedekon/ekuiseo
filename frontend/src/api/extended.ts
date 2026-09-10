@@ -150,6 +150,9 @@ export interface BookingDetailResponse {
   status: BookingStatus
   paymentMethod: PaymentMethod
   createdAt: string
+  /** Arrets de montee et de descente choisis (V16) ; null = origine / destination du trajet. */
+  pickupStopId?: string | null
+  dropoffStopId?: string | null
   paymentPlan: PaymentPlanResponse
   trip: {
     id: string

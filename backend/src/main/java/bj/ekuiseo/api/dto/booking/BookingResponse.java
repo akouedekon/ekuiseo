@@ -18,6 +18,9 @@ public record BookingResponse(
         BookingStatus status,
         PaymentMethod paymentMethod,
         Instant createdAt,
+        /** Arrets de montee et de descente choisis (V16), null = origine / destination du trajet. */
+        UUID pickupStopId,
+        UUID dropoffStopId,
         /** Constat du passager apres le depart (V21) : PENDING, TRIP_DONE ou DRIVER_NO_SHOW. */
         PassengerConfirmation passengerConfirmation,
         Instant passengerConfirmedAt,

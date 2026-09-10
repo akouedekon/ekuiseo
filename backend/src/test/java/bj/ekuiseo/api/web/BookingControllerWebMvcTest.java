@@ -307,6 +307,6 @@ class BookingControllerWebMvcTest extends AbstractWebMvcTest {
 
     private static BookingResponse booking(UUID id, BookingStatus status) {
         return new BookingResponse(id, UUID.randomUUID(), UUID.randomUUID(), 1, 2500, 200, status,
-                PaymentMethod.MOMO_DEPOSIT, Instant.now(), null, null, null, null, null, null);
+                PaymentMethod.MOMO_DEPOSIT, Instant.now(), null, null, null, null, null, null, null, null);
     }
 }

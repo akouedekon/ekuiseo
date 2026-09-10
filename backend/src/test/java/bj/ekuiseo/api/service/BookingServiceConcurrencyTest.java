@@ -89,7 +89,7 @@ class BookingServiceConcurrencyTest {
         when(userRepository.findById(passenger2Id)).thenReturn(Optional.of(passenger2));
         when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
         when(bookingMapper.toResponse(any(Booking.class))).thenReturn(
-                new BookingResponse(UUID.randomUUID(), tripId, null, 1, 1000, 100, null, PaymentMethod.MOMO_DEPOSIT, Instant.now(), null, null, null, null, null, null));
+                new BookingResponse(UUID.randomUUID(), tripId, null, 1, 1000, 100, null, PaymentMethod.MOMO_DEPOSIT, Instant.now(), null, null, null, null, null, null, null, null));
 
         // Simule l'UPDATE conditionnel atomique : ne decremente que si assez de places.
         when(tripRepository.decrementSeatsIfAvailable(eq(tripId), anyInt())).thenAnswer(inv -> {

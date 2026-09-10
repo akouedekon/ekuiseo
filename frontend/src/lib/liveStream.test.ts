@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/client'
-import type { LiveStreamEvent, LiveStreamState } from '@/api/types'
+import type { LiveStreamEvent } from '@/api/types'
+import type { LiveStreamState } from './liveStream'
 import {
   SseParser,
   clearStoredParticipants,

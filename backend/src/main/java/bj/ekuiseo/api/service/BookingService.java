@@ -401,7 +401,8 @@ public class BookingService {
                         vehicle.getComfortLevel(), vehicle.getVehicleType()));
         return new BookingDetailResponse(booking.getId(), trip.getId(), booking.getPassenger().getId(),
                 booking.getSeats(), booking.getAmount(), booking.getServiceFee(), booking.getStatus(),
-                booking.getPaymentMethod(), booking.getCreatedAt(), buildPaymentPlan(booking), tripSummary, unread,
+                booking.getPaymentMethod(), booking.getCreatedAt(), booking.getPickupStopId(), booking.getDropoffStopId(),
+                buildPaymentPlan(booking), tripSummary, unread,
                 reviewRepository.existsByTripIdAndAuthorIdAndTargetId(trip.getId(), requesterId, driver.getId()),
                 booking.getPassengerConfirmation(), booking.getPassengerConfirmedAt(),
                 paymentService.refundSummary(booking.getId()).orElse(null),

@@ -84,7 +84,7 @@ describe('useLiveStream', () => {
     sessionStorage.clear()
   })
 
-  function setup(streamResponses: () => Response, snapshotBody: (call: number) => LivePositionResponse = () => snapshot()) {
+  function setup(streamResponses: () => Response | Promise<Response>, snapshotBody: (call: number) => LivePositionResponse = () => snapshot()) {
     const client = createTestQueryClient()
     let snapshotCalls = 0
     const api = installFakeApi({

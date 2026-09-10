@@ -396,6 +396,9 @@ export interface BookingResponse {
   status: BookingStatus
   paymentMethod: PaymentMethod
   createdAt: string
+  /** Arrets de montee et de descente choisis (V16) ; null = origine / destination du trajet. */
+  pickupStopId?: string | null
+  dropoffStopId?: string | null
   passengerConfirmation?: PassengerConfirmation | null
   passengerConfirmedAt?: string | null
   /** Dossier « conducteur absent » (V25) ; absents sur une reponse d un serveur plus ancien. */

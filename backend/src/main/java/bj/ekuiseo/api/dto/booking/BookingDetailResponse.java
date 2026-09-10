@@ -36,6 +36,9 @@ public record BookingDetailResponse(
         BookingStatus status,
         PaymentMethod paymentMethod,
         Instant createdAt,
+        /** Arrets de montee et de descente choisis (V16), null = origine / destination du trajet. */
+        UUID pickupStopId,
+        UUID dropoffStopId,
         PaymentPlanResponse paymentPlan,
         TripSummary trip,
         long unreadMessages,
