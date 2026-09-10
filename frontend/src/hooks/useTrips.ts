@@ -8,6 +8,7 @@ import type {
   LivePositionRequest,
   LivePositionResponse,
   LiveSharingResponse,
+  NearbyTripResponse,
   Page,
   PublicLiveResponse,
   TripBookingResponse,
@@ -45,10 +46,49 @@ export type TripSearchSort = 'departure' | 'price' | 'rating'
 /** Cle racine des resultats de recherche : invalidee des qu'un trajet change (audit F153). */
 export const TRIP_SEARCH_KEY = ['trips', 'search'] as const
 
-/** Les listes de recherche et les axes populaires sont perimes des qu'un trajet est cree, modifie, annule ou reserve. */
+/** Cle racine des departs « Autour de moi » ; jamais persistee (elle porte la position de l utilisateur, voir lib/queryClient.ts). */
+export const NEARBY_TRIPS_KEY = ['trips', 'nearby'] as const
+
+/** Les listes de recherche, les axes populaires et les departs proches sont perimes des qu'un trajet est cree, modifie, annule ou reserve. */
 export function invalidateTripListings(queryClient: QueryClient): void {
   queryClient.invalidateQueries({ queryKey: TRIP_SEARCH_KEY })
   queryClient.invalidateQueries({ queryKey: ['trips', 'popular'] })
+  queryClient.invalidateQueries({ queryKey: NEARBY_TRIPS_KEY })
+}
+
+export interface NearbyTripsParams {
+  lat: number
+  lng: number
+  /** 1 a 30 km ; le serveur applique 10 km sans valeur. */
+  radiusKm?: number
+  /** Voiture, moto ou tricycle (V22) ; absent = tous. */
+  vehicleType?: VehicleType
+  /** 1 a 50 ; 30 par defaut cote serveur. */
+  limit?: number
+}
+
+/** Position arrondie a 10^-4 degre (~11 m) : une cle stable entre deux mesures, et pas plus de precision que necessaire. */
+function roundCoordinate(value: number): number {
+  return Math.round(value * 10_000) / 10_000
+}
+
+/**
+ * GET /api/v1/trips/nearby (public) : departs planifies autour d une position, ecran
+ * « Autour de moi ». Rafraichi toutes les 60 s tant que l ecran est visible (un depart
+ * proche part vite) ; le jeton part s il existe (nom complet du conducteur). `null`
+ * tant qu aucune position n est connue.
+ */
+export function useNearbyTrips(params: NearbyTripsParams | null) {
+  const query = params ? { ...params, lat: roundCoordinate(params.lat), lng: roundCoordinate(params.lng) } : null
+  return useQuery<NearbyTripResponse[]>({
+    queryKey: [...NEARBY_TRIPS_KEY, query],
+    queryFn: ({ signal }) =>
+      apiClient.get<NearbyTripResponse[]>(`/api/v1/trips/nearby?${toQueryString(query as NearbyTripsParams)}`, { signal }),
+    enabled: query !== null,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+  })
 }
 
 function toQueryString(params: object): string {

@@ -194,6 +194,21 @@ export interface TripResponse {
   segmentPriceFcfa?: number | null
 }
 
+/**
+ * GET /api/v1/trips/nearby (ecran « Autour de moi ») : un depart planifie proche d un point,
+ * avec la distance et le point de montee le plus proche (origine du trajet ou arret
+ * intermediaire, jamais la destination). Pas de course a la demande : le trajet se reserve
+ * comme n importe quel autre.
+ */
+export interface NearbyTripResponse {
+  trip: TripResponse
+  /** Distance (km) entre le point cherche et le point de montee. */
+  distanceKm: number
+  boardingLabel: string
+  boardingLat: number
+  boardingLng: number
+}
+
 /* ------------------------------------------------------------ Suivi en direct (V23) */
 
 /** PUT /api/v1/trips/{id}/live : etat du partage de position vu par le conducteur. */

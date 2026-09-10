@@ -75,8 +75,8 @@ export const queryClient = new QueryClient({
  * reste en memoire uniquement.
  */
 const PERSISTED_ROOTS: ReadonlySet<string> = new Set(['trips', 'geo', 'users'])
-/** Sous-cles de `trips` qui portent des donnees personnelles (liste d'appel, devis du passager). */
-const PRIVATE_TRIP_SUBKEYS: ReadonlySet<string> = new Set(['passengers', 'quote'])
+/** Sous-cles de `trips` qui portent des donnees personnelles (liste d'appel, devis du passager, position de l'utilisateur dans la cle « Autour de moi »). */
+const PRIVATE_TRIP_SUBKEYS: ReadonlySet<string> = new Set(['passengers', 'quote', 'nearby'])
 
 export function isPersistableQueryKey(queryKey: readonly unknown[]): boolean {
   const root = queryKey[0]
