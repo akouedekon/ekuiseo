@@ -103,7 +103,8 @@ public abstract class AbstractPostgisIT {
         org.springframework.dao.DataAccessException last = null;
         for (int attempt = 1; attempt <= 5; attempt++) {
             try {
-                jdbcTemplate.execute("truncate table users, search_events cascade");
+                // payment_webhook_events n a pas de cle etrangere (V26) : vide explicitement.
+                jdbcTemplate.execute("truncate table users, search_events, payment_webhook_events cascade");
                 return;
             } catch (org.springframework.dao.DataAccessException ex) {
                 last = ex;

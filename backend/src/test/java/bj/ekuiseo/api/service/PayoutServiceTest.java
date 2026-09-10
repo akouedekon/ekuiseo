@@ -58,12 +58,13 @@ class PayoutServiceTest {
     private final PayoutMapper payoutMapper = mock(PayoutMapper.class);
     private final AuditService auditService = mock(AuditService.class);
     private final NotificationService notificationService = mock(NotificationService.class);
+    private final LedgerService ledgerService = mock(LedgerService.class);
     private PayoutService service;
 
     @BeforeEach
     void setUp() {
         service = new PayoutService(bookingRepository, driverPayoutRepository, driverPayoutItemRepository,
-                userRepository, paymentAccountRepository, payoutMapper, auditService, notificationService, 2000, 24);
+                userRepository, paymentAccountRepository, payoutMapper, auditService, notificationService, ledgerService, 2000, 24);
         when(driverPayoutRepository.tryLockBatch(anyLong())).thenReturn(true);
         when(driverPayoutRepository.save(any(DriverPayout.class))).thenAnswer(inv -> {
             DriverPayout p = inv.getArgument(0);

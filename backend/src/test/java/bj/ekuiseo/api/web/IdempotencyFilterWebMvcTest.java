@@ -52,6 +52,10 @@ class IdempotencyFilterWebMvcTest extends AbstractWebMvcTest {
     @MockitoBean
     private PaymentService paymentService;
     @MockitoBean
+    private bj.ekuiseo.api.service.BookingPaymentStateService bookingPaymentStateService;
+    @MockitoBean
+    private bj.ekuiseo.api.service.CashSettlementService cashSettlementService;
+    @MockitoBean
     private IdempotencyKeyRepository idempotencyKeyRepository;
 
     private final Map<UUID, IdempotencyKey> store = new ConcurrentHashMap<>();

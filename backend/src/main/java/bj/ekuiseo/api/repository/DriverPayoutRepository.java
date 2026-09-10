@@ -40,6 +40,16 @@ public interface DriverPayoutRepository extends JpaRepository<DriverPayout, UUID
     @Query("select coalesce(sum(p.amount), 0L) from DriverPayout p where p.status = :status")
     long sumAmountByStatus(@Param("status") bj.ekuiseo.api.domain.enums.PayoutStatus status);
 
+    /** Montant des lots d un conducteur dans les statuts donnes (revenus, contrat A.8). */
+    @Query("select coalesce(sum(p.amount), 0L) from DriverPayout p where p.driver.id = :driverId and p.status in :statuses")
+    long sumAmountByDriverAndStatusIn(@Param("driverId") UUID driverId,
+                                      @Param("statuses") java.util.List<bj.ekuiseo.api.domain.enums.PayoutStatus> statuses);
+
+    /** Total effectivement vire a un conducteur (lots SETTLED, montant regle sinon montant du lot). */
+    @Query("select coalesce(sum(coalesce(p.settledAmount, p.amount)), 0L) from DriverPayout p "
+            + "where p.driver.id = :driverId and p.status = bj.ekuiseo.api.domain.enums.PayoutStatus.SETTLED")
+    long sumSettledByDriver(@Param("driverId") UUID driverId);
+
     /** Reversements d un conducteur, pour l export de ses donnees (UserDataExportService). */
     java.util.List<DriverPayout> findByDriverIdOrderByRequestedAtAsc(UUID driverId);
 }

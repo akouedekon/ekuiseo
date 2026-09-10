@@ -11,9 +11,11 @@ import bj.ekuiseo.api.domain.enums.BookingStatus;
 import bj.ekuiseo.api.domain.enums.MobileMoneyOperator;
 import bj.ekuiseo.api.domain.enums.NotificationType;
 import bj.ekuiseo.api.domain.enums.PaymentChannel;
+import bj.ekuiseo.api.domain.enums.PaymentEventSource;
 import bj.ekuiseo.api.domain.enums.PaymentProvider;
 import bj.ekuiseo.api.domain.enums.PaymentStatus;
 import bj.ekuiseo.api.domain.enums.SubscriptionStatus;
+import bj.ekuiseo.api.domain.enums.WebhookOutcome;
 import bj.ekuiseo.api.dto.payment.InitiateDepositRequest;
 import bj.ekuiseo.api.dto.payment.InitiatePaymentRequest;
 import bj.ekuiseo.api.dto.payment.InitiatePaymentResponse;
@@ -24,20 +26,20 @@ import bj.ekuiseo.api.dto.payment.RefundSummaryResponse;
 import bj.ekuiseo.api.repository.BookingRepository;
 import bj.ekuiseo.api.repository.DriverSubscriptionRepository;
 import bj.ekuiseo.api.repository.PaymentRepository;
-import bj.ekuiseo.api.service.kkiapay.KkiapayGateway;
-import bj.ekuiseo.api.service.kkiapay.KkiapayUnavailableException;
 import bj.ekuiseo.api.service.kkiapay.KkiapayWebhookParser;
+import bj.ekuiseo.api.service.payment.PaymentProviderUnavailableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Locale;
@@ -47,26 +49,32 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Integration avec l'agregateur Kkiapay (mobile money : MTN MoMo, Moov Money, Celtiis
- * Cash ; carte ; Wave). Le paiement lui-meme est initie par le widget Kkiapay cote
- * frontend (cle publique) : ce service (1) prepare une reference de correlation pour ce
- * widget, (2) verifie CHAQUE evenement webhook aupres de l'API Kkiapay elle-meme avant
- * d'en tenir compte (jamais confiance au seul payload webhook, meme signe), et
- * (3) declenche les remboursements a l'annulation. Voir {@link KkiapayGateway} pour le
- * detail (confirme / a valider) du contrat Kkiapay.
+ * Integration avec l'agregateur de paiement (mobile money : MTN MoMo, Moov Money, Celtiis
+ * Cash ; carte). Le paiement lui-meme est initie par le widget du fournisseur cote frontend
+ * (cle publique) : ce service (1) prepare une reference de correlation pour ce widget,
+ * (2) verifie CHAQUE evenement webhook aupres de l'API du fournisseur avant d'en tenir compte
+ * (jamais confiance au seul payload webhook, meme signe), et (3) declenche les remboursements
+ * a l'annulation. Le fournisseur est injecte par l interface generique
+ * {@link bj.ekuiseo.api.service.payment.PaymentProvider} (contrat A.11) ; voir
+ * {@link bj.ekuiseo.api.service.kkiapay.KkiapayGateway} pour le detail du contrat Kkiapay.
  *
  * <p>Phase 3 (constats F012/F149/F019/F150/F151/F140) : un seul paiement INITIATED par
  * reservation ou abonnement (reutilise par une nouvelle ouverture du widget et par le
  * webhook), verrou pessimiste sur le paiement pendant sa confirmation, montant verifie
  * enregistre et surpaiement journalise, operateur reel lu dans la verification, webhook
  * acquitte (jamais 404) quand il ne se rattache a rien.</p>
+ *
+ * <p>Lot A (V26) : chaque transition ou tentative ecrit un evenement de paiement
+ * ({@link PaymentEventService}), chaque webhook est persiste avant traitement et jamais rejoue
+ * ({@link PaymentWebhookService}), chaque paiement verifie est porte au registre financier
+ * ({@link LedgerService}).</p>
  */
 @Service
 public class PaymentService {
 
     private static final Logger log = LoggerFactory.getLogger(PaymentService.class);
 
-    /** Un paiement INITIATED sans identifiant Kkiapay au-dela de ce delai est abandonne (regle metier n.6). */
+    /** Un paiement INITIATED sans identifiant du fournisseur au-dela de ce delai est abandonne (regle metier n.6). */
     public static final long ABANDON_DELAY_MINUTES = 20;
 
     private final PaymentRepository paymentRepository;
@@ -74,10 +82,14 @@ public class PaymentService {
     private final DriverSubscriptionRepository driverSubscriptionRepository;
     private final NotificationService notificationService;
     private final AuditService auditService;
-    private final KkiapayGateway kkiapayGateway;
+    private final bj.ekuiseo.api.service.payment.PaymentProvider paymentProvider;
     private final RefundService refundService;
     private final KkiapayWebhookParser webhookParser;
     private final DriverApprovalPolicy driverApprovalPolicy;
+    private final LedgerService ledgerService;
+    private final PaymentEventService paymentEventService;
+    private final PaymentWebhookService paymentWebhookService;
+    private final TransactionTemplate tx;
     private final String publicKey;
     private final String webhookSecret;
     private final boolean sandbox;
@@ -85,20 +97,26 @@ public class PaymentService {
     public PaymentService(PaymentRepository paymentRepository, BookingRepository bookingRepository,
                            DriverSubscriptionRepository driverSubscriptionRepository,
                            NotificationService notificationService, AuditService auditService,
-                           KkiapayGateway kkiapayGateway, RefundService refundService,
+                           bj.ekuiseo.api.service.payment.PaymentProvider paymentProvider, RefundService refundService,
                            KkiapayWebhookParser webhookParser, DriverApprovalPolicy driverApprovalPolicy,
+                           LedgerService ledgerService, PaymentEventService paymentEventService,
+                           PaymentWebhookService paymentWebhookService, PlatformTransactionManager transactionManager,
                            @Value("${ekuiseo.kkiapay.public-key:}") String publicKey,
                            @Value("${ekuiseo.kkiapay.webhook-secret:}") String webhookSecret,
                            @Value("${ekuiseo.kkiapay.sandbox:true}") boolean sandbox) {
+        this.tx = new TransactionTemplate(transactionManager);
         this.paymentRepository = paymentRepository;
         this.bookingRepository = bookingRepository;
         this.driverSubscriptionRepository = driverSubscriptionRepository;
         this.notificationService = notificationService;
         this.auditService = auditService;
-        this.kkiapayGateway = kkiapayGateway;
+        this.paymentProvider = paymentProvider;
         this.refundService = refundService;
         this.webhookParser = webhookParser;
         this.driverApprovalPolicy = driverApprovalPolicy;
+        this.ledgerService = ledgerService;
+        this.paymentEventService = paymentEventService;
+        this.paymentWebhookService = paymentWebhookService;
         this.publicKey = publicKey;
         this.webhookSecret = webhookSecret;
         this.sandbox = sandbox;
@@ -130,17 +148,23 @@ public class PaymentService {
         // reellement prelevee en ligne (la totalite en MOMO_FULL, un acompte en
         // MOMO_DEPOSIT, deja calcule et fige a la creation de la reservation, voir
         // BookingService#createBooking et FeePolicy#computeDepositAmount). balance_due_on_board
-        // (le cas echeant) est regle en especes au conducteur pendant le trajet, jamais via Kkiapay.
+        // (le cas echeant) est regle en especes au conducteur pendant le trajet, jamais en ligne.
         long amount = booking.getDepositAmount();
         Payment payment = paymentRepository
                 .findFirstByBookingIdAndStatusOrderByCreatedAtDesc(booking.getId(), PaymentStatus.INITIATED)
-                .orElseGet(() -> paymentRepository.save(Payment.builder()
-                        .booking(booking)
-                        .provider(PaymentProvider.KKIAPAY)
-                        .providerTxId("ekuiseo-booking-" + UUID.randomUUID())
-                        .amount(amount)
-                        .status(PaymentStatus.INITIATED)
-                        .build()));
+                .orElseGet(() -> {
+                    Payment created = paymentRepository.save(Payment.builder()
+                            .booking(booking)
+                            .provider(PaymentProvider.KKIAPAY)
+                            .providerTxId("ekuiseo-booking-" + UUID.randomUUID())
+                            .amount(amount)
+                            .status(PaymentStatus.INITIATED)
+                            .build());
+                    paymentEventService.record(created, PaymentEventService.INITIATED, null, PaymentStatus.INITIATED,
+                            PaymentEventSource.WIDGET, passengerId,
+                            PaymentEventService.details("bookingId", booking.getId().toString(), "amountFcfa", amount));
+                    return created;
+                });
         return new InitiatePaymentResponse(payment.getId(), payment.getProviderTxId(), payment.getAmount(), publicKey, sandbox,
                 Map.of("bookingId", booking.getId().toString()));
     }
@@ -150,7 +174,7 @@ public class PaymentService {
      * paiement d'une reservation. Delegue entierement a {@link #initiate} (memes
      * verifications, meme charge utile) puis attache, au mieux-effort, l'operateur mobile
      * money indique par le passager au paiement - ce pre-remplissage est ecrase par
-     * l operateur reel des que la verification Kkiapay arrive (constat F140).
+     * l operateur reel des que la verification du fournisseur arrive (constat F140).
      */
     @Transactional
     public InitiatePaymentResponse initiateDeposit(UUID bookingId, UUID passengerId, InitiateDepositRequest req) {
@@ -207,16 +231,16 @@ public class PaymentService {
     }
 
     /**
-     * POST /api/v1/payments/{paymentId}/confirm : le widget Kkiapay vient d'emettre son
-     * evenement "success" cote frontend, avec l'identifiant de transaction Kkiapay.
+     * POST /api/v1/payments/{paymentId}/confirm : le widget du fournisseur vient d'emettre son
+     * evenement "success" cote frontend, avec l'identifiant de transaction.
      * Chemin de confirmation <b>complementaire</b> au webhook (qui reste la source de
      * verite en cas de fermeture du navigateur) : il rend la confirmation immediate au
      * lieu de dependre du delai et de la bonne configuration du webhook.
      *
      * <p>Meme rigueur que {@link #handleWebhook} : rien n'est cru sur parole. La
-     * transaction est reverifiee aupres de l'API Kkiapay, son montant doit couvrir le
+     * transaction est reverifiee aupres de l'API du fournisseur, son montant doit couvrir le
      * montant attendu (sinon un passager pourrait ouvrir le widget avec 5 F et confirmer
-     * une reservation a 4 000 F), et l'identifiant Kkiapay remplace la reference interne
+     * une reservation a 4 000 F), et l'identifiant du fournisseur remplace la reference interne
      * dans {@code provider_tx_id} - ce qui rend le webhook ulterieur idempotent (il
      * retrouvera ce paiement deja SUCCEEDED et s'arretera la). Le paiement est charge
      * sous verrou (constat F150) : widget et webhook ne se confirment plus en parallele.</p>
@@ -235,6 +259,8 @@ public class PaymentService {
         if (isTerminal(payment.getStatus())) {
             // Deja confirme (webhook passe avant nous), rembourse, ou refuse definitivement :
             // on ne reverifie rien, l etat courant fait foi (constat F130).
+            paymentEventService.record(payment, PaymentEventService.REPLAY_IGNORED, payment.getStatus(), payment.getStatus(),
+                    PaymentEventSource.WIDGET, requesterId, PaymentEventService.details("transactionId", txId));
             return toStatusResponse(payment);
         }
 
@@ -248,33 +274,42 @@ public class PaymentService {
                     : other.getSubscription() != null && subscription != null
                             && other.getSubscription().getId().equals(subscription.getId());
             if (!sameTarget) {
+                paymentEventService.record(payment, PaymentEventService.CONFIRM_REDIRECTED, payment.getStatus(), payment.getStatus(),
+                        PaymentEventSource.WIDGET, requesterId,
+                        PaymentEventService.details("transactionId", txId, "refused", "transaction d un autre objet"));
                 throw new BadRequestException("Cette transaction ne correspond pas a ce paiement");
             }
+            paymentEventService.record(payment, PaymentEventService.CONFIRM_REDIRECTED, payment.getStatus(), payment.getStatus(),
+                    PaymentEventSource.WIDGET, requesterId,
+                    PaymentEventService.details("transactionId", txId, "otherPaymentId", other.getId().toString()));
             return toStatusResponse(other);
         }
 
-        KkiapayGateway.VerificationResult verified = kkiapayGateway.verifyTransaction(txId);
+        bj.ekuiseo.api.service.payment.PaymentProvider.VerificationResult verified = paymentProvider.verifyTransaction(txId);
         payment.setProviderTxId(txId);
         applyOperator(payment, verified, null);
+        PaymentStatus before = payment.getStatus();
         Decision decision = applyVerification(payment, verified, payment.getAmount(), "widget-confirm");
         paymentRepository.save(payment);
+        recordVerification(payment, before, verified, decision, payment.getAmount(), PaymentEventSource.WIDGET, requesterId);
         applyDecision(payment, verified, decision);
         return toStatusResponse(payment);
     }
 
-    /** Issue d une verification Kkiapay (constat F011) : partagee par le widget et le webhook. */
+    /** Issue d une verification du fournisseur (constat F011) : partagee par le widget et le webhook. */
     enum Decision { SUCCEEDED, FAILED, PENDING }
 
     /**
-     * Applique le verdict de Kkiapay au paiement, sans decider du sort de la reservation ou de
+     * Applique le verdict du fournisseur au paiement, sans decider du sort de la reservation ou de
      * l abonnement (voir {@link #applyDecision}). Un succes au montant insuffisant est un FAILED
      * (l argent encaisse sera rembourse) ; un etat non conclusif (transaction en cours, reponse
      * vide, erreur HTTP transitoire) laisse le paiement INITIATED. Les frais, le montant verifie
      * (constat F151) et le detail brut sont consignes dans tous les cas ; un surpaiement est
      * accepte, journalise et audite (PAYMENT_OVERPAID), jamais rembourse d office : l API
-     * Kkiapay ne rembourse pas partiellement, c est au back-office de trancher.
+     * du fournisseur ne rembourse pas partiellement, c est au back-office de trancher.
      */
-    Decision applyVerification(Payment payment, KkiapayGateway.VerificationResult verified, long expectedAmount, String source) {
+    Decision applyVerification(Payment payment, bj.ekuiseo.api.service.payment.PaymentProvider.VerificationResult verified,
+                               long expectedAmount, String source) {
         boolean amountOk = isAmountSufficient(verified, expectedAmount);
         Decision decision;
         if (verified.success()) {
@@ -300,7 +335,7 @@ public class PaymentService {
             payment.setStatus(PaymentStatus.SUCCEEDED);
             if (verified.amountFcfa() > expectedAmount) {
                 long excess = verified.amountFcfa() - expectedAmount;
-                log.warn("Surpaiement Kkiapay {} : {} F verifies pour {} F attendus (excedent {} F), a traiter par le back-office",
+                log.warn("Surpaiement {} : {} F verifies pour {} F attendus (excedent {} F), a traiter par le back-office",
                         payment.getProviderTxId(), verified.amountFcfa(), expectedAmount, excess);
                 Map<String, Object> details = new HashMap<>();
                 details.put("transactionId", String.valueOf(payment.getProviderTxId()));
@@ -316,20 +351,39 @@ public class PaymentService {
         return decision;
     }
 
+    /** Evenement VERIFIED : le verdict, le montant verifie contre l attendu, l operateur, la decision (y compris les refus). */
+    private void recordVerification(Payment payment, PaymentStatus before,
+                                    bj.ekuiseo.api.service.payment.PaymentProvider.VerificationResult verified,
+                                    Decision decision, long expectedAmount, PaymentEventSource source, UUID actorId) {
+        paymentEventService.record(payment, PaymentEventService.VERIFIED, before, payment.getStatus(), source, actorId,
+                PaymentEventService.details("provider", paymentProvider.name(), "transactionId", payment.getProviderTxId(),
+                        "providerSuccess", verified.success(), "rawStatus", verified.rawStatus(),
+                        "verifiedAmountFcfa", verified.amountFcfa(), "expectedAmountFcfa", expectedAmount,
+                        "feesFcfa", verified.feesFcfa(), "operator", verified.operator(),
+                        "amountSufficient", isAmountSufficient(verified, expectedAmount), "decision", decision.name(),
+                        "failureCode", verified.failureCode()));
+    }
+
     /**
-     * Consequences d une decision sur l objet paye : remboursement d un montant insuffisant
-     * (F105), confirmation ou echec de la reservation / de l abonnement. Rien n est fait en
-     * PENDING : le webhook (ou un rejeu du webhook) tranchera.
+     * Consequences d une decision sur l objet paye : registre financier de l argent encaisse,
+     * remboursement d un montant insuffisant (F105), confirmation ou echec de la reservation /
+     * de l abonnement. Rien n est fait en PENDING : le webhook (ou un rejeu du webhook) tranchera.
      */
-    private void applyDecision(Payment payment, KkiapayGateway.VerificationResult verified, Decision decision) {
+    private void applyDecision(Payment payment, bj.ekuiseo.api.service.payment.PaymentProvider.VerificationResult verified,
+                               Decision decision) {
         if (decision == Decision.PENDING) {
             return;
         }
         Booking booking = payment.getBooking();
         DriverSubscription subscription = payment.getSubscription();
+        if (verified.success() && verified.amountFcfa() > 0) {
+            // L argent a ete encaisse (suffisant ou non) : il entre au registre ; un remboursement
+            // le contre-passera le cas echeant.
+            ledgerService.recordPaymentSucceeded(payment, verified.amountFcfa(), verified.feesFcfa());
+        }
         if (verified.success() && decision == Decision.FAILED) {
             // L argent a ete encaisse mais ne couvre pas l attendu : il repart au passager (F105).
-            log.warn("Paiement Kkiapay {} d un montant insuffisant ({} F verifies pour {} F attendus) : non confirme, remboursement demande.",
+            log.warn("Paiement {} d un montant insuffisant ({} F verifies pour {} F attendus) : non confirme, remboursement demande.",
                     payment.getProviderTxId(), verified.amountFcfa(), payment.getAmount());
             refundService.requestForOrphanPayment(payment, booking != null ? booking.getPassenger() : null,
                     RefundService.REASON_AMOUNT_INSUFFICIENT, verified.amountFcfa());
@@ -352,21 +406,21 @@ public class PaymentService {
     }
 
     /**
-     * Le montant reellement verifie chez Kkiapay doit couvrir le montant attendu. Un
+     * Le montant reellement verifie chez le fournisseur doit couvrir le montant attendu. Un
      * montant verifie a 0 signifie que l'API ne l'a pas renvoye : on ne peut pas
      * conclure, on refuse (mieux vaut un passager qui attend le webhook qu'une
      * reservation confirmee pour 5 F).
      */
-    private boolean isAmountSufficient(KkiapayGateway.VerificationResult verified, long expectedAmount) {
+    private boolean isAmountSufficient(bj.ekuiseo.api.service.payment.PaymentProvider.VerificationResult verified, long expectedAmount) {
         return verified.amountFcfa() > 0 && verified.amountFcfa() >= expectedAmount;
     }
 
     /**
-     * Distingue un echec definitif (Kkiapay repond FAILED/REFUSED...) d'un etat non
+     * Distingue un echec definitif (le fournisseur repond FAILED/REFUSED...) d'un etat non
      * conclusif (transaction encore en cours, reponse vide, erreur HTTP transitoire) :
      * dans le second cas le paiement reste INITIATED et le webhook tranchera.
      */
-    private boolean isFinalFailure(KkiapayGateway.VerificationResult verified) {
+    private boolean isFinalFailure(bj.ekuiseo.api.service.payment.PaymentProvider.VerificationResult verified) {
         String raw = verified.rawStatus() == null ? "" : verified.rawStatus().toUpperCase();
         if (raw.isEmpty() || raw.equals("EMPTY_RESPONSE") || raw.startsWith("HTTP_")) {
             return false;
@@ -423,13 +477,20 @@ public class PaymentService {
     public InitiatePaymentResponse initiateSubscriptionPayment(DriverSubscription subscription) {
         Payment payment = paymentRepository
                 .findFirstBySubscriptionIdAndStatusOrderByCreatedAtDesc(subscription.getId(), PaymentStatus.INITIATED)
-                .orElseGet(() -> paymentRepository.save(Payment.builder()
-                        .subscription(subscription)
-                        .provider(PaymentProvider.KKIAPAY)
-                        .providerTxId("ekuiseo-subscription-" + UUID.randomUUID())
-                        .amount(subscription.getPriceFcfa())
-                        .status(PaymentStatus.INITIATED)
-                        .build()));
+                .orElseGet(() -> {
+                    Payment created = paymentRepository.save(Payment.builder()
+                            .subscription(subscription)
+                            .provider(PaymentProvider.KKIAPAY)
+                            .providerTxId("ekuiseo-subscription-" + UUID.randomUUID())
+                            .amount(subscription.getPriceFcfa())
+                            .status(PaymentStatus.INITIATED)
+                            .build());
+                    paymentEventService.record(created, PaymentEventService.INITIATED, null, PaymentStatus.INITIATED,
+                            PaymentEventSource.WIDGET, subscription.getDriver().getId(),
+                            PaymentEventService.details("subscriptionId", subscription.getId().toString(),
+                                    "amountFcfa", subscription.getPriceFcfa()));
+                    return created;
+                });
         return new InitiatePaymentResponse(payment.getId(), payment.getProviderTxId(), payment.getAmount(), publicKey,
                 sandbox, Map.of("subscriptionId", subscription.getId().toString()));
     }
@@ -457,29 +518,89 @@ public class PaymentService {
     }
 
     /**
-     * Traite le webhook Kkiapay. Idempotent via provider_tx_id (contrainte unique en base).
+     * Reception d un webhook (contrat A.5) : le corps brut est persiste AVANT tout traitement
+     * avec son hash et la validite de sa signature ({@link PaymentWebhookService}), puis :
+     * <ul>
+     *   <li>signature invalide : enregistre REJECTED, rien ne bouge, reponse 200 (jamais 401 :
+     *       un rejeu infini de l agregateur n apporterait rien) ;</li>
+     *   <li>corps deja traite : enregistre DUPLICATE, non retraite ;</li>
+     *   <li>sinon {@link #handleWebhook}, puis PROCESSED / IGNORED, ou ERROR (avec rejeu demande
+     *       a l agregateur par un 503 quand la verification n est pas conclusive).</li>
+     * </ul>
+     */
+    public void receiveWebhook(String rawBody, String signatureHeader) {
+        boolean signatureValid = verifySignature(signatureHeader);
+        KkiapayWebhookPayload payload = webhookParser.parse(rawBody);
+        Map<String, Object> payloadMap = webhookParser.asMap(rawBody);
+        String txId = payload == null ? null : payload.transactionId();
+        PaymentWebhookService.Registration registration = paymentWebhookService.register(
+                paymentProvider.name(), txId, payloadMap, PaymentWebhookService.hash(rawBody), signatureValid);
+        if (!signatureValid) {
+            log.warn("Webhook refuse : signature {} (transactionId={}), enregistre REJECTED",
+                    signatureHeader == null || signatureHeader.isBlank() ? "absente" : "invalide", txId);
+            return;
+        }
+        if (registration.decision() != PaymentWebhookService.Decision.PROCESS) {
+            return;
+        }
+        if (payload == null) {
+            paymentWebhookService.complete(registration.eventId(), WebhookOutcome.ERROR, "Corps illisible");
+            throw new BadRequestException("Le corps du webhook est illisible");
+        }
+        Object outcome;
+        try {
+            // Appel interne : la transaction est ouverte ici (le proxy ne s applique pas a this.handleWebhook).
+            // Une verification non conclusive est validee (l identifiant reste sur le paiement) puis relancee.
+            outcome = tx.execute(status -> {
+                try {
+                    return handleWebhook(payload);
+                } catch (PaymentProviderUnavailableException inconclusive) {
+                    return inconclusive;
+                }
+            });
+        } catch (RuntimeException ex) {
+            paymentWebhookService.complete(registration.eventId(), WebhookOutcome.ERROR,
+                    ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage());
+            throw ex;
+        }
+        if (outcome instanceof PaymentProviderUnavailableException inconclusive) {
+            paymentWebhookService.complete(registration.eventId(), WebhookOutcome.ERROR, inconclusive.getMessage());
+            throw inconclusive;
+        }
+        paymentWebhookService.complete(registration.eventId(),
+                outcome == WebhookHandling.PROCESSED ? WebhookOutcome.PROCESSED : WebhookOutcome.IGNORED, null);
+    }
+
+    /** Sort d un webhook traite : rattache a un paiement (et verifie), ou acquitte sans suite. */
+    public enum WebhookHandling { PROCESSED, IGNORED }
+
+    /**
+     * Traite le webhook du fournisseur. Idempotent via provider_tx_id (contrainte unique en base).
      * Ne fait JAMAIS confiance au seul champ {@code isPaymentSucces} du payload : l'etat
      * effectif de la transaction est reconfirme par un appel serveur a serveur a l'API
-     * Kkiapay (regle metier n.3 durcie) - mais seulement une fois la cible resolue
+     * du fournisseur (regle metier n.3 durcie) - mais seulement une fois la cible resolue
      * (constat F012) : un evenement qui ne se rattache a rien (reservation ou abonnement
      * inconnu, stateData vide) est journalise et acquitte, jamais 404, pour ne pas payer une
-     * verification ni declencher des reessais Kkiapay infinis. 400 reste reserve aux payloads
+     * verification ni declencher des reessais infinis. 400 reste reserve aux payloads
      * invalides (transactionId absent) et 503 aux verifications non conclusives.
      */
-    // noRollbackFor : un etat non conclusif chez Kkiapay est signale en 503 (Kkiapay rejoue le
+    // noRollbackFor : un etat non conclusif chez le fournisseur est signale en 503 (il rejoue le
     // webhook) SANS perdre l identifiant de transaction inscrit sur le paiement INITIATED.
-    @Transactional(noRollbackFor = KkiapayUnavailableException.class)
-    public void handleWebhook(KkiapayWebhookPayload payload) {
+    @Transactional(noRollbackFor = PaymentProviderUnavailableException.class)
+    public WebhookHandling handleWebhook(KkiapayWebhookPayload payload) {
         if (payload.transactionId() == null || payload.transactionId().isBlank()) {
-            throw new BadRequestException("transactionId manquant dans le webhook Kkiapay");
+            throw new BadRequestException("transactionId manquant dans le webhook");
         }
         Optional<Payment> existing = paymentRepository.findByProviderAndProviderTxId(PaymentProvider.KKIAPAY, payload.transactionId());
         if (existing.isPresent() && isTerminal(existing.get().getStatus())) {
             // Deja confirme, rembourse (ou en cours de remboursement) ou refuse : un rejeu ne doit
             // jamais ecraser cet etat (constat F130).
-            log.info("Webhook Kkiapay ignore (paiement deja {}) pour transactionId={}",
+            log.info("Webhook ignore (paiement deja {}) pour transactionId={}",
                     existing.get().getStatus(), payload.transactionId());
-            return;
+            paymentEventService.record(existing.get(), PaymentEventService.REPLAY_IGNORED, existing.get().getStatus(),
+                    existing.get().getStatus(), PaymentEventSource.WEBHOOK, null,
+                    PaymentEventService.details("transactionId", payload.transactionId(), "event", payload.event()));
+            return WebhookHandling.IGNORED;
         }
 
         Payment payment;
@@ -493,12 +614,12 @@ public class PaymentService {
             if (bookingId != null) {
                 Booking booking = bookingRepository.findById(bookingId).orElse(null);
                 if (booking == null) {
-                    log.warn("Webhook Kkiapay acquitte sans suite : reservation {} inconnue (transactionId={})",
+                    log.warn("Webhook acquitte sans suite : reservation {} inconnue (transactionId={})",
                             bookingId, payload.transactionId());
-                    return;
+                    return WebhookHandling.IGNORED;
                 }
                 // Le paiement INITIATED prepare par initiate() porte encore la reference interne
-                // "ekuiseo-booking-..." : on le reutilise (et on y inscrit l'identifiant Kkiapay)
+                // "ekuiseo-booking-..." : on le reutilise (et on y inscrit l'identifiant du fournisseur)
                 // plutot que de creer une seconde ligne pour la meme reservation.
                 payment = paymentRepository
                         .findFirstByBookingIdAndStatusOrderByCreatedAtDesc(booking.getId(), PaymentStatus.INITIATED)
@@ -516,9 +637,9 @@ public class PaymentService {
             } else if (subscriptionId != null) {
                 DriverSubscription subscription = driverSubscriptionRepository.findById(subscriptionId).orElse(null);
                 if (subscription == null) {
-                    log.warn("Webhook Kkiapay acquitte sans suite : abonnement {} inconnu (transactionId={})",
+                    log.warn("Webhook acquitte sans suite : abonnement {} inconnu (transactionId={})",
                             subscriptionId, payload.transactionId());
-                    return;
+                    return WebhookHandling.IGNORED;
                 }
                 // Meme reutilisation que pour une reservation (constat F149).
                 payment = paymentRepository
@@ -535,31 +656,35 @@ public class PaymentService {
             } else {
                 // Ni provider_tx_id connu ni correlation retrouvee dans stateData : on ne peut rien
                 // rattacher cote applicatif. On journalise et on repond 2xx (deja fait par le
-                // controller) pour ne pas declencher de reessais Kkiapay infinis sur un evenement
+                // controller) pour ne pas declencher de reessais infinis sur un evenement
                 // qui ne nous concerne pas (ex: autre marchand du meme compte, transaction de test).
-                log.warn("Webhook Kkiapay recu sans correlation exploitable (stateData sans bookingId/subscriptionId), "
+                log.warn("Webhook recu sans correlation exploitable (stateData sans bookingId/subscriptionId), "
                         + "transactionId={}", payload.transactionId());
-                return;
+                return WebhookHandling.IGNORED;
             }
         }
 
         // La cible est connue : la verification (payante, un appel HTTP) a lieu maintenant.
-        KkiapayGateway.VerificationResult verified = kkiapayGateway.verifyTransaction(payload.transactionId());
+        bj.ekuiseo.api.service.payment.PaymentProvider.VerificationResult verified =
+                paymentProvider.verifyTransaction(payload.transactionId());
         // Meme decision que confirmFromWidget (constat F011) : le montant est fixe par le widget
         // cote client, donc par l'utilisateur. Un montant verifie inferieur a l'attendu ne
         // confirme rien ; un etat non conclusif laisse le paiement INITIATED.
         applyOperator(payment, verified, payload.method());
+        PaymentStatus before = payment.getStatus();
         Decision decision = applyVerification(payment, verified, expectedAmount,
                 "webhook:" + payload.event() + ":claimed=" + payload.paymentSucceeded());
-        paymentRepository.save(payment);
+        payment = paymentRepository.save(payment);
+        recordVerification(payment, before, verified, decision, expectedAmount, PaymentEventSource.WEBHOOK, null);
         if (decision == Decision.PENDING) {
-            // Ni succes ni echec definitif : on repond 503 pour que Kkiapay rejoue plus tard ;
+            // Ni succes ni echec definitif : on repond 503 pour que le fournisseur rejoue plus tard ;
             // rien n est notifie, l abonnement n est pas touche.
-            log.warn("Webhook Kkiapay non conclusif ({}) pour transactionId={} : paiement laisse INITIATED, rejeu demande",
+            log.warn("Webhook non conclusif ({}) pour transactionId={} : paiement laisse INITIATED, rejeu demande",
                     verified.rawStatus(), payload.transactionId());
-            throw new KkiapayUnavailableException("Verification Kkiapay non conclusive : " + verified.rawStatus(), null);
+            throw new PaymentProviderUnavailableException("Verification non conclusive : " + verified.rawStatus(), null);
         }
         applyDecision(payment, verified, decision);
+        return WebhookHandling.PROCESSED;
     }
 
     /** Recharge un paiement persistant sous verrou (constat F150) ; un paiement encore transitoire est renvoye tel quel. */
@@ -571,12 +696,13 @@ public class PaymentService {
     }
 
     /**
-     * Operateur reel (constat F140) : celui de la verification Kkiapay ({@code source_common_name}
+     * Operateur reel (constat F140) : celui de la verification du fournisseur ({@code source_common_name}
      * / {@code source}) prime ; a defaut la methode declaree par le webhook, gardee de toute
      * facon dans raw_payload ({@code declaredMethod}). Une declaration du widget ou du passager
      * deja presente n est ecrasee que par une valeur reellement resolue.
      */
-    private void applyOperator(Payment payment, KkiapayGateway.VerificationResult verified, String declaredMethod) {
+    private void applyOperator(Payment payment, bj.ekuiseo.api.service.payment.PaymentProvider.VerificationResult verified,
+                               String declaredMethod) {
         if (declaredMethod != null) {
             Map<String, Object> raw = new LinkedHashMap<>();
             if (payment.getRawPayload() != null) {
@@ -603,7 +729,7 @@ public class PaymentService {
                 // Les places ont deja ete liberees (expiration, annulation) : on ne peut pas
                 // re-confirmer sans risquer une surreservation. L argent encaisse repart au
                 // passager automatiquement (F036/F105), avec audit et notification.
-                log.warn("Paiement Kkiapay recu pour la reservation {} en etat {} : non confirmee, remboursement demande.",
+                log.warn("Paiement recu pour la reservation {} en etat {} : non confirmee, remboursement demande.",
                         booking.getId(), booking.getStatus());
                 refundService.requestForOrphanPayment(payment, booking.getPassenger(), RefundService.REASON_ORPHAN,
                         payment.getAmount());
@@ -617,8 +743,12 @@ public class PaymentService {
             booking.setStatus(awaitingDriver ? BookingStatus.PENDING_DRIVER_APPROVAL : BookingStatus.CONFIRMED);
             booking.setExpiresAt(null);
             booking.setApprovalDeadlineAt(awaitingDriver ? driverApprovalPolicy.deadline(now, trip.getDepartureAt()) : null);
+            if (!awaitingDriver) {
+                // Solde a bord attendu des la confirmation (contrat A.6, V27).
+                CashSettlementRules.markExpected(booking);
+            }
             bookingRepository.save(booking);
-            // Recu d acompte (constat F107) : montant encaisse, solde a bord, reference Kkiapay.
+            // Recu d acompte (constat F107) : montant encaisse, solde a bord, reference du fournisseur.
             Map<String, Object> receipt = new HashMap<>();
             receipt.put("bookingId", booking.getId().toString());
             receipt.put("tripId", trip.getId().toString());
@@ -701,39 +831,30 @@ public class PaymentService {
     }
 
     /**
-     * Remboursement declenche a l annulation (passager ou conducteur, voir BookingService) :
-     * delegue a {@link RefundService}, qui marque le paiement a rembourser DANS la transaction
-     * d annulation et n appelle Kkiapay qu apres validation (lot 1.2 de l audit, F004/F106).
-     * Le montant porte sur booking.depositAmount (regle metier n.21), seul montant encaisse.
-     *
-     * <p><b>Limitation connue et assumee</b> : l'API Kkiapay confirmee ({@code refund(transactionId)},
-     * voir KkiapayGateway) ne documente PAS de remboursement partiel : un remboursement partiel
-     * de l'acompte (ex : 50% retenus, regle metier n.7) est marque MANUAL_REQUIRED et traite par
-     * le back-office.</p>
-     */
-    /**
-     * Sort de l argent encaisse sur une reservation, pour le passager (V25) : le dernier paiement
-     * en cours de remboursement, a traiter a la main ou rembourse ; vide si rien n a ete decide.
+     * Sort de l argent encaisse sur une reservation, pour le passager (V25) : le dernier
+     * remboursement en cours, a traiter a la main ou effectue ; vide si rien n a ete decide.
+     * Alimente depuis {@code refunds} (V26).
      */
     @Transactional(readOnly = true)
     public Optional<RefundSummaryResponse> refundSummary(UUID bookingId) {
-        return paymentRepository.findByBookingId(bookingId).stream()
-                .filter(p -> p.getStatus() == PaymentStatus.REFUND_PENDING || p.getStatus() == PaymentStatus.REFUND_MANUAL
-                        || p.getStatus() == PaymentStatus.REFUNDED)
-                .max(Comparator.comparing(p -> p.getRefundRequestedAt() != null ? p.getRefundRequestedAt() : p.getCreatedAt(),
-                        Comparator.nullsFirst(Comparator.naturalOrder())))
-                .map(p -> new RefundSummaryResponse(
-                        p.getStatus() == PaymentStatus.REFUNDED ? RefundSummaryResponse.REFUNDED
-                                : p.getStatus() == PaymentStatus.REFUND_MANUAL ? RefundSummaryResponse.MANUAL : RefundSummaryResponse.PENDING,
-                        p.getRefundAmount() != null ? p.getRefundAmount() : p.getAmount(),
-                        p.getRefundRequestedAt(), p.getRefundedAt()));
+        return refundService.summaryForBooking(bookingId);
     }
 
+    /**
+     * Remboursement declenche a l annulation (passager ou conducteur, voir BookingService) :
+     * delegue a {@link RefundService}, qui marque le paiement a rembourser DANS la transaction
+     * d annulation et n appelle le fournisseur qu apres validation (lot 1.2 de l audit, F004/F106).
+     * Le montant porte sur booking.depositAmount (regle metier n.21), seul montant encaisse.
+     *
+     * <p><b>Limitation connue et assumee</b> : l'API confirmee du fournisseur ne documente PAS de
+     * remboursement partiel : un remboursement partiel de l'acompte (ex : 50% retenus, regle
+     * metier n.7) est marque MANUAL_REQUIRED et traite par le back-office.</p>
+     */
     @Transactional
     public RefundOutcome refundBooking(Booking booking, long refundAmountFcfa, String reason) {
         RefundService.RequestOutcome outcome = refundService.requestForBooking(booking, refundAmountFcfa, reason);
         RefundOutcome.Status status = switch (outcome.status()) {
-            case REQUESTED -> RefundOutcome.Status.REQUESTED;
+            case REQUESTED, ALREADY_REQUESTED -> RefundOutcome.Status.REQUESTED;
             case MANUAL_REQUIRED -> RefundOutcome.Status.MANUAL_REQUIRED;
             case NOT_APPLICABLE -> RefundOutcome.Status.NOT_APPLICABLE;
             case NO_PAYMENT -> RefundOutcome.Status.FAILED;
@@ -741,14 +862,18 @@ public class PaymentService {
         return new RefundOutcome(status, outcome.message());
     }
 
-    /** Menage (PaymentHousekeepingScheduler, constat F019) : paiements INITIATED abandonnes -> FAILED. */
+    /**
+     * Menage (PaymentHousekeepingScheduler, constat F019) : paiements INITIATED abandonnes -> FAILED,
+     * chacun avec son evenement ABANDONED (insertion en masse, meme predicat que la mise a jour).
+     */
     @Transactional
     public int failAbandonedInitiated(Instant before) {
+        paymentRepository.insertAbandonedEvents(before);
         return paymentRepository.failAbandonedInitiated(before);
     }
 
     /**
-     * Traduit un operateur ou une methode Kkiapay ("MTN", "MTN_MOMO", "MOOV MONEY", "CELTIIS",
+     * Traduit un operateur ou une methode ("MTN", "MTN_MOMO", "MOOV MONEY", "CELTIIS",
      * "CARD", "VISA"...) vers {@link PaymentChannel} ; null si rien ne correspond ("MOBILE_MONEY"
      * generique, "WAVE"...).
      */
@@ -774,4 +899,5 @@ public class PaymentService {
             return status == Status.REQUESTED;
         }
     }
+
 }

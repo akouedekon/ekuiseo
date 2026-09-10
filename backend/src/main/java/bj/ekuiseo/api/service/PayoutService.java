@@ -89,13 +89,14 @@ public class PayoutService {
     private final PayoutMapper payoutMapper;
     private final AuditService auditService;
     private final NotificationService notificationService;
+    private final LedgerService ledgerService;
     private final long minimumThresholdFcfa;
     private final long eligibilityDelayHours;
 
     public PayoutService(BookingRepository bookingRepository, DriverPayoutRepository driverPayoutRepository,
                           DriverPayoutItemRepository driverPayoutItemRepository, UserRepository userRepository,
                           PaymentAccountRepository paymentAccountRepository, PayoutMapper payoutMapper,
-                          AuditService auditService, NotificationService notificationService,
+                          AuditService auditService, NotificationService notificationService, LedgerService ledgerService,
                           @Value("${ekuiseo.payout.minimum-threshold-fcfa:2000}") long minimumThresholdFcfa,
                           @Value("${ekuiseo.payout.eligibility-delay-hours:24}") long eligibilityDelayHours) {
         this.bookingRepository = bookingRepository;
@@ -106,8 +107,22 @@ public class PayoutService {
         this.payoutMapper = payoutMapper;
         this.auditService = auditService;
         this.notificationService = notificationService;
+        this.ledgerService = ledgerService;
         this.minimumThresholdFcfa = minimumThresholdFcfa;
         this.eligibilityDelayHours = eligibilityDelayHours;
+    }
+
+    /** Seuil minimal d inclusion dans un lot (DriverEarningsResponse.minimumPayoutFcfa). */
+    public long minimumThresholdFcfa() {
+        return minimumThresholdFcfa;
+    }
+
+    /** Montant net d une reservation reversable (regle metier n.12), pour les revenus du conducteur. */
+    public static long netAmountOf(Booking booking) {
+        long collected = booking.getPaymentMethod() == PaymentMethod.MOMO_FULL
+                ? booking.getAmount()
+                : booking.getDepositAmount();
+        return collected - booking.getServiceFee();
     }
 
     /** « +229 01 ** ** ** 01 » : la fin du numero suffit au conducteur pour reconnaitre son compte. */
@@ -321,6 +336,8 @@ public class PayoutService {
         payout.setSettledAmount(settled);
         payout.setFailureReason(null);
         payout = driverPayoutRepository.save(payout);
+        // Registre financier (contrat A.4) : PAYOUT du montant effectivement vire.
+        ledgerService.recordPayoutSettled(payout, settled);
         Map<String, Object> details = new java.util.LinkedHashMap<>();
         details.put("amountFcfa", payout.getAmount());
         details.put("settledAmountFcfa", settled);

@@ -87,7 +87,7 @@ public class AuditService {
                 .withActorName(entry.getActorId() == null ? null : names.get(entry.getActorId())));
     }
 
-    static Specification<AuditLog> toSpecification(Filter f) {
+    public static Specification<AuditLog> toSpecification(Filter f) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             if (f.action() != null && !f.action().isBlank()) {

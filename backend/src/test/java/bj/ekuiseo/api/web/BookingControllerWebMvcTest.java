@@ -53,6 +53,10 @@ class BookingControllerWebMvcTest extends AbstractWebMvcTest {
     private MessageService messageService;
     @MockitoBean
     private PaymentService paymentService;
+    @MockitoBean
+    private bj.ekuiseo.api.service.BookingPaymentStateService bookingPaymentStateService;
+    @MockitoBean
+    private bj.ekuiseo.api.service.CashSettlementService cashSettlementService;
 
     private User passenger;
     private String bearer;

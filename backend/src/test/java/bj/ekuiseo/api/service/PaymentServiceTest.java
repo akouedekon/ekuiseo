@@ -60,6 +60,10 @@ class PaymentServiceTest {
     private final AuditService auditService = mock(AuditService.class);
     private final KkiapayGateway gateway = mock(KkiapayGateway.class);
     private final RefundService refundService = mock(RefundService.class);
+    private final LedgerService ledgerService = mock(LedgerService.class);
+    private final PaymentEventService paymentEventService = mock(PaymentEventService.class);
+    private final PaymentWebhookService paymentWebhookService = mock(PaymentWebhookService.class);
+    private final org.springframework.transaction.PlatformTransactionManager txManager = mock(org.springframework.transaction.PlatformTransactionManager.class);
 
     private PaymentService service;
     private User passenger;
@@ -68,9 +72,10 @@ class PaymentServiceTest {
 
     @BeforeEach
     void setUp() {
+        when(txManager.getTransaction(any(org.springframework.transaction.TransactionDefinition.class))).thenReturn(new org.springframework.transaction.support.SimpleTransactionStatus());
         service = new PaymentService(paymentRepository, bookingRepository, subscriptionRepository,
                 notificationService, auditService, gateway, refundService, new KkiapayWebhookParser(new ObjectMapper()), new DriverApprovalPolicy(24),
-                "pk_test", "secret", true);
+                ledgerService, paymentEventService, paymentWebhookService, txManager, "pk_test", "secret", true);
         passenger = User.builder().id(UUID.randomUUID()).build();
         User driver = User.builder().id(UUID.randomUUID()).build();
         Trip trip = Trip.builder().id(UUID.randomUUID()).driver(driver).build();
@@ -387,7 +392,7 @@ class PaymentServiceTest {
         when(gateway.verifyTransaction("kk_123")).thenReturn(verified(false, 0, "PENDING"));
 
         assertThatThrownBy(() -> service.handleWebhook(webhook(Map.of("bookingId", booking.getId().toString()))))
-                .isInstanceOf(bj.ekuiseo.api.service.kkiapay.KkiapayUnavailableException.class);
+                .isInstanceOf(bj.ekuiseo.api.service.payment.PaymentProviderUnavailableException.class);
 
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.INITIATED);
         assertThat(payment.getProviderTxId()).isEqualTo("kk_123");
