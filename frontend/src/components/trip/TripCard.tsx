@@ -105,7 +105,7 @@ export function TripCard({
           </span>
         ) : null}
 
-        <span className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+        <span className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5">
           <VehicleTypeBadge type={trip.vehicle.vehicleType} />
           {!trip.instantBooking ? (
             <Badge tone="outline" title="Le conducteur accepte chaque passager avant confirmation">
