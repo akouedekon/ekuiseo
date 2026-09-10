@@ -123,7 +123,7 @@ class UserServiceAnonymizeTest {
         verify(messageRepository).redactBySender(userId, "[message supprime]");
         verify(refreshTokenService).revokeAll(userId);
         // Reservations, paiements et avis : aucune suppression.
-        verify(bookingRepository, never()).delete(any());
+        verify(bookingRepository, never()).delete(any(bj.ekuiseo.api.domain.Booking.class));
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> details = ArgumentCaptor.forClass(Map.class);

@@ -24,6 +24,10 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
 
     long countByDriverIdAndStatus(UUID driverId, bj.ekuiseo.api.domain.enums.TripStatus status);
 
+    /** Trajets a venir d un conducteur (revenus, contrat A.8). */
+    long countByDriverIdAndStatusInAndDepartureAtAfter(UUID driverId, java.util.List<bj.ekuiseo.api.domain.enums.TripStatus> statuses,
+                                                       java.time.Instant after);
+
     long countByDriverId(UUID driverId);
 
     /** Utilisee par DELETE /api/v1/me/vehicles/{id} : refuse la suppression d'un vehicule deja engage. */

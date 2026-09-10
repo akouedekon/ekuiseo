@@ -333,6 +333,10 @@ Toutes ont une valeur par défaut sûre pour le développement (voir `applicatio
 | `PAYOUT_MIN_THRESHOLD_FCFA` | `2000` | solde minimum pour qu'un conducteur soit inclus dans un lot de reversement |
 | `PAYOUT_AUTO_BATCH_ENABLED` / `PAYOUT_AUTO_BATCH_CRON` | `true` / `0 0 6 * * MON` | lot de reversement hebdomadaire automatique (`PayoutScheduler`, V25), heure du Bénin ; le virement reste manuel |
 | `DRIVER_NO_SHOW_CONTEST_HOURS` | `24` | délai laissé au conducteur déclaré absent pour contester avant le remboursement automatique de l acompte (V25) |
+| `REFUND_MAX_ATTEMPTS` | `5` | tentatives auprès du fournisseur avant qu un remboursement passe `MANUAL_REVIEW` (V26, `RefundService`) |
+| `CASH_TACIT_SETTLEMENT_HOURS` | `48` | solde en espèces à bord (V27) : une seule confirmation sans litige vaut règlement ce nombre d heures après le départ (`CashSettlementScheduler`) |
+| `RECONCILIATION_ENABLED` / `RECONCILIATION_CRON` / `RECONCILIATION_DAYS` | `true` / `0 0 4 * * *` / `7` | rapprochement quotidien Ekuiseo / fournisseur (V26, `ReconciliationScheduler`, heure du Bénin) |
+| `RECONCILIATION_VERIFY_TIMEOUT_SECONDS` | `20` | délai maximal d une re-vérification de paiement pendant un rapprochement ; au-delà, erreur comptée et paiement suivant |
 | `SUBSCRIPTION_PRICE_FCFA` | `2000` | prix mensuel de l'abonnement conducteur |
 | `RATE_LIMIT_AUTH_MAX` / `RATE_LIMIT_AUTH_WINDOW_SECONDS` | `20` / `60` | limite de débit sur `/api/v1/auth/**` |
 | `RATE_LIMIT_WEBHOOK_MAX` / `RATE_LIMIT_WEBHOOK_WINDOW_SECONDS` | `120` / `60` | limite de débit sur le webhook Kkiapay |
@@ -522,3 +526,71 @@ Les deux tests d'intégration (`@SpringBootTest` + Testcontainers PostGIS) sont 
 - **Aucune configuration externe pour les deux seuils (5) ni la fenêtre de 90 jours** : contrairement à `BOOKING_DEPOSIT_BASE_FCFA` (règle n.21), ces valeurs sont des constantes Java (`UserService.MIN_SAMPLE_SIZE`, `UserService.RESPONSE_TIME_WINDOW`), pas des clés `application.yml`/variables d'environnement — choix cohérent avec `CancellationPolicy.FREE_CANCELLATION_WINDOW` (24h, également une constante de code) et avec le fait qu'aucune configurabilité n'a été demandée pour ces trois valeurs précises. À revoir si le produit veut pouvoir les ajuster sans redéploiement.
 - **`reliabilityRate` ne distingue pas un conducteur récent d'un conducteur inactif depuis longtemps** : les deux renvoient `null` en dessous de 5 trajets mesurables, sans indication de la raison. Non demandé, non implémenté.
 - **« bagages » mentionné dans la demande, absent du contrat réel** : ni `user_preferences` (V6) ni `DriverPreferences` côté front n'ont de champ bagages — voir §4quater, dernier point. Signalé explicitement dans la réponse plutôt que silencieusement omis.
+
+---
+
+## 11. Lot A — registre financier, remboursements, espèces, rapprochement (V26, V27, septembre 2026)
+
+Refonte de la chaîne d argent (contrat `CONTRAT-API.md`, section A). Tout ce qui suit est
+implémenté et testé unitairement ; le test d intégration `RefundConcurrencyIT` (deux
+remboursements concurrents, registre en ajout seul) tourne en CI.
+
+### 11.1 Tables créées (V26) et colonnes ajoutées (V27)
+
+| Table / colonne | Rôle |
+|---|---|
+| `idempotency_keys` | réponse mémorisée par (clé, utilisateur, route) pour l en-tête `Idempotency-Key` ; purge 24 h (`PaymentHousekeepingScheduler`) |
+| `refunds` | machine d état des remboursements ; index unique partiel `uq_refunds_live_payment` (un seul remboursement vivant par paiement, tout statut sauf `FAILED`) ; les paiements déjà `REFUND_PENDING` / `REFUND_MANUAL` / `REFUNDED` ont reçu leur ligne |
+| `ledger_entries` | registre financier **en ajout seul** (trigger `trg_ledger_entries_append_only` : toute mise à jour ou suppression échoue en base) |
+| `payment_events` | une ligne par transition ou tentative sur un paiement, source `WIDGET` / `WEBHOOK` / `SCHEDULER` / `ADMIN` / `SYSTEM` |
+| `payment_webhook_events` | chaque webhook persisté **avant** traitement (hash SHA-256 du corps, signature, issue) ; index unique partiel sur (fournisseur, hash) hors `DUPLICATE` |
+| `reconciliation_runs`, `reconciliation_anomalies` | rapprochements (manuel, planifié, import) et écarts à traiter |
+| `bookings.cash_status`, `cash_expected_fcfa`, `cash_driver_confirmed_at`, `cash_passenger_confirmed_at`, `cash_disputed_at`, `cash_dispute_details` (V27) | règlement du solde en espèces à bord ; réservations existantes confirmées avec solde → `EXPECTED` |
+| `users.trips_completed_as_driver` (V27) | compteur dénormalisé (backfill + `TripLifecycleScheduler`) pour le niveau de confiance |
+| `reports.reason_code` | contrainte étendue à `CASH_DISPUTE` |
+
+### 11.2 Endpoints ajoutés
+
+Utilisateur connecté :
+- `GET /api/v1/bookings/{id}/payment-state` — état de paiement consolidé (passager ou conducteur du trajet), jamais dérivé du widget.
+- `POST /api/v1/bookings/{id}/cash/driver-confirm`, `POST …/cash/passenger-confirm`, `POST …/cash/dispute` `{details}` — solde en espèces à bord, après le départ.
+- `GET /api/v1/me/earnings` — revenus du conducteur (SQL agrégé : `BookingRepository#getDriverEarnings`, `#getDriverMonthlyEarnings`).
+- En-tête `Idempotency-Key` (8..64 caractères) accepté sur `POST /trips/{id}/bookings`, `POST /bookings/{id}/payments/deposit`, `POST /payments/{id}/confirm`, `POST /bookings/{id}/cancel` : rejeu à l identique (`Idempotency-Replayed: true`), 422 `https://ekuiseo.com/problems/idempotency-key-reuse` si le corps diffère, 409 si la requête jumelle est encore en cours ; une 5xx n est jamais mémorisée.
+- `GET /api/v1/users/{id}` et `TripResponse.driver` portent `trustLevel` (`UNVERIFIED` / `VERIFIED` / `EXPERIENCED`, `TrustPolicy`) et `tripsCompletedAsDriver`.
+
+Administration (`ROLE_ADMIN`, journalisée) :
+- `GET /api/v1/admin/refunds?status=&page=&size=`, `POST /api/v1/admin/refunds/{id}/retry`, `POST …/mark-succeeded` `{providerReference}`, `POST …/fail` `{reason}`.
+- `GET /api/v1/admin/payments` (conservé, alimenté depuis `refunds`), `POST /api/v1/admin/payments/{id}/refund` et `/mark-refunded` (conservés, agissent sur le remboursement vivant du paiement), `GET /api/v1/admin/payments/{id}/events`, `GET /api/v1/admin/payments/webhooks?page=&size=`.
+- `GET /api/v1/admin/finance/summary?days=`, `GET /api/v1/admin/finance/ledger?bookingId=&userId=&entryType=&from=&to=&page=&size=`, `GET /api/v1/admin/finance/ledger/export?from=&to=` (CSV `;`, BOM), `POST /api/v1/admin/finance/ledger/adjustments`.
+- `POST /api/v1/admin/finance/reconciliation/run` `{days?}` (quota 5 / min / administrateur), `POST …/reconciliation/import` (multipart `file`), `GET …/reconciliation/runs`, `GET …/reconciliation/anomalies?status=`, `POST …/reconciliation/anomalies/{id}/resolve` `{status, note}`.
+- `GET /api/v1/admin/bookings?q=&status=&from=&to=&page=&size=`, `GET /api/v1/admin/bookings/{id}`.
+- `GET /api/v1/admin/overview` gagne `openAnomalies` et `openRefunds`.
+
+Webhook : `POST /api/v1/payments/kkiapay/webhook` reçoit désormais le corps brut ; une signature invalide est enregistrée `REJECTED` et **acquittée en 200** (plus de 401 : un rejeu infini de l agrégateur n apporterait rien), un corps déjà traité est enregistré `DUPLICATE` et ignoré, une vérification non conclusive reste un 503 (rejeu demandé) enregistré `ERROR`.
+
+### 11.3 Règles du registre (`LedgerService`)
+
+- Paiement vérifié : `PASSENGER_PAYMENT` (montant vérifié), `PROVIDER_FEE` si le fournisseur a renvoyé des frais, `PLATFORM_COMMISSION` = min(frais de service, montant vérifié), `DRIVER_SHARE` = montant vérifié − commission. **Équilibre** : `PASSENGER_PAYMENT = PLATFORM_COMMISSION + DRIVER_SHARE` ; les frais du fournisseur sont un coût de la plateforme prélevé sur sa commission (revenu net = commission − frais) et ne font pas partie de l équilibre — sinon aucun paiement avec frais ne pourrait s équilibrer. Un abonnement conducteur est intégralement commission.
+- Remboursement confirmé : `REFUND`, puis `DRIVER_SHARE_REVERSAL` (arrondi vers le bas) et `COMMISSION_REVERSAL` (le reste) au prorata, de sorte que `REFUND = DRIVER_SHARE_REVERSAL + COMMISSION_REVERSAL`. Un paiement antérieur au registre est reconstitué depuis la réservation.
+- Reversement réglé : `PAYOUT` (montant effectivement viré). Espèces réglées : `CASH_ON_BOARD` (informatif, compte `DRIVER`, fournisseur `CASH`). Correction : `ADJUSTMENT`, description obligatoire, auditée (`LEDGER_ADJUSTMENT`).
+- Sens : `DEBIT` = l argent quitte le compte, `CREDIT` = il y entre.
+
+### 11.4 Machine d état des remboursements (`RefundService`)
+
+`REQUESTED → PROCESSING → SUCCEEDED | FAILED | MANUAL_REVIEW` ; `FAILED → PROCESSING` (reprise planifiée toutes les 5 min tant que `attempts < REFUND_MAX_ATTEMPTS`, puis `MANUAL_REVIEW`) ; `MANUAL_REVIEW → SUCCEEDED` (marquage admin) ; `fail` admin = `FAILED` définitif (`completed_at` renseigné, le paiement redevient `SUCCEEDED`). Décision sous verrou pessimiste du paiement (`SELECT … FOR UPDATE`) dans la transaction métier ; appel du fournisseur hors transaction ; `payments.status` et ses colonnes `refund_*` restent synchronisés pour le front et les KPI existants. Chaque transition écrit un `payment_events`.
+
+### 11.5 Espèces (`CashSettlementService`, V27)
+
+`EXPECTED` dès qu une réservation est `CONFIRMED` avec un solde à bord (création en `CASH`, confirmation d acompte, accord du conducteur, décision `PAY_DRIVER`) ; effacé (`NOT_APPLICABLE`) quand la course n a pas lieu pour ce passager (annulation, expiration, absence). Après le départ, chaque partie confirme ; les deux confirmations → `SETTLED` + `CASH_ON_BOARD` ; une seule confirmation sans litige → `SETTLED` tacite 48 h après le départ (`CashSettlementScheduler`, toutes les 30 min) ; `dispute` → `DISPUTED` + signalement `CASH_DISPUTE` + notifications critiques aux deux parties. Aucun montant ne vient du client.
+
+### 11.6 Abstraction fournisseur (`service/payment/PaymentProvider`)
+
+`PaymentService`, `RefundService` et `ReconciliationService` n injectent que l interface `PaymentProvider` (`name()`, `verifyTransaction`, `refundTransaction`) ; `KkiapayGateway` en hérite (ses types `VerificationResult` / `RefundResult` sont ceux de l interface) et `KkiapayUnavailableException` spécialise `PaymentProviderUnavailableException` (503). Reste nommé Kkiapay hors de `service.kkiapay` : le DTO du webhook (`KkiapayWebhookPayload`, format propre à l agrégateur), son parseur, la configuration `ekuiseo.kkiapay.*` et les textes.
+
+### 11.7 Hypothèses prises là où le contrat ne tranchait pas
+
+- `reconciliation_runs.trigger` est stocké dans la colonne `trigger_type` (mot-clé SQL) et exposé `trigger` dans l API.
+- `payment_webhook_events` a un état transitoire `RECEIVED` (persisté, traitement en cours) en plus des issues du contrat ; un corps revenu après `ERROR` / `REJECTED` est retraité sur la même ligne (c est le mécanisme de rejeu Kkiapay après un 503).
+- `UNKNOWN_AT_PROVIDER` (import CSV) = transaction présente dans l export du fournisseur mais inconnue d Ekuiseo ; `MISSING_AT_PROVIDER` (re-vérification) = paiement encaissé chez Ekuiseo que le fournisseur ne connaît pas.
+- Les paiements `INITIATED` (référence interne `ekuiseo-…`) ne sont pas re-vérifiés : rien à demander au fournisseur.
+- `GET /api/v1/admin/payments?status=ALL` renvoie désormais tous les remboursements (et non tous les paiements).

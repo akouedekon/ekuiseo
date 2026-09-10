@@ -59,5 +59,9 @@ public enum NotificationType {
     /** Au passager (push et in-app seulement, V28) : le conducteur est a moins de 1 km de son point de prise en charge. */
     DRIVER_NEARBY,
     /** Au passager (push et in-app seulement, V28) : le conducteur est arrive (moins de 150 m). */
-    DRIVER_ARRIVED
+    DRIVER_ARRIVED,
+    /** A l autre partie : l une vient de confirmer le reglement du solde en especes a bord (V27, contrat A.6). */
+    CASH_CONFIRMATION_REQUESTED,
+    /** Aux deux parties (critique) : litige sur le solde en especes a bord, signalement CASH_DISPUTE ouvert (V27). */
+    CASH_DISPUTED
 }

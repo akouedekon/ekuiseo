@@ -104,6 +104,11 @@ public class User {
     @Builder.Default
     private int lateCancellationsCount = 0;
 
+    /** Trajets termines comme conducteur (V27), maintenu par TripLifecycleScheduler ; niveau de confiance (contrat A.9). */
+    @Column(name = "trips_completed_as_driver", nullable = false)
+    @Builder.Default
+    private int tripsCompletedAsDriver = 0;
+
     @Column(name = "suspended_at")
     private Instant suspendedAt;
 

@@ -1,7 +1,10 @@
 package bj.ekuiseo.api.web.controller;
 
 import bj.ekuiseo.api.dto.booking.BookingDetailResponse;
+import bj.ekuiseo.api.dto.booking.BookingPaymentStateResponse;
 import bj.ekuiseo.api.dto.booking.BookingResponse;
+import bj.ekuiseo.api.dto.booking.CashDisputeRequest;
+import bj.ekuiseo.api.dto.booking.CashSettlementResponse;
 import bj.ekuiseo.api.dto.booking.ContestNoShowRequest;
 import bj.ekuiseo.api.dto.booking.DeclineBookingRequest;
 import bj.ekuiseo.api.dto.booking.DriverNoShowRequest;
@@ -10,7 +13,9 @@ import bj.ekuiseo.api.dto.message.SendMessageRequest;
 import bj.ekuiseo.api.dto.payment.InitiateDepositRequest;
 import bj.ekuiseo.api.dto.payment.InitiatePaymentResponse;
 import bj.ekuiseo.api.security.CurrentUser;
+import bj.ekuiseo.api.service.BookingPaymentStateService;
 import bj.ekuiseo.api.service.BookingService;
+import bj.ekuiseo.api.service.CashSettlementService;
 import bj.ekuiseo.api.service.MessageService;
 import bj.ekuiseo.api.service.PaymentService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -31,14 +36,43 @@ public class BookingController {
     private final BookingService bookingService;
     private final MessageService messageService;
     private final PaymentService paymentService;
+    private final BookingPaymentStateService bookingPaymentStateService;
+    private final CashSettlementService cashSettlementService;
     private final CurrentUser currentUser;
 
     public BookingController(BookingService bookingService, MessageService messageService,
-                              PaymentService paymentService, CurrentUser currentUser) {
+                              PaymentService paymentService, BookingPaymentStateService bookingPaymentStateService,
+                              CashSettlementService cashSettlementService, CurrentUser currentUser) {
         this.bookingService = bookingService;
         this.messageService = messageService;
         this.paymentService = paymentService;
+        this.bookingPaymentStateService = bookingPaymentStateService;
+        this.cashSettlementService = cashSettlementService;
         this.currentUser = currentUser;
+    }
+
+    @Operation(summary = "Etat de paiement consolide", description = "Une seule verite pour l ecran de confirmation (contrat A.2) : dernier paiement, remboursement, especes et totaux du registre. Reserve au passager ou au conducteur du trajet.")
+    @GetMapping("/{id}/payment-state")
+    public BookingPaymentStateResponse paymentState(@PathVariable UUID id) {
+        return bookingPaymentStateService.get(id, currentUser.id());
+    }
+
+    @Operation(summary = "Confirmer la reception du solde en especes", description = "Reserve au conducteur du trajet, apres le depart (contrat A.6). SETTLED si le passager a deja confirme, sinon le passager est invite a confirmer.")
+    @PostMapping("/{id}/cash/driver-confirm")
+    public CashSettlementResponse cashDriverConfirm(@PathVariable UUID id) {
+        return cashSettlementService.driverConfirm(id, currentUser.id());
+    }
+
+    @Operation(summary = "Confirmer le reglement du solde en especes", description = "Reserve au passager, apres le depart (contrat A.6). SETTLED si le conducteur a deja confirme, sinon le conducteur est invite a confirmer.")
+    @PostMapping("/{id}/cash/passenger-confirm")
+    public CashSettlementResponse cashPassengerConfirm(@PathVariable UUID id) {
+        return cashSettlementService.passengerConfirm(id, currentUser.id());
+    }
+
+    @Operation(summary = "Signaler un desaccord sur le solde en especes", description = "Passager ou conducteur, apres le depart : DISPUTED, signalement CASH_DISPUTE pour la moderation, les deux parties prevenues. Explication obligatoire.")
+    @PostMapping("/{id}/cash/dispute")
+    public CashSettlementResponse cashDispute(@PathVariable UUID id, @Valid @RequestBody CashDisputeRequest req) {
+        return cashSettlementService.dispute(id, currentUser.id(), req.details());
     }
 
     /**

@@ -7,7 +7,7 @@ import bj.ekuiseo.api.common.exception.NotFoundException;
 import bj.ekuiseo.api.common.exception.ServiceUnavailableException;
 import bj.ekuiseo.api.common.exception.TooManyRequestsException;
 import bj.ekuiseo.api.common.exception.UnauthorizedException;
-import bj.ekuiseo.api.service.kkiapay.KkiapayUnavailableException;
+import bj.ekuiseo.api.service.payment.PaymentProviderUnavailableException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.apache.catalina.connector.ClientAbortException;
@@ -112,8 +112,9 @@ public class GlobalExceptionHandler {
                 .body(pd);
     }
 
-    @ExceptionHandler(KkiapayUnavailableException.class)
-    public ProblemDetail handleKkiapayUnavailable(KkiapayUnavailableException ex, HttpServletRequest req) {
+    /** Fournisseur de paiement injoignable ou non conclusif (contrat A.11 : KkiapayUnavailableException en herite). */
+    @ExceptionHandler(PaymentProviderUnavailableException.class)
+    public ProblemDetail handleKkiapayUnavailable(PaymentProviderUnavailableException ex, HttpServletRequest req) {
         return build(HttpStatus.SERVICE_UNAVAILABLE, "upstream-unavailable",
                 "Le service de paiement est temporairement indisponible, reessayez plus tard.", req);
     }

@@ -34,6 +34,8 @@ public record TripBookingResponse(
         /** Date de la contestation du conducteur ; null s il n a pas conteste. */
         Instant driverNoShowContestedAt,
         /** Issue du dossier (REFUND_PASSENGER, PAY_DRIVER) ; null tant qu il est ouvert. */
-        NoShowResolution driverNoShowResolution
+        NoShowResolution driverNoShowResolution,
+        /** Reglement du solde en especes a bord (contrat A.6, V27) ; null sans solde a bord. */
+        CashSettlementResponse cash
 ) {
 }

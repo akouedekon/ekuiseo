@@ -2,27 +2,68 @@ package bj.ekuiseo.api.service.kkiapay;
 
 import bj.ekuiseo.api.dto.payment.KkiapayWebhookPayload;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
 /**
- * Lecture du champ {@code stateData} d un webhook Kkiapay (constat F021 : la logique ne vit
- * plus dans le DTO). Kkiapay ne connait pas nos identifiants internes : {@code stateData}
- * renvoie ce que le frontend a fourni au parametre {@code data} du widget (voir
- * {@code frontend/src/lib/kkiapay.ts}). La documentation type ce parametre comme une
- * chaine : selon la version du widget, il revient donc soit comme un objet JSON, soit
- * comme une chaine contenant du JSON (eventuellement encodee deux fois). Les trois formes
- * sont acceptees, avec l {@link ObjectMapper} de Spring.
+ * Lecture d un webhook Kkiapay (constat F021 : la logique ne vit plus dans le DTO) : le corps
+ * brut est desserialise ici ({@link #parse}), car le controleur le recoit tel quel pour qu il
+ * soit hache et persiste avant traitement (contrat A.5) ; le champ {@code stateData} porte la
+ * correlation. Kkiapay ne connait pas nos identifiants internes : {@code stateData} renvoie ce
+ * que le frontend a fourni au parametre {@code data} du widget (voir
+ * {@code frontend/src/lib/kkiapay.ts}). La documentation type ce parametre comme une chaine :
+ * selon la version du widget, il revient donc soit comme un objet JSON, soit comme une chaine
+ * contenant du JSON (eventuellement encodee deux fois). Les trois formes sont acceptees, avec
+ * l {@link ObjectMapper} de Spring.
  */
 @Component
 public class KkiapayWebhookParser {
+
+    private static final Logger log = LoggerFactory.getLogger(KkiapayWebhookParser.class);
+    /** Au-dela, le corps n est conserve que tronque dans la trace du webhook. */
+    private static final int MAX_STORED_RAW = 4_000;
 
     private final ObjectMapper objectMapper;
 
     public KkiapayWebhookParser(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
+    }
+
+    /** Corps brut -> payload type ; null si le corps n est pas du JSON exploitable. */
+    public KkiapayWebhookPayload parse(String rawBody) {
+        if (rawBody == null || rawBody.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(rawBody, KkiapayWebhookPayload.class);
+        } catch (Exception ex) {
+            log.warn("Webhook illisible : {}", ex.getClass().getSimpleName());
+            return null;
+        }
+    }
+
+    /** Corps brut -> Map pour la trace jsonb ; un corps illisible est conserve tronque sous « raw ». */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> asMap(String rawBody) {
+        if (rawBody == null || rawBody.isBlank()) {
+            return Map.of();
+        }
+        try {
+            Object parsed = objectMapper.readValue(rawBody, Object.class);
+            if (parsed instanceof Map<?, ?> map) {
+                return (Map<String, Object>) map;
+            }
+        } catch (Exception ignored) {
+            // corps non JSON : conserve brut ci-dessous
+        }
+        Map<String, Object> fallback = new LinkedHashMap<>();
+        fallback.put("raw", rawBody.length() > MAX_STORED_RAW ? rawBody.substring(0, MAX_STORED_RAW) : rawBody);
+        return fallback;
     }
 
     /** bookingId porte par stateData, ou null s il est absent ou invalide. */

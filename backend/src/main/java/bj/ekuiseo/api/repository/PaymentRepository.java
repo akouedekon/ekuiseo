@@ -60,6 +60,38 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID> {
             """, nativeQuery = true)
     int failAbandonedInitiated(@Param("before") Instant before);
 
+    /**
+     * Evenement ABANDONED pour chaque paiement que {@link #failAbandonedInitiated} va passer FAILED
+     * (contrat A.5) : meme predicat, insertion en masse, a appeler AVANT la mise a jour.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+            insert into payment_events (id, payment_id, event_type, from_status, to_status, source, details, created_at)
+            select uuid_generate_v4(), p.id, 'ABANDONED', 'INITIATED', 'FAILED', 'SCHEDULER',
+                   '{"reason":"Aucune reference du fournisseur apres le delai d abandon"}'::jsonb, now()
+            from payments p
+            where p.status = 'INITIATED'
+              and p.created_at < :before
+              and p.provider_tx_id like 'ekuiseo-%'
+              and (p.booking_id is null
+                   or not exists (select 1 from bookings b where b.id = p.booking_id and b.status = 'PENDING_PAYMENT'))
+              and (p.subscription_id is null
+                   or not exists (select 1 from driver_subscriptions s where s.id = p.subscription_id and s.status = 'PENDING_PAYMENT'))
+            """, nativeQuery = true)
+    int insertAbandonedEvents(@Param("before") Instant before);
+
+    /** Paiements a rapprocher (ReconciliationService) : crees sur la periode, portant une reference du fournisseur, dans les statuts donnes. */
+    @Query("select p from Payment p left join fetch p.booking where p.provider = :provider and p.createdAt >= :from "
+            + "and p.status in :statuses and p.providerTxId not like 'ekuiseo-%' order by p.createdAt asc")
+    List<Payment> findForReconciliation(@Param("provider") PaymentProvider provider, @Param("from") Instant from,
+                                        @Param("statuses") List<PaymentStatus> statuses);
+
+    /** Paiements d une reservation, plus recents d abord. */
+    List<Payment> findByBookingIdOrderByCreatedAtDesc(UUID bookingId);
+
+    /** Paiements d une liste de reservations (liste admin : un seul aller-retour). */
+    List<Payment> findByBookingIdIn(List<UUID> bookingIds);
+
     /** Remboursements a (re)tenter : demandes depuis plus de {@code before} et toujours en attente. */
     List<Payment> findByStatusAndRefundRequestedAtBefore(PaymentStatus status, Instant before);
 

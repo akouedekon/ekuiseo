@@ -11,7 +11,88 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-public interface BookingRepository extends JpaRepository<Booking, UUID> {
+public interface BookingRepository extends JpaRepository<Booking, UUID>,
+        org.springframework.data.jpa.repository.JpaSpecificationExecutor<Booking> {
+
+    // ------------------------------------------------------------------
+    // Revenus du conducteur (contrat A.8, GET /api/v1/me/earnings) : une seule
+    // requete agregee, jamais de reservations en memoire. Alias en snake_case.
+    // ------------------------------------------------------------------
+
+    interface DriverEarningsStats {
+        long getBalance();
+
+        long getAwaiting();
+
+        long getGross();
+
+        long getCommission();
+
+        long getCashCollected();
+
+        long getSeatsSold();
+    }
+
+    /**
+     * Places vendues (CONFIRMED / COMPLETED / NO_SHOW) d un conducteur : solde reversable (mobile
+     * money encaisse, depart avant {@code cutoff}, hors lot), en attente d eligibilite, chiffre
+     * d affaires, commission (mobile money seulement : rien n est preleve en especes), especes
+     * reglees a bord, places.
+     */
+    @Query(value = """
+            with sold as (
+                select b.amount, b.service_fee, b.seats, b.payment_method, b.cash_status, b.cash_expected_fcfa,
+                       t.departure_at,
+                       (case when b.payment_method = 'MOMO_FULL' then b.amount
+                             when b.payment_method = 'MOMO_DEPOSIT' then b.deposit_amount else 0 end) - b.service_fee as net,
+                       exists (select 1 from payments p where p.booking_id = b.id and p.status = 'SUCCEEDED') as paid,
+                       exists (select 1 from driver_payout_items i where i.booking_id = b.id) as in_payout
+                from bookings b
+                join trips t on t.id = b.trip_id
+                where t.driver_id = :driverId
+                  and b.status in ('CONFIRMED', 'COMPLETED', 'NO_SHOW')
+            )
+            select coalesce(sum(case when payment_method in ('MOMO_DEPOSIT', 'MOMO_FULL') and paid and not in_payout
+                                          and departure_at < :cutoff then net else 0 end), 0) as balance,
+                   coalesce(sum(case when payment_method in ('MOMO_DEPOSIT', 'MOMO_FULL') and paid and not in_payout
+                                          and departure_at >= :cutoff then net else 0 end), 0) as awaiting,
+                   coalesce(sum(amount), 0) as gross,
+                   coalesce(sum(case when payment_method <> 'CASH' then service_fee else 0 end), 0) as commission,
+                   coalesce(sum(case when cash_status = 'SETTLED' then cash_expected_fcfa else 0 end), 0) as cash_collected,
+                   coalesce(sum(seats), 0) as seats_sold
+            from sold
+            """, nativeQuery = true)
+    DriverEarningsStats getDriverEarnings(@Param("driverId") UUID driverId, @Param("cutoff") Instant cutoff);
+
+    interface DriverMonthStats {
+        String getMonth();
+
+        long getGross();
+
+        long getCommission();
+
+        long getCash();
+
+        long getTrips();
+    }
+
+    /** Memes places vendues, par mois civil du Benin de depart du trajet, sur [from, to). */
+    @Query(value = """
+            select to_char(t.departure_at at time zone 'Africa/Porto-Novo', 'YYYY-MM') as month,
+                   coalesce(sum(b.amount), 0) as gross,
+                   coalesce(sum(case when b.payment_method <> 'CASH' then b.service_fee else 0 end), 0) as commission,
+                   coalesce(sum(case when b.cash_status = 'SETTLED' then b.cash_expected_fcfa else 0 end), 0) as cash,
+                   count(distinct t.id) as trips
+            from bookings b
+            join trips t on t.id = b.trip_id
+            where t.driver_id = :driverId
+              and b.status in ('CONFIRMED', 'COMPLETED', 'NO_SHOW')
+              and t.departure_at >= :from and t.departure_at < :to
+            group by 1
+            order by 1
+            """, nativeQuery = true)
+    List<DriverMonthStats> getDriverMonthlyEarnings(@Param("driverId") UUID driverId, @Param("from") Instant from,
+                                                    @Param("to") Instant to);
 
     List<Booking> findByPassengerIdOrderByCreatedAtDesc(UUID passengerId);
 
@@ -71,6 +152,16 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             + "and b.driverNoShowResolution is null and b.driverNoShowContestedAt is null "
             + "and b.driverNoShowRefundDueAt is not null and b.driverNoShowRefundDueAt < :now")
     List<UUID> findDriverNoShowRefundsDue(@Param("now") Instant now);
+
+    /**
+     * Solde en especes confirme par une seule partie, sans litige, trajet parti avant
+     * {@code departedBefore} (V27, CashSettlementScheduler) : reglement tacite.
+     */
+    @Query("select b.id from Booking b join b.trip t where b.cashStatus in "
+            + "(bj.ekuiseo.api.domain.enums.CashStatus.DRIVER_CONFIRMED, bj.ekuiseo.api.domain.enums.CashStatus.PASSENGER_CONFIRMED) "
+            + "and b.status in (bj.ekuiseo.api.domain.enums.BookingStatus.CONFIRMED, bj.ekuiseo.api.domain.enums.BookingStatus.COMPLETED) "
+            + "and t.departureAt < :departedBefore")
+    List<UUID> findCashTacitSettlementsDue(@Param("departedBefore") Instant departedBefore);
 
     /**
      * Demandes en attente de l accord du conducteur (V19) restees sans reponse : echeance

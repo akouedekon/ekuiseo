@@ -272,7 +272,8 @@ public class UserService {
         return new PublicUserProfileResponse(user.getId(), user.getFirstName(), lastName, user.getPhotoUrl(),
                 user.getBio(), user.getRatingAvg(), user.getRatingCount(), user.isPhoneVerified(), user.isIdentityVerified(),
                 user.getCreatedAt(), tripsCompleted, vehicles,
-                computeReliabilityRate(userId), computeResponseTimeMinutes(userId), resolvePublicPreferences(userId));
+                computeReliabilityRate(userId), computeResponseTimeMinutes(userId), resolvePublicPreferences(userId),
+                bj.ekuiseo.api.common.TrustPolicy.of(user), user.getTripsCompletedAsDriver());
     }
 
     /**

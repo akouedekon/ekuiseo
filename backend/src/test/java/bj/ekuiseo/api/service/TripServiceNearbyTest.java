@@ -71,7 +71,7 @@ class TripServiceNearbyTest {
     }
 
     private static TripResponse response(UUID id) {
-        DriverSummary driver = new DriverSummary(UUID.randomUUID(), "Koffi", "Aholou", null, BigDecimal.valueOf(4.6), 12, true);
+        DriverSummary driver = new DriverSummary(UUID.randomUUID(), "Koffi", "Aholou", null, BigDecimal.valueOf(4.6), 12, true, bj.ekuiseo.api.domain.enums.TrustLevel.VERIFIED, 3);
         return new TripResponse(id, driver, null, TripType.QUOTIDIEN, "Abomey-Calavi", 6.4489, 2.3556,
                 "Cotonou", 6.3703, 2.3912, Instant.parse("2026-09-11T06:30:00Z"), 3, 2, 500, true, null, null,
                 TripStatus.PUBLISHED, null, Instant.parse("2026-09-10T08:00:00Z"), null, null, null, null, null);

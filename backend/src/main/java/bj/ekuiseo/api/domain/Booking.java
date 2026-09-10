@@ -1,6 +1,7 @@
 package bj.ekuiseo.api.domain;
 
 import bj.ekuiseo.api.domain.enums.BookingStatus;
+import bj.ekuiseo.api.domain.enums.CashStatus;
 import bj.ekuiseo.api.domain.enums.NoShowResolution;
 import bj.ekuiseo.api.domain.enums.PassengerConfirmation;
 import bj.ekuiseo.api.domain.enums.PaymentMethod;
@@ -125,6 +126,29 @@ public class Booking {
     /** Suivi en direct (V28) : notification « conducteur arrive » (moins de 150 m) envoyee au passager, une seule fois. */
     @Column(name = "driver_arrived_notified_at")
     private Instant driverArrivedNotifiedAt;
+
+    /** Reglement du solde en especes a bord (V27, contrat A.6) ; NOT_APPLICABLE sans solde a bord. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "cash_status", nullable = false, length = 20)
+    @Builder.Default
+    private CashStatus cashStatus = CashStatus.NOT_APPLICABLE;
+
+    /** Montant attendu en especes a bord, fige a la confirmation (= balanceDueOnBoard). */
+    @Column(name = "cash_expected_fcfa", nullable = false)
+    @Builder.Default
+    private long cashExpectedFcfa = 0L;
+
+    @Column(name = "cash_driver_confirmed_at")
+    private Instant cashDriverConfirmedAt;
+
+    @Column(name = "cash_passenger_confirmed_at")
+    private Instant cashPassengerConfirmedAt;
+
+    @Column(name = "cash_disputed_at")
+    private Instant cashDisputedAt;
+
+    @Column(name = "cash_dispute_details", columnDefinition = "text")
+    private String cashDisputeDetails;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)

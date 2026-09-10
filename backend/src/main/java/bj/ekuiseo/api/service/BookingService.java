@@ -194,6 +194,10 @@ public class BookingService {
                 .expiresAt(isCash ? null : now.plus(pendingPaymentTtlMinutes, ChronoUnit.MINUTES))
                 .approvalDeadlineAt(awaitingDriver ? driverApprovalPolicy.deadline(now, trip.getDepartureAt()) : null)
                 .build();
+        if (booking.getStatus() == BookingStatus.CONFIRMED) {
+            // Solde a bord attendu des la confirmation (contrat A.6, V27).
+            CashSettlementRules.markExpected(booking);
+        }
         booking = bookingRepository.save(booking);
 
         if (awaitingDriver) {
@@ -407,7 +411,8 @@ public class BookingService {
                 booking.getPassengerConfirmation(), booking.getPassengerConfirmedAt(),
                 paymentService.refundSummary(booking.getId()).orElse(null),
                 booking.getDriverNoShowRefundDueAt(), booking.getDriverNoShowContestedAt(),
-                booking.getDriverNoShowResolution(), booking.getDriverNoShowResolvedAt());
+                booking.getDriverNoShowResolution(), booking.getDriverNoShowResolvedAt(),
+                CashSettlementRules.toResponse(booking));
     }
 
     /**
@@ -555,6 +560,7 @@ public class BookingService {
         booking.setStatus(BookingStatus.CANCELLED_BY_PASSENGER);
         booking.setExpiresAt(null);
         booking.setApprovalDeadlineAt(null);
+        CashSettlementRules.clear(booking);
         bookingRepository.save(booking);
         releaseSeats(trip.getId(), booking.getSeats());
 
@@ -611,7 +617,8 @@ public class BookingService {
                         b.getPassenger().getRatingAvg(), b.getSeats(), b.getStatus(), b.getPaymentMethod(),
                         b.getBalanceDueOnBoard(), b.getPickupStopId(), b.getDropoffStopId(), b.getCreatedAt(),
                         b.getStatus() == BookingStatus.PENDING_DRIVER_APPROVAL ? b.getApprovalDeadlineAt() : null,
-                        b.getDriverNoShowRefundDueAt(), b.getDriverNoShowContestedAt(), b.getDriverNoShowResolution()))
+                        b.getDriverNoShowRefundDueAt(), b.getDriverNoShowContestedAt(), b.getDriverNoShowResolution(),
+                        CashSettlementRules.toResponse(b)))
                 .toList();
     }
 
@@ -627,6 +634,7 @@ public class BookingService {
         assertDriverDecision(booking, driverId);
         booking.setStatus(BookingStatus.CONFIRMED);
         booking.setApprovalDeadlineAt(null);
+        CashSettlementRules.markExpected(booking);
         bookingRepository.save(booking);
         auditService.log(driverId, "BOOKING_ACCEPTED_BY_DRIVER", "booking", booking.getId(),
                 Map.of("tripId", trip.getId().toString(), "seats", booking.getSeats()));
@@ -753,6 +761,7 @@ public class BookingService {
             throw new BadRequestException("Le delai de signalement (48 h apres le depart) est depasse");
         }
         booking.setStatus(BookingStatus.NO_SHOW);
+        CashSettlementRules.clear(booking);
         bookingRepository.save(booking);
         auditService.log(driverId, "BOOKING_NO_SHOW", "booking", booking.getId(),
                 Map.of("tripId", trip.getId().toString(), "retainedAmountFcfa", booking.getDepositAmount()));
@@ -806,6 +815,7 @@ public class BookingService {
         booking.setPassengerConfirmation(PassengerConfirmation.DRIVER_NO_SHOW);
         booking.setPassengerConfirmedAt(now);
         booking.setDriverNoShowRefundDueAt(refundDueAt);
+        CashSettlementRules.clear(booking);
         bookingRepository.save(booking);
 
         String trimmed = details == null ? null : details.trim();
@@ -913,8 +923,10 @@ public class BookingService {
             log.info("Reservation {} : conducteur absent, remboursement de {} FCFA : {} ({})",
                     booking.getId(), booking.getDepositAmount(), refund.status(), refund.message());
         } else {
-            // Trajet maintenu : la reservation redevient reversable (PayoutService#PAYABLE_STATUSES).
+            // Trajet maintenu : la reservation redevient reversable (PayoutService#PAYABLE_STATUSES)
+            // et le solde a bord redevient attendu (contrat A.6).
             booking.setStatus(BookingStatus.COMPLETED);
+            CashSettlementRules.markExpected(booking);
         }
         bookingRepository.save(booking);
 
@@ -1032,6 +1044,7 @@ public class BookingService {
             booking.setStatus(BookingStatus.CANCELLED_BY_DRIVER);
             booking.setExpiresAt(null);
             booking.setApprovalDeadlineAt(null);
+            CashSettlementRules.clear(booking);
             bookingRepository.save(booking);
 
             long refundAmount = paid ? booking.getDepositAmount() : 0L;
@@ -1086,6 +1099,7 @@ public class BookingService {
             booking.setStatus(BookingStatus.CANCELLED_BY_PASSENGER);
             booking.setExpiresAt(null);
             booking.setApprovalDeadlineAt(null);
+            CashSettlementRules.clear(booking);
             bookingRepository.save(booking);
             releaseSeats(trip.getId(), booking.getSeats());
             PaymentService.RefundOutcome refund = paymentService.refundBooking(booking, booking.getDepositAmount(), "SUSPENSION_PASSAGER");

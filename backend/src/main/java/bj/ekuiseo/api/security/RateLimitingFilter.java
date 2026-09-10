@@ -78,6 +78,11 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     private static final Pattern LIVE_POSITIONS_PATH = Pattern.compile("^/api/v1/trips/[^/]+/live/positions$");
     /** Suivi public par jeton (TripLiveController, V23) : public, donc borne par IP. */
     private static final Pattern PUBLIC_LIVE_PATH = Pattern.compile("^/api/v1/live/[^/]+$");
+    /** Rapprochement admin (contrat A.7) : un appel au fournisseur par paiement, 5 / min / administrateur. */
+    private static final Set<String> RECONCILIATION_PATHS = Set.of("/api/v1/admin/finance/reconciliation/run",
+            "/api/v1/admin/finance/reconciliation/import");
+    private static final int RECONCILIATION_MAX_REQUESTS = 5;
+    private static final long RECONCILIATION_WINDOW_MILLIS = 60_000L;
     private static final long IDLE_ENTRY_TTL_MILLIS = 3_600_000L; // 1h : purge des cles inactives
 
     private final int authMaxRequests;
@@ -221,6 +226,9 @@ public class RateLimitingFilter extends OncePerRequestFilter {
         }
         if ("GET".equals(method) && PUBLIC_LIVE_PATH.matcher(path).matches()) {
             return new Quota("live-public:", clientIp(request), livePublicMaxRequests, livePublicWindowMillis);
+        }
+        if ("POST".equals(method) && RECONCILIATION_PATHS.contains(path)) {
+            return new Quota("recon:", userOrIp(request), RECONCILIATION_MAX_REQUESTS, RECONCILIATION_WINDOW_MILLIS);
         }
         return null;
     }

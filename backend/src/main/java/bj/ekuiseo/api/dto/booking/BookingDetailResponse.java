@@ -53,7 +53,9 @@ public record BookingDetailResponse(
         Instant driverNoShowRefundDueAt,
         Instant driverNoShowContestedAt,
         NoShowResolution driverNoShowResolution,
-        Instant driverNoShowResolvedAt
+        Instant driverNoShowResolvedAt,
+        /** Reglement du solde en especes a bord (contrat A.6, V27) ; null sans solde a bord. */
+        CashSettlementResponse cash
 ) {
 
     public record TripSummary(

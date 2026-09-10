@@ -21,12 +21,27 @@ public class PaymentHousekeepingScheduler {
     private final RefundService refundService;
     private final SubscriptionService subscriptionService;
     private final PaymentService paymentService;
+    private final IdempotencyService idempotencyService;
 
     public PaymentHousekeepingScheduler(RefundService refundService, SubscriptionService subscriptionService,
-                                        PaymentService paymentService) {
+                                        PaymentService paymentService, IdempotencyService idempotencyService) {
         this.refundService = refundService;
         this.subscriptionService = subscriptionService;
         this.paymentService = paymentService;
+        this.idempotencyService = idempotencyService;
+    }
+
+    /** Toutes les heures : cles d idempotence de plus de 24 h supprimees (contrat A.1, V26). */
+    @Scheduled(fixedRate = 3_600_000, initialDelay = 300_000)
+    public void purgeIdempotencyKeys() {
+        try {
+            int n = idempotencyService.purgeExpired(Instant.now());
+            if (n > 0) {
+                log.info("{} cle(s) d idempotence purgee(s)", n);
+            }
+        } catch (RuntimeException ex) {
+            log.error("Purge des cles d idempotence : echec de l execution", ex);
+        }
     }
 
     /** Toutes les 5 minutes : paiements INITIATED de plus de 20 minutes sans reservation ni abonnement en attente -> FAILED (F019). */

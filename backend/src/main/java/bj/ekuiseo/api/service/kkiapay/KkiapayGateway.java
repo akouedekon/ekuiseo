@@ -1,9 +1,14 @@
 package bj.ekuiseo.api.service.kkiapay;
 
+import bj.ekuiseo.api.service.payment.PaymentProvider;
+
 /**
  * Abstraction de l'agregateur de paiement Kkiapay (mobile money : MTN MoMo,
  * Moov Money, Celtiis Cash ; carte bancaire ; Wave), isolant le reste de
- * l'application du format exact de l'API HTTP sous-jacente.
+ * l'application du format exact de l'API HTTP sous-jacente. Implementation Kkiapay du
+ * contrat generique {@link PaymentProvider} (contrat A.11) : les services metier
+ * n injectent que l interface generique ; les types {@code VerificationResult} et
+ * {@code RefundResult} sont ceux de {@link PaymentProvider}, herites ici.
  *
  * <p><b>Ce qui est confirme</b> (source : documentation publique Kkiapay et code
  * source du SDK officiel {@code @kkiapay-org/nodejs-sdk}, consultes en ligne
@@ -48,30 +53,12 @@ package bj.ekuiseo.api.service.kkiapay;
  * developpement n'a pas eu acces complet), seule {@link KkiapayHttpGateway} doit etre
  * modifiee.</p>
  */
-public interface KkiapayGateway {
+public interface KkiapayGateway extends PaymentProvider {
 
-    /** Interroge Kkiapay pour l'etat reel d'une transaction (jamais se fier au seul webhook). */
-    VerificationResult verifyTransaction(String transactionId);
+    String PROVIDER_NAME = "KKIAPAY";
 
-    /** Demande le remboursement d'une transaction reussie (les frais Kkiapay ne sont pas rembourses). */
-    RefundResult refundTransaction(String transactionId);
-
-    /**
-     * Verdict de Kkiapay sur une transaction. {@code operator} est l operateur reel tel que
-     * renvoye par l API de verification ({@code source_common_name}, sinon {@code source} :
-     * "MTN", "MOOV", "CELTIIS", "CARD"...), ou null si l API ne le donne pas (constat F140) ;
-     * c est lui, et non la declaration du widget, qui alimente {@code payments.channel}.
-     */
-    record VerificationResult(boolean success, String transactionId, long amountFcfa, long feesFcfa,
-                               String rawStatus, String failureCode, String failureMessage, String operator) {
-
-        /** Variante sans operateur (tests, API n exposant pas la source). */
-        public VerificationResult(boolean success, String transactionId, long amountFcfa, long feesFcfa,
-                                  String rawStatus, String failureCode, String failureMessage) {
-            this(success, transactionId, amountFcfa, feesFcfa, rawStatus, failureCode, failureMessage, null);
-        }
-    }
-
-    record RefundResult(boolean success, String rawStatus, String message) {
+    @Override
+    default String name() {
+        return PROVIDER_NAME;
     }
 }
