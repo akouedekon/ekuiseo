@@ -73,7 +73,7 @@ public class TripTrackingService {
     private static final Logger log = LoggerFactory.getLogger(TripTrackingService.class);
 
     static final List<BookingStatus> VIEWER_BOOKING_STATUSES =
-            List.of(BookingStatus.CONFIRMED, BookingStatus.COMPLETED, BookingStatus.PENDING_DRIVER_APPROVAL);
+            List.of(BookingStatus.CONFIRMED, BookingStatus.COMPLETED);
 
     static final int INTERVAL_BEFORE_DEPARTURE = 30;
     static final int INTERVAL_DURING_TRIP = 15;
