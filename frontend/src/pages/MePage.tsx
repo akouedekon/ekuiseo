@@ -94,7 +94,8 @@ export function MePage() {
         onValueChange={(value) => setSearchParams(value === 'vehicles' ? {} : { tab: value }, { replace: true })}
         className="mt-5"
       >
-        <TabsList aria-label="Sections du compte">
+        {/* Six sections : une rangee de puces qui defile, jamais coupee au milieu d un onglet. */}
+        <TabsList scroll aria-label="Sections du compte">
           <TabsTrigger value="vehicles">Véhicules</TabsTrigger>
           <TabsTrigger value="identity">Identité</TabsTrigger>
           <TabsTrigger value="payment">Paiement</TabsTrigger>

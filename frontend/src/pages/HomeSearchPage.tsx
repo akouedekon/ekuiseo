@@ -3,6 +3,7 @@ import {
   ArrowRight,
   ArrowUpDown,
   CalendarDays,
+  ChevronRight,
   CircleDot,
   Clock,
   Flag,
@@ -187,27 +188,36 @@ export function HomeSearchPage() {
       <div aria-hidden className="ek-glow pointer-events-none absolute inset-x-0 top-0 h-[520px]" />
       <div aria-hidden className="ek-dots pointer-events-none absolute inset-x-0 top-0 h-[420px]" />
 
-      <PageContainer width="lg" className="relative pb-12 sm:pt-12">
-        {/* --- Hero --- */}
+      <PageContainer width="lg" className="relative pb-12 sm:pt-12 app:pt-4">
+        {/*
+         * --- Hero ---
+         * Sur le web, une promesse de marque (badge, titre en deux lignes, villes). Dans
+         * l application (variante app:), l accueil est un ecran d outil : un titre court,
+         * une ligne, et le formulaire tout de suite.
+         */}
         <m.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
-          className="mx-auto max-w-2xl text-center"
+          className="mx-auto max-w-2xl text-center app:text-left"
         >
-          <Badge tone="indigo" className="mb-4 gap-1.5 px-2.5 py-1">
+          <Badge tone="indigo" className="mb-4 gap-1.5 px-2.5 py-1 app:hidden">
             <Sparkles aria-hidden />
             Covoiturage au Bénin · interurbain et quotidien
           </Badge>
-          <h1 tabIndex={-1} className="headline text-display-lg outline-none sm:text-hero">
-            Partagez la route,
-            <br />
-            partagez le prix.
+          <h1 tabIndex={-1} className="headline text-display-lg outline-none sm:text-hero app:text-display">
+            <span className="app:hidden">
+              Partagez la route,
+              <br />
+              partagez le prix.
+            </span>
+            <span className="hidden app:inline">Où allez-vous ?</span>
           </h1>
-          <p className="mx-auto mt-4 max-w-xl text-base leading-relaxed text-ink-2 sm:text-lead">
+          <p className="mx-auto mt-4 max-w-xl text-base leading-relaxed text-ink-2 sm:text-lead app:hidden">
             Cotonou, Bohicon, Parakou, Porto-Novo, Lomé… Un acompte en mobile money bloque votre place, le reste se
             règle en espèces à bord — ou tout en ligne, à votre choix.
           </p>
+          <p className="mt-1 hidden text-body text-muted app:block">Acompte en mobile money, solde en espèces à bord.</p>
         </m.div>
 
         {/* --- Panneau de recherche --- */}
@@ -215,7 +225,7 @@ export function HomeSearchPage() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.45, delay: 0.08 }}
-          className="mx-auto mt-8 max-w-3xl"
+          className="mx-auto mt-8 max-w-3xl app:mt-4"
         >
           <Card className="overflow-visible p-4 shadow-e3 sm:p-6">
             <form onSubmit={submit} noValidate>
@@ -306,12 +316,19 @@ export function HomeSearchPage() {
             </form>
           </Card>
           {/* Entree secondaire : les departs proches sur la carte, sans saisir d axe ni de date. */}
-          <Button asChild variant="secondary" size="lg" block className="mt-3">
-            <Link to="/autour">
-              <LocateFixed aria-hidden />
-              Autour de moi
-            </Link>
-          </Button>
+          <Link
+            to="/autour"
+            className="ek-lift ek-press mt-3 flex items-center gap-3 rounded-[var(--radius-card)] border border-rule bg-surface p-3 shadow-e1"
+          >
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-primary-soft text-primary-ink">
+              <LocateFixed className="size-5" aria-hidden />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block font-display text-base font-bold text-ink">Autour de moi</span>
+              <span className="block text-label text-muted">Voitures, motos et tricycles qui partent près de vous</span>
+            </span>
+            <ChevronRight className="size-5 shrink-0 text-muted" aria-hidden />
+          </Link>
         </m.div>
 
         {/* --- Trajet de la semaine (mode quotidien) --- */}
@@ -449,19 +466,23 @@ export function HomeSearchPage() {
                 {popularRoutes.map((route) => (
                   /* min-w-0 : sans lui, un axe au long libelle elargit la colonne de la grille au-dela de l ecran. */
                   <m.li key={`${route.originLabel}-${route.destLabel}`} variants={listItem} className="min-w-0">
+                    {/* Origine puis destination sur deux lignes : un axe long reste lisible sans troncature. */}
                     <button
                       type="button"
                       onClick={() => goToPopular(route)}
-                      className="ek-lift group flex w-full items-center gap-3 rounded-[var(--radius-card)] border border-rule bg-surface p-4 text-left shadow-e1"
+                      aria-label={`${route.originLabel} vers ${route.destLabel}, ${route.trips} départ${route.trips > 1 ? 's' : ''}, dès ${formatFcfa(route.minPrice)}`}
+                      className="ek-lift ek-press group flex w-full items-center gap-3 rounded-[var(--radius-card)] border border-rule bg-surface p-4 text-left shadow-e1"
                     >
                       <span className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-surface-2 text-ink-2 transition-colors group-hover:bg-primary-soft group-hover:text-primary-ink">
                         <TrendingUp className="size-[18px]" aria-hidden />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate font-display text-body font-bold text-ink">
-                          {route.originLabel} → {route.destLabel}
+                        <span className="line-clamp-1 font-display text-body font-bold text-ink">{route.originLabel}</span>
+                        <span className="line-clamp-1 font-display text-body font-bold text-ink-2">
+                          <span aria-hidden className="mr-1 text-muted">→</span>
+                          {route.destLabel}
                         </span>
-                        <span className="tnum block text-label text-muted">
+                        <span className="tnum mt-0.5 block text-label text-muted">
                           {route.trips} départ{route.trips > 1 ? 's' : ''} · dès {formatFcfa(route.minPrice)}
                         </span>
                       </span>
@@ -477,13 +498,26 @@ export function HomeSearchPage() {
           </section>
         ) : null}
 
-        {/* --- Promesses produit --- */}
-        <section aria-label="Ce qui distingue Ekuiseo" className="mx-auto mt-12 max-w-3xl">
+        {/* --- Promesses produit : trois cartes sur le web, une ligne de puces defilante dans l application --- */}
+        <section aria-label="Ce qui distingue Ekuiseo" className="mx-auto mt-12 max-w-3xl app:mt-8">
+          <ul className="scroll-hide -mx-4 hidden gap-2 overflow-x-auto px-4 app:flex">
+            {PROMISES.map((promise) => (
+              <li
+                key={promise.title}
+                className="flex shrink-0 items-center gap-2.5 rounded-[var(--radius-pill)] border border-rule bg-surface py-1.5 pl-1.5 pr-3.5 shadow-e1"
+              >
+                <span className={`flex size-8 items-center justify-center rounded-full ${promise.tone}`}>
+                  <promise.icon className="size-4" aria-hidden />
+                </span>
+                <span className="whitespace-nowrap text-label font-semibold text-ink">{promise.title}</span>
+              </li>
+            ))}
+          </ul>
           <m.div
             variants={listContainer}
             initial="hidden"
             animate="show"
-            className="grid gap-3 md:grid-cols-3"
+            className="grid gap-3 md:grid-cols-3 app:hidden"
           >
             {PROMISES.map((promise) => (
               <m.div key={promise.title} variants={listItem}>

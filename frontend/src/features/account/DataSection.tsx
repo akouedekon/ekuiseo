@@ -47,7 +47,7 @@ export function DataSection() {
           <span className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-primary-soft text-primary-ink">
             <FileJson className="size-5" aria-hidden />
           </span>
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 basis-48">
             <p className="text-body font-medium text-ink">Télécharger mes données</p>
             <p className="text-caption text-muted">
               Profil, véhicules, trajets, réservations, paiements, avis, messages envoyés et alertes, au format JSON.
@@ -63,7 +63,7 @@ export function DataSection() {
           <span className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-surface-2 text-ink-2">
             <ScrollText className="size-5" aria-hidden />
           </span>
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 basis-48">
             <p className="text-body font-medium text-ink">Ce que nous conservons, et pourquoi</p>
             <p className="text-caption text-muted">Durées de conservation, sous-traitants et vos droits, dans la politique de confidentialité.</p>
           </div>
@@ -75,7 +75,7 @@ export function DataSection() {
           <span className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-surface-2 text-ink-2">
             <Mail className="size-5" aria-hidden />
           </span>
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 basis-48">
             <p className="text-body font-medium text-ink">Une question, une contestation, une rectification ?</p>
             <p className="text-caption text-muted">Suppression du compte : voir la section ci-dessous, effet immédiat après confirmation.</p>
           </div>

@@ -40,5 +40,7 @@ export default defineConfig({
   projects: [
     { name: 'mobile', use: { ...devices['Pixel 5'] } },
     { name: 'app', use: { ...devices['Pixel 5'] } },
+    // Web sur un ordinateur portable ordinaire : l en-tete a onglets et les deux colonnes doivent rester intacts.
+    { name: 'desktop', use: { ...devices['Desktop Chrome'], viewport: { width: 1366, height: 768 } } },
   ],
 })

@@ -159,7 +159,7 @@ export function NearbyPage() {
   )
 
   return (
-    <div className="relative -mb-8 h-[calc(100dvh-67px)] min-h-[480px] overflow-hidden bg-surface-2 md:-mb-12">
+    <div className="relative -mb-6 h-[calc(100dvh-var(--header-h)-var(--bottom-nav-h)-env(safe-area-inset-bottom,0px)-12px)] min-h-[480px] overflow-hidden bg-surface-2 md:-mb-12 md:h-[calc(100dvh-var(--header-h))]">
       <PageMeta
         title="Autour de moi"
         description="Les départs en voiture, moto ou tricycle proches de vous, sur la carte, à réserver en un geste."
@@ -235,7 +235,7 @@ export function NearbyPage() {
         </div>
       </div>
 
-      {/* Feuille : 42 % de la hauteur en bas sur mobile (au-dessus de la barre basse), colonne a gauche au-dela. */}
+      {/* Feuille : 42 % de la hauteur en bas sur mobile (l ecran s arrete au-dessus de la barre basse), colonne a gauche au-dela. */}
       <NearbySheet
         state={sheetState}
         aroundLabel={aroundLabel}
@@ -244,7 +244,6 @@ export function NearbyPage() {
         fallback={fallbackField}
         className={cn(
           'absolute inset-x-0 bottom-0 z-10 h-[42%] rounded-t-[20px] border-t border-rule bg-surface shadow-sheet',
-          'pb-[calc(60px+env(safe-area-inset-bottom,0px))] md:pb-0',
           'md:inset-y-0 md:right-auto md:h-full md:w-[400px] md:rounded-none md:border-r md:border-t-0',
         )}
       />

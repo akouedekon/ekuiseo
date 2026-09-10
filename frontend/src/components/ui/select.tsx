@@ -14,7 +14,7 @@ export const SelectTrigger = forwardRef<
     <SelectPrimitive.Trigger
       ref={ref}
       className={cn(
-        'ek-field flex h-11 w-full items-center justify-between gap-2 rounded-[var(--radius-control)] px-3 text-base data-[placeholder]:text-muted',
+        'ek-field flex h-11 w-full items-center justify-between gap-2 rounded-[var(--radius-control)] px-3 text-lead data-[placeholder]:text-muted sm:text-base',
         className,
       )}
       {...props}

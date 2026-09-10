@@ -16,6 +16,12 @@
 
 /* Le mode sombre est pilote par la classe .dark posee sur <html> (voir lib/theme.ts). */
 @custom-variant dark (&:where(.dark, .dark *));
+/*
+ * Application Android/iOS (classe app-native posee sur <html> par lib/native.ts) : `app:`
+ * permet d ecrire `app:hidden` pour ce qui n a de sens que sur le web (heros marketing,
+ * pied de page) sans dupliquer les composants.
+ */
+@custom-variant app (&:where(html.app-native, html.app-native *));
 
 :root {
   color-scheme: light;
@@ -100,6 +106,17 @@
   --duration-fast: 150ms;
   --duration-base: 220ms;
   --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /*
+   * --- Coque : hauteurs des barres fixes ---
+   * En dessous de 768 px : barre haute d application (56 px + filet de 3 px) et barre de
+   * navigation basse (60 px, plus la zone sure). Au-dela : en-tete web (64 px + filet),
+   * pas de barre basse. Les ecrans qui se calent sur ces barres (bandeau hors ligne,
+   * barre d action collante, carte plein ecran) lisent ces variables, jamais un nombre.
+   */
+  --safe-top: 0px;
+  --header-h: calc(59px + var(--safe-top));
+  --bottom-nav-h: 60px;
 
   /* --- Alias historiques (ne pas utiliser dans du code neuf) --- */
   --paper: var(--bg);
@@ -440,7 +457,7 @@
     border-color: var(--rule-strong);
   }
   .ek-lift:active {
-    transform: translateY(0) scale(0.995);
+    transform: translateY(0) scale(0.98);
     box-shadow: var(--shadow-1);
   }
 }
@@ -515,13 +532,33 @@
     -webkit-user-select: text;
     user-select: text;
   }
+  html.app-native {
+    --safe-top: env(safe-area-inset-top, 0px);
+  }
   html.app-native .app-safe-top {
-    padding-top: env(safe-area-inset-top, 0px);
+    padding-top: var(--safe-top);
   }
   /* Le defilement reste fluide mais sans effet « page web » : barres d ascenseur masquees. */
   html.app-native ::-webkit-scrollbar {
     width: 0;
     height: 0;
+  }
+
+  /* Rangee qui defile horizontalement sans ascenseur visible (onglets, puces). */
+  .scroll-hide {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scroll-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Retour tactile d un element entierement cliquable (carte, ligne) : leger enfoncement. */
+  .ek-press {
+    transition: transform var(--duration-fast) var(--ease-standard);
+  }
+  .ek-press:active {
+    transform: scale(0.98);
   }
 
   /* Squelettes de chargement : balayage lent, jamais clignotant. */
@@ -584,6 +621,14 @@
 .ek-anim-zoom[data-state="closed"] { animation: ek-zoom-out 0.15s ease-in }
 .ek-anim-pop[data-state="open"] { animation: ek-pop-in 0.18s cubic-bezier(0.22, 1, 0.36, 1) }
 .ek-anim-pop[data-state="closed"] { animation: ek-fade-out 0.12s ease-in }
+
+/* Au-dela de 768 px : en-tete web (64 px + filet), plus de barre basse. */
+@media (min-width: 768px) {
+  :root {
+    --header-h: calc(67px + var(--safe-top));
+    --bottom-nav-h: 0px;
+  }
+}
 
 /* MapLibre : neutralise le style par defaut pour rester dans la charte. */
 .maplibregl-map {

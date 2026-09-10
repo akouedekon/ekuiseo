@@ -3,6 +3,8 @@ import { ArrowRight, UserCheck } from 'lucide-react'
 import { Link } from 'react-router'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { StickyActionBar } from '@/components/layout/StickyActionBar'
+import { useIsCompactShell } from '@/hooks/useMediaQuery'
 import { Card } from '@/components/ui/card'
 import { RadioGroup, RadioGroupItem, Separator, Stepper } from '@/components/ui/misc'
 import { SectionTitle } from '@/components/layout/PageContainer'
@@ -23,6 +25,18 @@ export function RecapStep({ flow, trip }: { flow: BookingFlow; trip: TripRespons
   const selectedStop = flow.selectedStop
   // Mode especes propose seulement aux conducteurs a identite verifiee (section 5 #13).
   const modes = PAYMENT_MODES.filter((option) => option.value !== 'CASH' || flow.cashAllowed)
+  // Sous 768 px, le bouton principal vit dans une barre collante au-dessus de la barre basse : un seul rendu.
+  const compact = useIsCompactShell()
+  const cta = (
+    <Button size="lg" block loading={flow.createBooking.isPending} disabled={flow.quote.isError} onClick={flow.goToPayment}>
+      {flow.paymentMode === 'CASH'
+        ? 'Demander la place'
+        : flow.requiresDriverApproval
+          ? `Demander ma place pour ${formatFcfa(flow.plan.depositAmount)}`
+          : `${flow.paymentMode === 'MOMO_FULL' ? 'Payer' : 'Bloquer ma place pour'} ${formatFcfa(flow.plan.depositAmount)}`}
+      <ArrowRight className="size-5" aria-hidden />
+    </Button>
+  )
 
   return (
     <m.div
@@ -180,14 +194,7 @@ export function RecapStep({ flow, trip }: { flow: BookingFlow; trip: TripRespons
         </Card>
       ) : null}
 
-      <Button size="lg" block loading={flow.createBooking.isPending} disabled={flow.quote.isError} onClick={flow.goToPayment}>
-        {flow.paymentMode === 'CASH'
-          ? 'Demander la place'
-          : flow.requiresDriverApproval
-            ? `Demander ma place pour ${formatFcfa(flow.plan.depositAmount)}`
-            : `${flow.paymentMode === 'MOMO_FULL' ? 'Payer' : 'Bloquer ma place pour'} ${formatFcfa(flow.plan.depositAmount)}`}
-        <ArrowRight className="size-5" aria-hidden />
-      </Button>
+      {compact ? <StickyActionBar always>{cta}</StickyActionBar> : cta}
       <p className="text-center text-caption text-muted">
         {flow.planIsEstimate
           ? "Montants estimés : le décompte définitif s'affiche à l'étape suivante, avant tout paiement."

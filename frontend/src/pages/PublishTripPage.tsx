@@ -32,6 +32,8 @@ import { ErrorState } from '@/components/ui/states'
 import { StepIndicator } from '@/components/feedback/StepIndicator'
 import { CityAutocomplete } from '@/components/trip/CityAutocomplete'
 import { PageContainer, PageHeader, SectionTitle } from '@/components/layout/PageContainer'
+import { StickyActionBar, stickyClearanceAlwaysClass } from '@/components/layout/StickyActionBar'
+import { useIsCompactShell } from '@/hooks/useMediaQuery'
 import { PageMeta } from '@/components/layout/PageMeta'
 import { VEHICLE_FORM_ID, VehicleForm } from '@/features/account/forms/VehicleForm'
 import { useAddVehicle, useMyVehicles } from '@/hooks/useAccount'
@@ -283,8 +285,37 @@ export function PublishTripPage() {
     })
   })
 
+  // Sous 768 px, Retour / Continuer / Publier vivent dans une barre collante au-dessus de la barre basse.
+  const compact = useIsCompactShell()
+  const wizardNav = (
+    <>
+      {step > 0 ? (
+        <Button type="button" variant="secondary" size="lg" onClick={goBack} className="shrink-0">
+          <ArrowLeft className="size-4" aria-hidden />
+          <span className="sr-only sm:not-sr-only">Retour</span>
+        </Button>
+      ) : null}
+      {/*
+       * Deux elements DOM distincts (`key`) : sans cela React reutilise le meme <button>
+       * et, le passage a l'etape 3 se faisant dans les microtaches du clic sur
+       * « Continuer », le navigateur executait l'action par defaut du clic sur un bouton
+       * devenu `type="submit"` : le trajet etait publie sans passer par le recapitulatif.
+       */}
+      {step < 2 ? (
+        <Button key="next" type="button" size="lg" block onClick={goNext}>
+          Continuer
+          <ArrowRight className="size-4" aria-hidden />
+        </Button>
+      ) : (
+        <Button key="submit" type="submit" size="lg" block loading={createTrip.isPending}>
+          Publier le trajet
+        </Button>
+      )}
+    </>
+  )
+
   return (
-    <PageContainer width="md" className="pb-12">
+    <PageContainer width="md" className={compact ? stickyClearanceAlwaysClass : 'pb-12'}>
       <PageMeta title="Publier un trajet" noindex />
       <PageHeader title="Publier un trajet" subtitle="Trois étapes : trajet, véhicule et prix, options." />
 
@@ -797,31 +828,8 @@ export function PublishTripPage() {
           ) : null}
         </AnimatePresence>
 
-        {/* --- Navigation de l'assistant --- */}
-        <div className="mt-5 flex gap-2">
-          {step > 0 ? (
-            <Button type="button" variant="secondary" size="lg" onClick={goBack} className="shrink-0">
-              <ArrowLeft className="size-4" aria-hidden />
-              <span className="sr-only sm:not-sr-only">Retour</span>
-            </Button>
-          ) : null}
-          {/*
-           * Deux elements DOM distincts (`key`) : sans cela React reutilise le meme <button>
-           * et, le passage a l'etape 3 se faisant dans les microtaches du clic sur
-           * « Continuer », le navigateur executait l'action par defaut du clic sur un bouton
-           * devenu `type="submit"` : le trajet etait publie sans passer par le recapitulatif.
-           */}
-          {step < 2 ? (
-            <Button key="next" type="button" size="lg" block onClick={goNext}>
-              Continuer
-              <ArrowRight className="size-4" aria-hidden />
-            </Button>
-          ) : (
-            <Button key="submit" type="submit" size="lg" block loading={createTrip.isPending}>
-              Publier le trajet
-            </Button>
-          )}
-        </div>
+        {/* --- Navigation de l'assistant : dans le formulaire (le bouton submit y reste rattache) --- */}
+        {compact ? <StickyActionBar always>{wizardNav}</StickyActionBar> : <div className="mt-5 flex gap-2">{wizardNav}</div>}
       </form>
 
       {/* Ajout d'un vehicule sans quitter la publication : selectionne automatiquement une fois cree. */}

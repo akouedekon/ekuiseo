@@ -9,6 +9,7 @@
  * changement de route (voir usePageTitle / announceRouteChange).
  */
 import { useEffect } from 'react'
+import { setScreenTitle } from '@/components/layout/screenStore'
 
 export const SITE_NAME = 'Ekuiseo'
 export const DEFAULT_DESCRIPTION =
@@ -36,6 +37,11 @@ export function PageMeta({
   useEffect(() => {
     window.dispatchEvent(new CustomEvent(PAGE_TITLE_EVENT, { detail: computed }))
   }, [computed])
+  // Titre court pour la barre haute de l application (AppTopBar) ; efface au demontage de l ecran.
+  useEffect(() => {
+    setScreenTitle(title ?? null)
+    return () => setScreenTitle(null)
+  }, [title])
   return (
     <>
       <title>{computed}</title>

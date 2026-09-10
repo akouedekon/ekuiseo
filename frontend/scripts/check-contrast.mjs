@@ -79,6 +79,7 @@ const PAIRS = [
   ['accent-ink', 'surface', 4.5, 'encre accent sur une carte'],
   // Texte sur teinte pleine (boutons)
   ['primary-contrast', 'primary', 4.5, 'texte des boutons primaires'],
+  ['primary', 'bg', 4.5, 'onglet actif de la barre basse (libelle 11 px, gras)'],
   ['accent-contrast', 'accent', 4.5, 'texte sur accent plein'],
   ['danger-contrast', 'danger', 4.5, 'texte des boutons danger'],
   // Composants d'interface (bordures, anneaux, icones) : 3:1

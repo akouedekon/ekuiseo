@@ -278,7 +278,7 @@ export function TripDetailPage() {
             <Card>
               <Link
                 to={`/drivers/${data.driver.id}`}
-                className="flex items-center gap-3 p-4 transition-colors hover:bg-surface-2"
+                className="flex items-center gap-3 p-4 transition-colors hover:bg-surface-2 active:bg-surface-2"
               >
                 <Avatar
                   firstName={data.driver.firstName}
