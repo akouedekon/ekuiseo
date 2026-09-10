@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
 import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
@@ -13,7 +14,8 @@ const execFileAsync = promisify(execFile)
  * deux jours, verifier un compte mobile money. Jamais utilise pour verifier un resultat
  * (les assertions passent par l ecran, comme un utilisateur).
  */
-const ROOT = resolve(__dirname, '..', '..')
+// Le projet e2e est en modules ES : pas de __dirname, on part de l URL du module.
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const COMPOSE_FILES = (process.env.COMPOSE_FILES ?? '-f docker-compose.yml -f docker-compose.e2e.yml').split(/\s+/)
 
 interface DbConfig {
