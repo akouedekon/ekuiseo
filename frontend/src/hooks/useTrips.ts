@@ -5,11 +5,16 @@ import type {
   BookingResponse,
   CreateTripRequest,
   DeclineBookingRequest,
+  LivePositionRequest,
+  LivePositionResponse,
+  LiveSharingResponse,
   Page,
+  PublicLiveResponse,
   TripBookingResponse,
   TripResponse,
   TripType,
 } from '@/api/types'
+import { LIVE_REFRESH_INTERVAL_MS } from '@/lib/liveTracking'
 
 export interface TripSearchParams {
   originLat: number
@@ -217,5 +222,64 @@ export function useRespondToBooking() {
         invalidateTripListings(queryClient)
       }
     },
+  })
+}
+
+/* ------------------------------------------------------------ Suivi en direct (V23) */
+
+/**
+ * GET /api/v1/trips/{id}/live : derniere position du vehicule, pour le conducteur et ses
+ * passagers. Interroge toutes les 10 s tant que `live` est vrai (fenetre du trajet ouverte
+ * et partage actif), jamais en arriere-plan. Un 403 (visiteur sans reservation) est
+ * definitif : pas de reessai.
+ */
+export function useTripLive(tripId: string | undefined, options: { enabled?: boolean; live?: boolean } = {}) {
+  const enabled = (options.enabled ?? true) && !!tripId
+  return useQuery<LivePositionResponse>({
+    queryKey: ['trips', tripId, 'live'],
+    queryFn: ({ signal }) => apiClient.get<LivePositionResponse>(`/api/v1/trips/${tripId}/live`, { signal }),
+    enabled,
+    staleTime: 5_000,
+    refetchInterval: (query) => (options.live && query.state.data?.enabled ? LIVE_REFRESH_INTERVAL_MS : false),
+    refetchIntervalInBackground: false,
+  })
+}
+
+/** PUT /api/v1/trips/{id}/live { enabled } : le conducteur active ou coupe le partage. */
+export function useSetLiveSharing() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ tripId, enabled }: { tripId: string; enabled: boolean }) =>
+      apiClient.put<LiveSharingResponse>(`/api/v1/trips/${tripId}/live`, { enabled }),
+    onSuccess: (_result, { tripId }) => {
+      queryClient.invalidateQueries({ queryKey: ['trips', tripId, 'live'] })
+    },
+  })
+}
+
+/** POST /api/v1/trips/{id}/live/positions : une position du conducteur (202, sans corps). Jamais de reessai : la suivante arrive dans 10 s. */
+export function usePostLivePosition() {
+  return useMutation({
+    mutationFn: ({ tripId, position }: { tripId: string; position: LivePositionRequest }) =>
+      apiClient.post<void>(`/api/v1/trips/${tripId}/live/positions`, position),
+    retry: false,
+  })
+}
+
+/**
+ * GET /api/v1/live/{token} : suivi public, sans compte. Interroge toutes les 10 s tant que
+ * le trajet n est pas termine ; un 404 (lien coupe ou expire) est definitif.
+ */
+export function usePublicLive(token: string | undefined) {
+  return useQuery<PublicLiveResponse>({
+    queryKey: ['live', token],
+    queryFn: ({ signal }) => apiClient.get<PublicLiveResponse>(`/api/v1/live/${token}`, { auth: false, signal }),
+    enabled: !!token,
+    staleTime: 5_000,
+    refetchInterval: (query) => {
+      const status = query.state.data?.tripStatus
+      return status && status !== 'COMPLETED' && status !== 'CANCELLED' ? LIVE_REFRESH_INTERVAL_MS : false
+    },
+    refetchIntervalInBackground: false,
   })
 }
