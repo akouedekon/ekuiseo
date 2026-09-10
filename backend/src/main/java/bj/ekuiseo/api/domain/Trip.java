@@ -105,6 +105,19 @@ public class Trip {
     @Column(name = "reminder_sent_at")
     private Instant reminderSentAt;
 
+    /** Suivi en direct (V23) : partage de position active par le conducteur. */
+    @Column(name = "live_sharing_enabled", nullable = false)
+    @Builder.Default
+    private boolean liveSharingEnabled = false;
+
+    /** Jeton du lien public de suivi (/live/{token}), genere a la premiere activation, efface apres le trajet. */
+    @Column(name = "live_share_token", length = 64)
+    private String liveShareToken;
+
+    /** Horodatage de la derniere position recue (TripLiveService), pour la fraicheur sans lire trip_positions. */
+    @Column(name = "last_position_at")
+    private Instant lastPositionAt;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;

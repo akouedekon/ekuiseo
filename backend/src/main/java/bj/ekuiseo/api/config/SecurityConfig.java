@@ -51,6 +51,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/trips/search", "/api/v1/trips/*", "/api/v1/trips/*/stops").permitAll()
                         // Apercu de partage (Open Graph) servi aux robots WhatsApp/Facebook (ShareController, constat F341).
                         .requestMatchers(HttpMethod.GET, "/share/trips/*").permitAll()
+                        // Suivi en direct par jeton (TripLiveController, V23) : un proche du passager suit le
+                        // vehicule sans compte ; le jeton est le secret, quota par IP dans RateLimitingFilter.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/live/*").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/users/*", "/api/v1/users/*/reviews").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/geo/search", "/api/v1/geo/places").permitAll()
                         // Rapports d erreur du navigateur (ClientErrorController, constat F440) : ils doivent

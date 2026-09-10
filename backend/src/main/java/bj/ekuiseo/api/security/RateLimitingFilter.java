@@ -51,6 +51,10 @@ import java.util.regex.Pattern;
  *       60 / 60 s / IP (endpoints publics, une requete PostGIS chacun - constats F025/F416).</li>
  *   <li>{@code msg:} POST /api/v1/bookings/{id}/messages : 30 / 10 min / utilisateur (constat F547).</li>
  *   <li>{@code alert:} POST /api/v1/trip-alerts : 10 / 10 min / utilisateur (constat F524).</li>
+ *   <li>{@code live:} POST /api/v1/trips/{id}/live/positions : 120 / 60 s / utilisateur (suivi en
+ *       direct, V23 : le navigateur envoie au plus une position toutes les 10 s).</li>
+ *   <li>{@code live-public:} GET /api/v1/live/{token} : 120 / 60 s / IP (lien public de suivi,
+ *       interroge toutes les 10 s par chaque proche derriere un meme NAT).</li>
  * </ul>
  * Toute reponse 429 porte {@code Retry-After} : secondes avant que la plus ancienne requete
  * de la fenetre n en sorte (constat F542).</p>
@@ -68,6 +72,10 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     private static final String ALERTS_PATH = "/api/v1/trip-alerts";
     /** Rapports d erreur du navigateur (ClientErrorController) : public, donc borne par IP. */
     private static final String CLIENT_ERRORS_PATH = "/api/v1/client-errors";
+    /** Positions du conducteur (TripLiveController, V23) : par utilisateur. */
+    private static final Pattern LIVE_POSITIONS_PATH = Pattern.compile("^/api/v1/trips/[^/]+/live/positions$");
+    /** Suivi public par jeton (TripLiveController, V23) : public, donc borne par IP. */
+    private static final Pattern PUBLIC_LIVE_PATH = Pattern.compile("^/api/v1/live/[^/]+$");
     private static final long IDLE_ENTRY_TTL_MILLIS = 3_600_000L; // 1h : purge des cles inactives
 
     private final int authMaxRequests;
@@ -84,6 +92,10 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     private final long alertWindowMillis;
     private final int clientErrorsMaxRequests;
     private final long clientErrorsWindowMillis;
+    private final int liveMaxRequests;
+    private final long liveWindowMillis;
+    private final int livePublicMaxRequests;
+    private final long livePublicWindowMillis;
     /** Null dans les tests unitaires du filtre : les quotas par utilisateur retombent alors sur l IP. */
     @Nullable
     private final JwtService jwtService;
@@ -99,7 +111,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     public RateLimitingFilter(int authMaxRequests, long authWindowSeconds, int webhookMaxRequests, long webhookWindowSeconds,
                               int otpMaxRequests, long otpWindowSeconds) {
         this(null, authMaxRequests, authWindowSeconds, webhookMaxRequests, webhookWindowSeconds, otpMaxRequests, otpWindowSeconds,
-                60, 60, 30, 600, 10, 600, 30, 600);
+                60, 60, 30, 600, 10, 600, 30, 600, 120, 60, 120, 60);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -117,7 +129,11 @@ public class RateLimitingFilter extends OncePerRequestFilter {
                               @Value("${ekuiseo.rate-limit.alert.max-requests:10}") int alertMaxRequests,
                               @Value("${ekuiseo.rate-limit.alert.window-seconds:600}") long alertWindowSeconds,
                               @Value("${ekuiseo.rate-limit.client-errors.max-requests:30}") int clientErrorsMaxRequests,
-                              @Value("${ekuiseo.rate-limit.client-errors.window-seconds:600}") long clientErrorsWindowSeconds) {
+                              @Value("${ekuiseo.rate-limit.client-errors.window-seconds:600}") long clientErrorsWindowSeconds,
+                              @Value("${ekuiseo.rate-limit.live.max-requests:120}") int liveMaxRequests,
+                              @Value("${ekuiseo.rate-limit.live.window-seconds:60}") long liveWindowSeconds,
+                              @Value("${ekuiseo.rate-limit.live-public.max-requests:120}") int livePublicMaxRequests,
+                              @Value("${ekuiseo.rate-limit.live-public.window-seconds:60}") long livePublicWindowSeconds) {
         this.jwtService = jwtService;
         this.authMaxRequests = authMaxRequests;
         this.authWindowMillis = authWindowSeconds * 1000L;
@@ -133,6 +149,10 @@ public class RateLimitingFilter extends OncePerRequestFilter {
         this.alertWindowMillis = alertWindowSeconds * 1000L;
         this.clientErrorsMaxRequests = clientErrorsMaxRequests;
         this.clientErrorsWindowMillis = clientErrorsWindowSeconds * 1000L;
+        this.liveMaxRequests = liveMaxRequests;
+        this.liveWindowMillis = liveWindowSeconds * 1000L;
+        this.livePublicMaxRequests = livePublicMaxRequests;
+        this.livePublicWindowMillis = livePublicWindowSeconds * 1000L;
     }
 
     @Override
@@ -193,6 +213,12 @@ public class RateLimitingFilter extends OncePerRequestFilter {
         }
         if ("POST".equals(method) && path.equals(CLIENT_ERRORS_PATH)) {
             return new Quota("errors:", clientIp(request), clientErrorsMaxRequests, clientErrorsWindowMillis);
+        }
+        if ("POST".equals(method) && LIVE_POSITIONS_PATH.matcher(path).matches()) {
+            return new Quota("live:", userOrIp(request), liveMaxRequests, liveWindowMillis);
+        }
+        if ("GET".equals(method) && PUBLIC_LIVE_PATH.matcher(path).matches()) {
+            return new Quota("live-public:", clientIp(request), livePublicMaxRequests, livePublicWindowMillis);
         }
         return null;
     }
