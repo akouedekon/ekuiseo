@@ -106,6 +106,27 @@ Points structurants :
   (`BookingExpiryScheduler`) → `CANCELLED_BY_DRIVER`, places libérées, **acompte remboursé intégralement**,
   passager notifié `BOOKING_DECLINED` ; le passager peut se retirer sans frais tant que le conducteur n'a pas répondu.
   `paymentPlan.paymentStatus` vaut alors `AWAITING_DRIVER` et `paymentPlan.approvalDeadlineAt` porte l'échéance.
+- **Suivi en direct (V23, `TripLiveController` / `TripLiveService`)** — le conducteur partage sa position pendant le
+  trajet, ses passagers la voient sur la carte, un proche la suit par un lien public à jeton.
+  - `PUT /api/v1/trips/{id}/live` `{ enabled }` — réservé au conducteur, trajet `PUBLISHED` / `FULL` / `ONGOING` :
+    active ou coupe le partage. Le jeton public (32 octets aléatoires en base64url) est généré à la première
+    activation et conservé tant que le trajet vit (couper puis reprendre garde le même lien). Réponse
+    `{ enabled, shareToken, sharePath: "/live/{token}", lastPositionAt }`. Journal `TRIP_LIVE_SHARING_ENABLED` /
+    `TRIP_LIVE_SHARING_DISABLED`.
+  - `POST /api/v1/trips/{id}/live/positions` `{ lat, lng, heading?, speedKmh?, accuracyM?, recordedAt? }` — 202 sans
+    corps ; réservé au conducteur ; 400 si le partage n'est pas activé ou si le trajet est hors fenêtre (d'une heure
+    avant le départ jusqu'au statut `COMPLETED` / `CANCELLED` exclu). Un `recordedAt` en avance de plus d'une minute
+    est ramené à l'instant de réception. Quota `live:` : 120 / min / conducteur.
+  - `GET /api/v1/trips/{id}/live` — conducteur, ou passager avec une réservation `CONFIRMED` / `COMPLETED` /
+    `PENDING_DRIVER_APPROVAL` (403 sinon) : `{ enabled, position | null, staleSeconds, tripStatus, departureAt,
+    shareToken }` ; `staleSeconds` est l'âge de la position mesuré côté serveur (le front n'a pas à comparer
+    l'horloge du conducteur à la sienne).
+  - `GET /api/v1/live/{token}` — **public** (`permitAll`, quota `live-public:` 120 / min / IP) : origine et
+    destination (libellés et coordonnées), départ, statut, **prénom** du conducteur, véhicule (marque, modèle,
+    couleur), dernière position et son âge. Rien d'autre : ni nom, ni téléphone, ni plaque, ni identifiants. 404
+    si le jeton est inconnu, si le partage est coupé, ou si le trajet est terminé / annulé depuis plus de 6 h.
+  - Rétention : positions supprimées après 24 h, partage coupé et jeton effacé sur les trajets terminés ou
+    annulés depuis 24 h (`RetentionScheduler`, `TRIP_POSITIONS_RETENTION_HOURS`, `docs/CONFORMITE.md` 3.2).
 
 ### Admin (`/api/v1/admin/**`, `ROLE_ADMIN`)
 Depuis F237, `GET /admin/users`, `GET /admin/reports` et `GET /admin/payouts` renvoient une `Page` Spring

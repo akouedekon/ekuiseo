@@ -73,6 +73,7 @@ sont des propositions à faire valider.
 | Comptes mobile money des conducteurs (`payment_accounts`) | Reversement des sommes encaissées | Opérateur, numéro, statut de vérification | Exécution du contrat | Interne (back-office), opérateur mobile money lors du virement | Vie du compte ; masqué à l'anonymisation | Numéro vérifié (égal au numéro du compte ou validé par l'administration), plafond 3 comptes |
 | Reversements (`driver_payouts`) | Paiement des conducteurs | Montant, destination (opérateur, numéro), référence de virement, statut | Exécution du contrat ; obligations comptables | Interne ; opérateur mobile money | Obligations comptables | Lots audités, transitions d'état contrôlées |
 | Vérification d'identité (`identity_verifications`) | Confiance, lutte contre la fraude | Type et numéro de pièce déclarés, statut, motif de refus | Intérêt légitime (à confirmer : consentement ?) | Interne (modération) | Jusqu'à la décision puis 4 derniers caractères (3.2) | Numéro masqué dans les journaux et l'audit, resoumission bornée, badge révocable |
+| Position en direct (`trip_positions`, V23) | Suivi du véhicule pendant le trajet par les passagers confirmés et, par lien à jeton, par un proche du passager | Coordonnées, cap, vitesse, précision et horodatage des positions envoyées par le navigateur du conducteur ; jeton du lien public | Consentement du conducteur (interrupteur explicite, révocable à tout moment) ; exécution du contrat pour les passagers | Passagers confirmés du trajet ; toute personne détenant le lien (prénom du conducteur, véhicule, axe et position seulement) | 24 h (3.2) ; jeton effacé après le trajet | Fenêtre limitée (1 h avant le départ → fin du trajet), jeton aléatoire de 32 octets, 404 dès l'arrêt du partage ou 6 h après la fin, quotas par utilisateur et par IP, activation journalisée |
 | Pièces d'identité téléversées (`identity_documents`, V20) | Contrôle de la pièce déclarée par la modération | Photos ou PDF du recto, du verso et d'un selfie avec la pièce (type et taille en base ; contenu chiffré sur disque) | Intérêt légitime (à confirmer : consentement ?) | Interne (modération), chaque consultation journalisée (`ADMIN_IDENTITY_DOCUMENT_VIEWED`) | 30 jours après la décision (3.2) ; immédiatement à l'anonymisation | Chiffrement AES-256-GCM au repos (clé hors dépôt), nom de fichier aléatoire, type contrôlé par les octets, 5 Mo max, jamais mis en cache ni exporté en clair, accès réservé à ROLE_ADMIN et journalisé |
 | Abonnements Web Push (`push_subscriptions`, V20) | Notifications sur le navigateur de l'utilisateur | Endpoint du service push du navigateur, clés de chiffrement du navigateur, agent utilisateur | Exécution du contrat ; préférence `notify_by_push` désactivable | Service push du navigateur (Google, Mozilla, Apple : ils ne voient qu'un message chiffré) | Vie du compte ; supprimés à l'anonymisation, à la déconnexion (appareil) ou dès que le service push les déclare expirés | Contenu chiffré de bout en bout (RFC 8291), au plus 3 appareils par compte, endpoint réduit à son origine dans les journaux |
 | Géolocalisation des trajets et recherches | Recherche et mise en relation | Coordonnées origine/destination demandées et publiées | Exécution du contrat | Interne | Trajets : vie du compte ; recherches : 180 jours | Aucune position en temps réel : uniquement des points saisis |
@@ -107,6 +108,7 @@ applicables aux litiges liés au transport.
 | Numéro de pièce d'identité | Jusqu'à la décision du modérateur, puis tronqué aux 4 derniers caractères | À vérifier après la phase 2 (`AdminVerificationService`) ; en attendant, supprimé à l'anonymisation |
 | Pièces d'identité téléversées | Chiffrées au repos ; supprimées 30 jours après la décision (validation ou refus) et immédiatement à l'anonymisation ; accès journalisé | Implémentée (`RetentionScheduler`, `IDENTITY_DOCUMENTS_RETENTION_DAYS`, `IdentityDocumentService`) |
 | Abonnements Web Push | Vie du compte ; retirés à la déconnexion de l'appareil, à l'anonymisation, ou dès que le service push répond 404/410 | Implémentée (`PushSubscriptionService`, `NotificationDispatcher`) |
+| Positions en direct (`trip_positions`, V23) | 24 h après la mesure ; partage coupé et jeton public effacé sur les trajets terminés ou annulés depuis 24 h ; supprimées avec le trajet | Implémentée (`RetentionScheduler`, `TRIP_POSITIONS_RETENTION_HOURS`) |
 | Messages | 180 jours après le départ du trajet, sauf signalement ouvert | Implémentée (`MESSAGES_RETENTION_DAYS`) |
 | Notifications | 180 jours | Implémentée (`NOTIFICATIONS_RETENTION_DAYS`) |
 | Trace des recherches | 180 jours | Implémentée (`SEARCH_EVENTS_RETENTION_DAYS`) |
@@ -114,6 +116,35 @@ applicables aux litiges liés au transport.
 | Journal d'audit | Quelques années (objectif de preuve interne) | Hypothèse, aucune purge |
 | Journaux techniques | 3 fichiers de 10 Mo par service (Docker) ; journaux d'accès du nginx de l'hôte selon `logrotate` système | Implémentée (rotation), durée en jours non garantie |
 | Sauvegardes | 7 quotidiennes + 4 hebdomadaires (35 jours au plus) | Implémentée (`scripts/backup.sh`) |
+
+### 3.3 Position en direct (V23)
+
+Le conducteur peut, pendant un trajet, partager la position de son téléphone avec ses
+passagers ; ceux-ci peuvent transmettre un lien de suivi à un proche. C'est une donnée de
+localisation : elle est traitée avec les garde-fous suivants.
+
+- **Finalité** : rassurer les passagers et leurs proches sur l'avancement du trajet (heure
+  d'arrivée estimée, retard), et rien d'autre. Les positions ne servent ni à la tarification,
+  ni à la modération, ni à des statistiques.
+- **Base** : consentement du conducteur, matérialisé par un interrupteur explicite sur son
+  trajet (« Partager ma position en direct »), désactivable à tout moment ; l'activation et
+  la désactivation sont journalisées (`TRIP_LIVE_SHARING_ENABLED` / `_DISABLED`). Le partage
+  n'est jamais activé par défaut, ni par un administrateur.
+- **Fenêtre** : le serveur refuse toute position en dehors de la fenêtre du trajet — d'une
+  heure avant le départ jusqu'à la fin (`COMPLETED` / `CANCELLED`). Aucun suivi hors trajet.
+- **Destinataires** : les passagers ayant une réservation active sur ce trajet (authentifiés),
+  et toute personne détenant le lien public `/live/{token}`. Ce lien ne révèle que le prénom
+  du conducteur, le véhicule (marque, modèle, couleur), l'axe, l'heure de départ et la
+  dernière position : ni nom, ni téléphone, ni plaque, ni identifiant technique.
+- **Jeton révocable** : 32 octets aléatoires (`SecureRandom`, base64url), impossible à
+  deviner, non indexé (`noindex`). Le lien cesse de répondre (404) dès que le conducteur coupe
+  le partage, et au plus tard 6 h après la fin ou l'annulation du trajet ; le jeton est effacé
+  par la purge nocturne. Les lectures publiques sont limitées par IP.
+- **Durée de conservation : 24 h** après la mesure (`TRIP_POSITIONS_RETENTION_HOURS`,
+  `RetentionScheduler`), suppression en cascade avec le trajet. Seule la dernière position
+  est affichée ; l'historique n'est jamais exporté ni exposé.
+- **À faire valider par le juriste** : la base légale retenue (consentement) et la mention à
+  ajouter dans la politique de confidentialité et l'écran d'activation.
 
 ## 4. Droits des personnes — état d'implémentation
 
