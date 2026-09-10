@@ -217,8 +217,9 @@ jobs:
 
   e2e:
     name: Tests de bout en bout (Playwright)
-    # Constats F435/F143 (phase 6) : quatre parcours reels (inscription + code, recherche et
-    # reservation en especes, publication, annulation) contre la pile Docker de dev
+    # Constats F435/F143 (phase 6) : parcours reels (inscription + code, recherche et reservation
+    # en especes, publication, annulation, litige conducteur absent, accord conducteur,
+    # reversement) contre la pile Docker de dev
     # (docker-compose.yml + docker-compose.e2e.yml : Kkiapay simule, codes de connexion
     # journalises en clair) et le jeu de demonstration + e2e/seed-e2e.sql.
     # NON BLOQUANT au premier passage : `continue-on-error: true` a retirer une fois le job
