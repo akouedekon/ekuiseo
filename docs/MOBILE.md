@@ -251,7 +251,27 @@ déjà dans `mobile/.gitignore`) et ajouter un job macOS au workflow (`runs-on: 
 `xcodebuild -workspace ios/App/App.xcworkspace -scheme App`), en gardant à l'esprit que les
 minutes macOS coûtent dix fois celles d'Ubuntu.
 
-## 9. Limites connues
+## 9. Fonctions natives de l'application
+
+Le site détecte qu'il tourne dans l'application (`window.Capacitor`, voir `frontend/src/lib/native.ts`)
+et adapte son comportement, sans seconde base de code :
+
+| Fonction | Dans l'application | Dans un navigateur |
+|---|---|---|
+| Apparence | classe `app-native` : zones sûres (encoche, barre d'état), pas de surlignage au toucher ni de menu d'appui long, pas de rebond, pied de page et bandeau « installer » masqués, mise à jour appliquée sans demander | comportement web habituel |
+| Barre d'état | couleurs du thème clair/sombre (`@capacitor/status-bar`) | — |
+| Bouton Retour (Android) | recule dans l'historique ; quitte l'application depuis un écran racine (`@capacitor/app`) | — |
+| Position | greffon `@capacitor/geolocation` et API du WebView ; permission demandée au premier usage | API Geolocation |
+| Pièces d'identité | « Prendre la photo » et « Galerie » via `@capacitor/camera` (permissions CAMERA et lecture des images) | sélecteur de fichiers |
+| Partage d'un trajet ou du suivi | feuille de partage native (`@capacitor/share`) | `navigator.share` ou copie du lien |
+| Vibrations | confirmation de réservation, constat de trajet (`@capacitor/haptics`) | — |
+| Clavier | le WebView se redimensionne avec le clavier (`@capacitor/keyboard`) | — |
+
+Les greffons sont déclarés **des deux côtés** avec la même version majeure : dans `frontend/package.json`
+(la partie JavaScript, importée à la demande) et dans `mobile/package.json` (la partie native, enregistrée
+par `npx cap sync android`). Ajouter un greffon = les deux fichiers, puis `cap sync`.
+
+## 10. Limites connues
 
 - **Pas de Web Push dans l'application Android.** Le WebView Android exécute le service worker
   mais n'implémente pas l'API Push : l'abonnement proposé dans les réglages de la PWA ne
@@ -268,10 +288,8 @@ minutes macOS coûtent dix fois celles d'Ubuntu.
 - **Position** : demandée par Android au premier usage de la géolocalisation dans la page ;
   l'utilisateur doit accepter deux fois (invite Android, puis — selon la version du WebView —
   invite du site). Aucun accès en arrière-plan.
-- **Photos de pièces d'identité** : par le sélecteur de fichiers (galerie, gestionnaire de
-  fichiers). Sans permission `CAMERA`, la prise de vue directe depuis le sélecteur n'est pas
-  proposée sur tous les appareils : si les conducteurs réclament « prendre la photo
-  maintenant », ajouter la permission et une justification dans la fiche Play.
+- **Photos de pièces d'identité** : prise de vue et galerie natives (voir § 9) ; la permission
+  `CAMERA` est déclarée, à justifier dans le questionnaire de la fiche Play (vérification d'identité).
 - **Bouton Retour** : navigue dans l'historique du WebView, puis quitte l'application à la
   racine (comportement Capacitor par défaut).
 - **Paiement Kkiapay** : le widget s'ouvre dans la page comme dans Chrome ; à valider sur un

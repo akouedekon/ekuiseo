@@ -48,11 +48,19 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <!--
-        Position : le suivi en direct et la recherche « autour de moi » passent par l API
-        Geolocation du navigateur ; le WebView Capacitor ne la relaie a Android que si
-        ces permissions sont declarees (demandees a l utilisateur au premier usage).
-        Pas de CAMERA : les pieces d identite passent par le selecteur de fichiers.
+        Position : suivi en direct et ecran « Autour de moi » (greffon @capacitor/geolocation,
+        et API Geolocation du WebView) ; demandee a l utilisateur au premier usage, jamais en
+        arriere-plan.
     -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!--
+        Appareil photo et galerie (greffon @capacitor/camera) : photos des pieces d identite
+        prises ou choisies dans l application (frontend lib/native.ts, pickPhoto). Sur
+        Android 13+, la galerie passe par READ_MEDIA_IMAGES ; en dessous, par READ_EXTERNAL_STORAGE.
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 </manifest>

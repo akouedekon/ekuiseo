@@ -1,3 +1,4 @@
+import { syncStatusBar } from '@/lib/native'
 export type ThemeMode = 'light' | 'dark' | 'system'
 
 const STORAGE_KEY = 'ekuiseo.theme'
@@ -26,6 +27,8 @@ export function applyTheme(mode: ThemeMode): void {
   document.documentElement.classList.toggle('dark', dark)
   const meta = document.querySelector('meta[name="theme-color"]')
   if (meta) meta.setAttribute('content', dark ? '#0d0d0f' : '#0e7c4a')
+  // Application native : la barre d etat prend les couleurs du theme (sans effet ailleurs).
+  void syncStatusBar(dark)
 }
 
 export function storeTheme(mode: ThemeMode): void {

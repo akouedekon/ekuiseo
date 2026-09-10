@@ -39,6 +39,7 @@ import { useTheme } from '@/hooks/useTheme'
 import { cn } from '@/lib/cn'
 import { CONTACT_EMAIL, LEGAL_PAGES } from '@/lib/legal'
 import { pageVariants } from '@/lib/motion'
+import { isNativeApp } from '@/lib/native'
 import { preloadPages } from '@/lib/lazyPage'
 import { transitionKeyOf } from '@/lib/navigation'
 import { AccountSuspendedPage } from '@/pages/SystemPages'
@@ -183,7 +184,7 @@ export function AppShell() {
         Aller au contenu
       </a>
 
-      <header className="ek-glass sticky top-0 z-40 border-b border-rule">
+      <header className="ek-glass app-safe-top sticky top-0 z-40 border-b border-rule">
         <div className="mx-auto flex h-16 max-w-[1200px] items-center gap-3 px-4 sm:px-6">
           <Link to="/" className="shrink-0 rounded-[var(--radius-control)]" aria-label="Ekuiseo, accueil">
             <Logo size={32} className="[&>span]:hidden sm:[&>span]:flex" />
@@ -373,8 +374,9 @@ export function AppShell() {
         )}
       </main>
 
-      <SiteFooter />
-      <PwaInstallBanner />
+      {/* Dans l application, les textes legaux vivent dans « Compte » et l installation n a pas de sens. */}
+      {!isNativeApp() ? <SiteFooter /> : <div className="pb-24 md:pb-0" aria-hidden />}
+      {!isNativeApp() ? <PwaInstallBanner /> : null}
       <BottomNav unreadMessages={authed ? unreadMessages : 0} />
     </div>
   )

@@ -492,6 +492,38 @@
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
+  /*
+   * Application Android/iOS (classe posee par lib/native.ts) : ce qui distingue une
+   * application d une page web dans la main. Pas de surlignage bleu au toucher, pas de
+   * menu contextuel sur un appui long (sauf champs de saisie), pas de rebond de page,
+   * zone sure en haut (encoche, barre d etat) sur l en-tete, et sous la barre basse.
+   */
+  html.app-native {
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
+  html.app-native body {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    overscroll-behavior-y: none;
+  }
+  html.app-native input,
+  html.app-native textarea,
+  html.app-native [contenteditable],
+  html.app-native .selectable {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  html.app-native .app-safe-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  /* Le defilement reste fluide mais sans effet « page web » : barres d ascenseur masquees. */
+  html.app-native ::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+
   /* Squelettes de chargement : balayage lent, jamais clignotant. */
   .shimmer {
     position: relative;

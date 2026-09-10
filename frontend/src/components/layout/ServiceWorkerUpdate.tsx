@@ -2,6 +2,7 @@ import { useIsMutating } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { toast } from 'sonner'
 import { useRegisterSW } from 'virtual:pwa-register/react'
+import { isNativeApp } from '@/lib/native'
 
 const TOAST_ID = 'sw-update'
 
@@ -26,6 +27,11 @@ export function ServiceWorkerUpdate() {
   useEffect(() => {
     if (!needRefresh) {
       toast.dismiss(TOAST_ID)
+      return
+    }
+    // Application native : une app se met a jour d elle-meme, des qu aucune action n est en vol.
+    if (isNativeApp() && mutating === 0) {
+      void updateServiceWorker(true)
       return
     }
     toast.message('Une nouvelle version est disponible', {

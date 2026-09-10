@@ -2,6 +2,7 @@ import { Check, Share2 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { Button, type ButtonProps } from '@/components/ui/button'
+import { shareNative } from '@/lib/native'
 
 const COPIED_FEEDBACK_MS = 2000
 
@@ -36,10 +37,8 @@ export function ShareTripButton({
     // BASE_URL porte le sous-chemin de publication eventuel (ex. /ekuiseo/ sur la vitrine).
     const url = `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, '')}${path}`
     try {
-      if (typeof navigator.share === 'function') {
-        await navigator.share({ title, text, url })
-        return
-      }
+      // Feuille de partage de l application (WhatsApp en tete), ou navigator.share ; sinon copie.
+      if (await shareNative({ title, text, url })) return
       await navigator.clipboard.writeText(url)
       setCopied(true)
       toast.success('Lien copié', { description: 'Collez-le dans votre groupe WhatsApp.' })

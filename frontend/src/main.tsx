@@ -18,6 +18,7 @@ import '@fontsource/inter/latin-700.css'
 
 import { queryClient, createPersister, createPersistOptions } from '@/lib/queryClient'
 import { installGlobalErrorHandlers } from '@/lib/monitoring'
+import { initNativeShell } from '@/lib/native'
 import { applyTheme, readStoredTheme } from '@/lib/theme'
 import { restoreSession } from '@/hooks/useAuth'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
@@ -30,6 +31,9 @@ installGlobalErrorHandlers()
 
 // Le theme est applique avant le premier rendu pour eviter tout clignotement.
 applyTheme(readStoredTheme())
+
+// Application Android/iOS (Capacitor) : classe app-native, barre d etat, bouton retour.
+void initNativeShell()
 
 // Session rouverte depuis le cookie HttpOnly (POST /auth/refresh) : lancee avant le
 // premier rendu pour que la garde de route voie « restauration en cours » et non « deconnecte ».

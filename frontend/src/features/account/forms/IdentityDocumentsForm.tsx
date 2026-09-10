@@ -1,4 +1,4 @@
-import { FileText, ImagePlus, Trash2, UploadCloud } from 'lucide-react'
+import { Camera, FileText, ImagePlus, Images, Trash2, UploadCloud } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { IdentityDocumentSummary } from '@/api/extended'
@@ -17,6 +17,7 @@ import {
   type IdentityDocumentSide,
 } from '@/lib/identityDocuments'
 import { prepareIdentityDocument } from '@/lib/imageReduction'
+import { isNativeApp, pickPhoto, type PhotoSource } from '@/lib/native'
 
 /** Statuts dans lesquels les pieces se deposent, se remplacent et se suppriment (le serveur exige PENDING). */
 export const IDENTITY_DOCUMENTS_ALLOWED: ReadonlySet<string> = new Set(['PENDING'])
@@ -102,6 +103,17 @@ function DocumentSlot({
     )
   }
 
+  // Application Android/iOS : appareil photo et galerie natifs (lib/native.ts) plutot que le champ fichier.
+  const native = isNativeApp()
+  const chooseNative = async (source: PhotoSource) => {
+    try {
+      const file = await pickPhoto(source)
+      if (file) await choose(file)
+    } catch {
+      toast.error(source === 'camera' ? "L'appareil photo n'est pas disponible." : "La galerie n'est pas disponible.")
+    }
+  }
+
   const busy = preparing || upload.isPending || remove.isPending
   const Icon = existing ? (isImageType(existing.contentType) ? ImagePlus : FileText) : UploadCloud
 
@@ -162,10 +174,25 @@ function DocumentSlot({
               event.target.value = ''
             }}
           />
-          <Button size="sm" variant={existing ? 'secondary' : 'primary'} loading={preparing || upload.isPending} disabled={busy} onClick={() => inputRef.current?.click()}>
-            <UploadCloud aria-hidden />
-            {existing ? 'Remplacer' : side === 'SELFIE' ? 'Prendre la photo' : 'Ajouter'}
-          </Button>
+          {native ? (
+            <>
+              <Button size="sm" variant={existing ? 'secondary' : 'primary'} loading={preparing || upload.isPending} disabled={busy} onClick={() => void chooseNative('camera')}>
+                <Camera aria-hidden />
+                {existing ? 'Reprendre' : 'Prendre la photo'}
+              </Button>
+              {side !== 'SELFIE' ? (
+                <Button size="sm" variant="secondary" disabled={busy} onClick={() => void chooseNative('photos')}>
+                  <Images aria-hidden />
+                  Galerie
+                </Button>
+              ) : null}
+            </>
+          ) : (
+            <Button size="sm" variant={existing ? 'secondary' : 'primary'} loading={preparing || upload.isPending} disabled={busy} onClick={() => inputRef.current?.click()}>
+              <UploadCloud aria-hidden />
+              {existing ? 'Remplacer' : side === 'SELFIE' ? 'Prendre la photo' : 'Ajouter'}
+            </Button>
+          )}
           {existing ? (
             <Button size="sm" variant="ghost" className="text-danger-ink" disabled={busy} onClick={() => setConfirmDelete(true)}>
               <Trash2 aria-hidden />

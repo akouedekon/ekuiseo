@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/api/client'
+import { hapticSuccess } from '@/lib/native'
 import { isTransientError } from '@/lib/errors'
 import { estimatePaymentPlan } from '@/lib/payments'
 import { invalidateTripListings } from '@/hooks/useTrips'
@@ -46,6 +47,7 @@ export function useCreateBooking(tripId: string) {
     mutationFn: (input: CreateBookingRequest) =>
       apiClient.post<BookingResponse>(`/api/v1/trips/${tripId}/bookings`, input),
     onSuccess: () => {
+      void hapticSuccess()
       queryClient.invalidateQueries({ queryKey: ['bookings'] })
       queryClient.invalidateQueries({ queryKey: ['trips', tripId] })
       // Les places affichees dans les resultats de recherche viennent de changer (audit F153).
@@ -90,6 +92,9 @@ export function useConfirmTripDone() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (bookingId: string) => apiClient.post<BookingResponse>(`/api/v1/bookings/${bookingId}/trip-done`),
+    onSuccess: () => {
+      void hapticSuccess()
+    },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['bookings'] })
     },
