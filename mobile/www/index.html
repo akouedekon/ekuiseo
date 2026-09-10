@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0E7C4A" />
+    <title>Ekuiseo — connexion nécessaire</title>
+    <!--
+      Page de secours de l application mobile Ekuiseo.
+      Elle n est affichee que si https://ekuiseo.com est injoignable (voir
+      `server.errorPath` dans capacitor.config.ts), typiquement au tout premier
+      lancement sans reseau : le service worker de la PWA n a pas encore de cache.
+      Aucune dependance, aucun script externe : elle doit s afficher hors ligne.
+    -->
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f6f6f3;
+        --surface: #ffffff;
+        --ink: #15161a;
+        --muted: #6b6b70;
+        --primary: #0e7c4a;
+        --primary-ink: #ffffff;
+        --rule: #e6e5e0;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0d0d0f;
+          --surface: #151518;
+          --ink: #f0efeb;
+          --muted: #979690;
+          --primary: #4ccb8f;
+          --primary-ink: #0d0d0f;
+          --rule: #27272c;
+        }
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        padding-top: max(24px, env(safe-area-inset-top));
+        padding-bottom: max(24px, env(safe-area-inset-bottom));
+        background: var(--bg);
+        color: var(--ink);
+        font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        -webkit-text-size-adjust: 100%;
+      }
+      main {
+        width: 100%;
+        max-width: 420px;
+        padding: 32px 24px;
+        border: 1px solid var(--rule);
+        border-radius: 16px;
+        background: var(--surface);
+        text-align: center;
+      }
+      .mark {
+        width: 64px;
+        height: 64px;
+        margin: 0 auto 20px;
+        display: block;
+      }
+      h1 { margin: 0 0 8px; font-size: 22px; line-height: 1.25; }
+      p { margin: 0 0 16px; color: var(--muted); }
+      button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 48px;
+        width: 100%;
+        padding: 0 20px;
+        border: 0;
+        border-radius: 12px;
+        background: var(--primary);
+        color: var(--primary-ink);
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:active { opacity: 0.85; }
+      small { display: block; margin-top: 16px; color: var(--muted); font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+        <rect width="32" height="32" rx="9" fill="#0E7C4A" />
+        <path d="M9 8h14v3.5H12.5v2.75H18v3.5h-5.5v2.75H23V24H9z M18 12.5 24.5 16 18 19.5z" fill="#FFFFFF" />
+      </svg>
+      <h1>Connexion nécessaire</h1>
+      <p>
+        Ekuiseo n a pas pu joindre ses serveurs. Vérifiez vos données mobiles ou le Wi-Fi,
+        puis réessayez : une fois l application ouverte une première fois, elle fonctionne
+        aussi avec un réseau dégradé.
+      </p>
+      <button type="button" onclick="window.location.replace('https://ekuiseo.com/')">Réessayer</button>
+      <small>Covoiturage interurbain et navettes quotidiennes au Bénin.</small>
+    </main>
+  </body>
+</html>
