@@ -26,10 +26,10 @@ jobs:
     # (src/test/resources/application-it.yml) porte sa propre configuration.
     steps:
       - name: Recuperer le code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Installer le JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -45,7 +45,7 @@ jobs:
 
       - name: Publier les rapports de tests
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backend-test-reports
           path: |
@@ -74,10 +74,10 @@ jobs:
         working-directory: frontend
     steps:
       - name: Recuperer le code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Installer Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -141,7 +141,7 @@ jobs:
           exit $status
 
       - name: Publier le build (dist/)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-dist
           path: frontend/dist/
@@ -176,22 +176,22 @@ jobs:
       PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     steps:
       - name: Recuperer le code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Configurer Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # GITHUB_TOKEN suffit pour publier dans le registre du depot ; aucun secret a creer.
       - name: Se connecter a GitHub Container Registry
         if: env.PUSH == 'true'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Construire (et publier) l'image backend
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./backend
           push: ${{ env.PUSH == 'true' }}
@@ -202,7 +202,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=backend
 
       - name: Construire (et publier) l'image frontend
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./frontend
           push: ${{ env.PUSH == 'true' }}
@@ -235,10 +235,10 @@ jobs:
       COMPOSE_FILES: -f docker-compose.yml -f docker-compose.e2e.yml
     steps:
       - name: Recuperer le code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Installer Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -274,7 +274,7 @@ jobs:
 
       - name: Publier le rapport et les traces
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-playwright
           path: |
