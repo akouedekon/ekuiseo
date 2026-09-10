@@ -110,7 +110,15 @@ Points structurants :
 - `POST /api/v1/bookings/{id}/trip-done`, `POST /api/v1/bookings/{id}/driver-no-show` `{ details? }` — constat du
   passager après le départ (V21) : le trajet a eu lieu, ou le conducteur n'est pas venu (jusqu'à 24 h après le départ ;
   au-delà, confirmation tacite). Un conducteur déclaré absent fait passer la réservation `DRIVER_NO_SHOW` — exclue des
-  reversements — et ouvre un signalement `NO_SHOW` lié à la réservation ; la modération décide du remboursement.
+  reversements — et ouvre un signalement `NO_SHOW` lié à la réservation. **V25** : une échéance de remboursement
+  automatique est posée (déclaration + 24 h, `DRIVER_NO_SHOW_CONTEST_HOURS`) ; sans contestation du conducteur, l acompte
+  est remboursé intégralement par `BookingExpiryScheduler` (`driver_no_show_resolution = REFUND_PASSENGER`, acteur système).
+- `POST /api/v1/bookings/{id}/contest-driver-no-show` `{ details }` — le conducteur conteste l absence déclarée (V25,
+  explication obligatoire) : remboursement gelé, signalement passé `IN_REVIEW`, passager prévenu (`NO_SHOW_CONTESTED`) ;
+  la modération tranche ensuite (voir `POST /admin/reports/{id}/no-show-decision`). Les réponses de réservation portent
+  `driverNoShowRefundDueAt`, `driverNoShowContestedAt`, `driverNoShowResolution`, `driverNoShowResolvedAt`, et
+  `BookingDetailResponse.refund` (`{status: PENDING|MANUAL|REFUNDED, amountFcfa, requestedAt, refundedAt}`) dit au
+  passager où en est son argent.
 - `POST /api/v1/bookings/{id}/accept`, `POST /api/v1/bookings/{id}/decline` `{ reason? }` — réponse du conducteur à une
   demande sur un trajet sans réservation immédiate (`trips.instant_booking = false`, V19, point n.13 de l'audit / F048).
   Le passager paie d'abord (acompte ou espèces), la réservation passe `PENDING_DRIVER_APPROVAL` avec
@@ -147,6 +155,11 @@ Depuis F237, `GET /admin/users`, `GET /admin/reports` et `GET /admin/payouts` re
 (`createdAt`/`requestedAt` décroissant), `?status=` en filtre pour les signalements et les reversements.
 - `GET/POST /api/v1/admin/users?q=&page=&size=`, `/{id}/suspend`, `/{id}/reinstate`, `/{id}/verify-identity`, `PATCH /{id}/contact`
 - `POST /api/v1/admin/vehicles/{id}/verify`
+- `POST /api/v1/admin/reports/{id}/no-show-decision` `{ decision: REFUND_PASSENGER | PAY_DRIVER, note }` — décision d un
+  dossier « conducteur absent » (V25) : remboursement intégral de l acompte, ou trajet maintenu (réservation `COMPLETED`,
+  reversée au conducteur). Clôt le signalement (`RESOLVED`, note conservée), prévient les deux parties
+  (`NO_SHOW_DISPUTE_RESOLVED`), 409 si déjà tranché. `AdminReportResponse.noShowDispute` expose l acompte en jeu, l échéance
+  automatique, la version du conducteur et l issue.
 - `GET /api/v1/admin/reports?status=&page=&size=`, `POST /api/v1/admin/reports/{id}/resolve`
 - `GET /api/v1/admin/payouts?status=&page=&size=`, `POST /api/v1/admin/payouts/run`, `POST /api/v1/admin/payouts/{id}/settle`
 - `GET /api/v1/admin/stats?from=...&to=...`
@@ -283,6 +296,8 @@ Toutes ont une valeur par défaut sûre pour le développement (voir `applicatio
 | `OTP_RATE_LIMIT_MAX_REQUESTS` / `OTP_RATE_LIMIT_WINDOW_MINUTES` | `3` / `10` | anti-spam des demandes d'OTP, par numéro |
 | `SEARCH_ALERT_RADIUS_KM` | `10` | rayon de correspondance géographique des alertes de recherche |
 | `PAYOUT_MIN_THRESHOLD_FCFA` | `2000` | solde minimum pour qu'un conducteur soit inclus dans un lot de reversement |
+| `PAYOUT_AUTO_BATCH_ENABLED` / `PAYOUT_AUTO_BATCH_CRON` | `true` / `0 0 6 * * MON` | lot de reversement hebdomadaire automatique (`PayoutScheduler`, V25), heure du Bénin ; le virement reste manuel |
+| `DRIVER_NO_SHOW_CONTEST_HOURS` | `24` | délai laissé au conducteur déclaré absent pour contester avant le remboursement automatique de l acompte (V25) |
 | `SUBSCRIPTION_PRICE_FCFA` | `2000` | prix mensuel de l'abonnement conducteur |
 | `RATE_LIMIT_AUTH_MAX` / `RATE_LIMIT_AUTH_WINDOW_SECONDS` | `20` / `60` | limite de débit sur `/api/v1/auth/**` |
 | `RATE_LIMIT_WEBHOOK_MAX` / `RATE_LIMIT_WEBHOOK_WINDOW_SECONDS` | `120` / `60` | limite de débit sur le webhook Kkiapay |
@@ -306,7 +321,7 @@ Toutes ont une valeur par défaut sûre pour le développement (voir `applicatio
 9. Annulation conducteur tardive (< 24h avant le départ) : incrémente `lateCancellationsCount`, utilisé pour la modération des conducteurs peu fiables.
 10. Rappel automatique la veille du départ (SMS + in-app), envoyé une fois par trajet, scanné chaque heure sur une fenêtre glissante [23h, 25h).
 11. Abonnement conducteur : **2 000 FCFA/mois** (`ekuiseo.subscription.price-fcfa`) → commission ramenée à **0 %** pendant la période active.
-12. Reversements conducteurs (corrigée par la règle n.21) : montant net = `booking.depositAmount - booking.serviceFee` en `MOMO_DEPOSIT`, `booking.amount - booking.serviceFee` en `MOMO_FULL` (jamais les espèces, déjà payées directement au conducteur) — la plateforme ne redistribue jamais plus qu'elle n'a réellement encaissé en ligne. Seuil minimum **2 000 FCFA** (`ekuiseo.payout.minimum-threshold-fcfa`) pour être inclus dans un lot.
+12. Reversements conducteurs (corrigée par la règle n.21) : montant net = `booking.depositAmount - booking.serviceFee` en `MOMO_DEPOSIT`, `booking.amount - booking.serviceFee` en `MOMO_FULL` (jamais les espèces, déjà payées directement au conducteur) — la plateforme ne redistribue jamais plus qu'elle n'a réellement encaissé en ligne. Seuil minimum **2 000 FCFA** (`ekuiseo.payout.minimum-threshold-fcfa`) pour être inclus dans un lot. Depuis V25 le lot se constitue seul chaque lundi 6 h (`PayoutScheduler`, acteur système, conducteur prévenu par `PAYOUT_PREPARED`) ; le bouton « Lancer un lot » du back-office reste disponible pour un lot hors calendrier. Une réservation `DRIVER_NO_SHOW` n est jamais reversée tant que le dossier n est pas tranché `PAY_DRIVER`.
 13. Alertes de recherche : notification dès la publication d'un trajet correspondant, rayon **10 km** par défaut (`ekuiseo.search-alert.radius-km`) autour de l'origine ET de la destination de l'alerte.
 14. Limitation de débit : **20 requêtes/60s/IP** sur `/api/v1/auth/**`, **120/60s/IP** sur le webhook Kkiapay (voir §8 pour les limites de cette implémentation).
 15. Signalements : cible exactement un utilisateur OU un trajet, statuts `OPEN → REVIEWING → ACTION_TAKEN|DISMISSED`.

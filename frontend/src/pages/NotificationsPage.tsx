@@ -80,6 +80,10 @@ const PRESENTATION: Partial<Record<NotificationType, { icon: LucideIcon; tone: k
   REPORT_RECEIVED: { icon: Bell, tone: 'warning', title: 'Signalement reçu' },
   REPORT_RESOLVED: { icon: Flag, tone: 'info', title: 'Signalement traité' },
   BOOKING_NO_SHOW: { icon: UserX, tone: 'danger', title: 'Absence signalée' },
+  DRIVER_NO_SHOW_REPORTED: { icon: UserX, tone: 'danger', title: 'Un passager signale votre absence' },
+  NO_SHOW_CONTESTED: { icon: Flag, tone: 'warning', title: 'Le conducteur conteste' },
+  NO_SHOW_DISPUTE_RESOLVED: { icon: Flag, tone: 'info', title: 'Dossier « conducteur absent » tranché' },
+  PAYOUT_PREPARED: { icon: Wallet, tone: 'info', title: 'Reversement préparé' },
   IDENTITY_APPROVED: { icon: ShieldCheck, tone: 'success', title: 'Identité vérifiée' },
   IDENTITY_REJECTED: { icon: ShieldOff, tone: 'danger', title: 'Vérification refusée' },
   IDENTITY_REVOKED: { icon: ShieldOff, tone: 'danger', title: 'Badge d’identité retiré' },
@@ -232,6 +236,34 @@ function describe(notification: NotificationResponse): string {
     }
     case 'PAYOUT_FAILED':
       return `Le virement de votre reversement n'a pas abouti${str('reason') ? ` : ${str('reason')}` : ''}. Vérifiez votre compte mobile money ou écrivez au support.`
+    case 'DRIVER_NO_SHOW_REPORTED': {
+      const until = str('contestUntil')
+      const deposit = num('depositAmountFcfa')
+      return `Un passager déclare que vous n'étiez pas au départ${route ? ` de ${route}` : ''}. ${
+        until ? `Contestez avant le ${when(until)}` : 'Contestez sous 24 h'
+      } depuis la liste des passagers si vous avez bien effectué le trajet ; sinon son acompte${deposit ? ` de ${formatFcfa(deposit)}` : ''} lui est remboursé.`
+    }
+    case 'NO_SHOW_CONTESTED':
+      return `Le conducteur${route ? ` du trajet ${route}` : ''} conteste l'absence que vous avez déclarée. Le remboursement de votre acompte est suspendu le temps que la modération examine les deux versions.`
+    case 'NO_SHOW_DISPUTE_RESOLVED': {
+      const refund = str('decision') === 'REFUND_PASSENGER'
+      const deposit = num('depositAmountFcfa')
+      const amount = deposit ? ` de ${formatFcfa(deposit)}` : ''
+      if (bool('forPassenger')) {
+        return refund
+          ? `Absence du conducteur retenue${route ? ` sur ${route}` : ''} : votre acompte${amount} vous est remboursé.`
+          : `La modération retient que le trajet${route ? ` ${route}` : ''} a bien eu lieu : votre acompte${amount} reste acquis au conducteur.`
+      }
+      return refund
+        ? `Absence retenue${route ? ` sur ${route}` : ''} : l'acompte${amount} est remboursé au passager, cette place ne vous est pas reversée.`
+        : `Trajet${route ? ` ${route}` : ''} maintenu : la réservation contestée rejoint votre prochain reversement.`
+    }
+    case 'PAYOUT_PREPARED': {
+      const amount = num('amountFcfa')
+      return `${amount ? `Un reversement de ${formatFcfa(amount)}` : 'Un reversement'} est préparé${
+        str('destination') ? ` vers votre compte mobile money ${str('destination')}` : ''
+      }. Le virement suit dans les jours qui viennent.`
+    }
     case 'REPORT_RECEIVED':
       return 'Un signalement vous concernant a été reçu par la modération.'
     case 'REPORT_RESOLVED':
@@ -307,7 +339,15 @@ function targetOf(notification: NotificationResponse): string | null {
     case 'SUBSCRIPTION_EXPIRED':
     case 'PAYOUT_SETTLED':
     case 'PAYOUT_FAILED':
+    case 'PAYOUT_PREPARED':
       return '/me?tab=earnings'
+    case 'DRIVER_NO_SHOW_REPORTED':
+      // Le conducteur conteste depuis la liste des passagers de son trajet.
+      return '/trips/mine'
+    case 'NO_SHOW_CONTESTED':
+      return '/bookings'
+    case 'NO_SHOW_DISPUTE_RESOLVED':
+      return bool('forPassenger') ? '/bookings' : '/trips/mine'
     case 'PAYOUT_ACCOUNT_MISSING':
       return '/me?tab=payment'
     case 'IDENTITY_APPROVED':

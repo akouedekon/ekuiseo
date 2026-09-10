@@ -9,12 +9,15 @@ import bj.ekuiseo.api.domain.Report;
 import bj.ekuiseo.api.domain.Trip;
 import bj.ekuiseo.api.domain.User;
 import bj.ekuiseo.api.domain.enums.BookingStatus;
+import bj.ekuiseo.api.domain.enums.NoShowResolution;
 import bj.ekuiseo.api.domain.enums.NotificationType;
 import bj.ekuiseo.api.domain.enums.PassengerConfirmation;
 import bj.ekuiseo.api.domain.enums.PaymentMethod;
+import bj.ekuiseo.api.domain.enums.ReportStatus;
 import bj.ekuiseo.api.domain.enums.TripStatus;
 import bj.ekuiseo.api.domain.enums.UserStatus;
 import bj.ekuiseo.api.dto.booking.BookingQuoteRequest;
+import bj.ekuiseo.api.dto.booking.ContestNoShowRequest;
 import bj.ekuiseo.api.mapper.BookingMapper;
 import bj.ekuiseo.api.repository.BookingRepository;
 import bj.ekuiseo.api.repository.DriverSubscriptionRepository;
@@ -29,6 +32,8 @@ import org.mockito.ArgumentCaptor;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -37,6 +42,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -60,7 +66,7 @@ class BookingServiceLifecycleTest {
             mock(TripStopRepository.class), userRepository, mock(DriverSubscriptionRepository.class),
             mock(MessageRepository.class), mock(ReviewRepository.class), reportRepository, mock(BookingMapper.class),
             new CancellationPolicy(), new DriverCancellationPolicy(), notificationService, paymentService,
-            auditService, new FeePolicy(0.08, 5, 1000), new DriverApprovalPolicy(24), 20);
+            auditService, new FeePolicy(0.08, 5, 1000), new DriverApprovalPolicy(24), 20, 24);
 
     private final User driver = User.builder().id(UUID.randomUUID()).phone("+2290197000001").firstName("Koffi").status(UserStatus.ACTIVE).build();
     private final User passenger = User.builder().id(UUID.randomUUID()).phone("+2290197000002").firstName("Awa").status(UserStatus.ACTIVE).build();
@@ -227,5 +233,146 @@ class BookingServiceLifecycleTest {
         Booking cancelled = booking(trip(TripStatus.ONGOING, Instant.now().minus(1, ChronoUnit.HOURS)), BookingStatus.CANCELLED_BY_PASSENGER);
         assertThatThrownBy(() -> service.reportDriverNoShow(cancelled.getId(), passenger.getId(), null))
                 .isInstanceOf(BadRequestException.class).hasMessageContaining("confirmee ou terminee");
+    }
+
+    /* ----------------------------------------------------------------- V25 : sort de l acompte */
+
+    @Test
+    void reportDriverNoShow_schedulesTheAutomaticRefund_afterTheContestWindow() {
+        Trip trip = trip(TripStatus.ONGOING, Instant.now().minus(2, ChronoUnit.HOURS));
+        Booking booking = booking(trip, BookingStatus.CONFIRMED);
+        when(reportRepository.save(any())).thenAnswer(invocation -> {
+            Report report = invocation.getArgument(0);
+            report.setId(UUID.randomUUID());
+            return report;
+        });
+
+        service.reportDriverNoShow(booking.getId(), passenger.getId(), null);
+
+        // Fenetre de contestation de 24 h (constructeur) : l echeance est posee, rien n est rembourse tout de suite.
+        assertThat(booking.getDriverNoShowRefundDueAt())
+                .isBetween(Instant.now().plus(24, ChronoUnit.HOURS).minusSeconds(60), Instant.now().plus(24, ChronoUnit.HOURS).plusSeconds(60));
+        assertThat(booking.getDriverNoShowResolution()).isNull();
+        verify(paymentService, never()).refundBooking(any(), anyLong(), any());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> payload = ArgumentCaptor.forClass(Map.class);
+        verify(notificationService).notifyCritical(eq(driver), eq(NotificationType.DRIVER_NO_SHOW_REPORTED), payload.capture());
+        assertThat(payload.getValue()).containsKey("contestUntil").containsEntry("depositAmountFcfa", 1000L);
+    }
+
+    private Booking declaredNoShow(Instant departureAt) {
+        Trip trip = trip(TripStatus.COMPLETED, departureAt);
+        Booking booking = booking(trip, BookingStatus.DRIVER_NO_SHOW);
+        booking.setPassengerConfirmation(PassengerConfirmation.DRIVER_NO_SHOW);
+        booking.setPassengerConfirmedAt(departureAt.plus(1, ChronoUnit.HOURS));
+        booking.setDriverNoShowRefundDueAt(departureAt.plus(25, ChronoUnit.HOURS));
+        return booking;
+    }
+
+    @Test
+    void contestDriverNoShow_freezesTheRefund_movesTheReportToReview_andWarnsThePassenger() {
+        Booking booking = declaredNoShow(Instant.now().minus(3, ChronoUnit.HOURS));
+        Report report = Report.builder().id(UUID.randomUUID()).bookingId(booking.getId()).reasonCode("NO_SHOW").build();
+        when(reportRepository.findByBookingIdAndReasonCodeAndStatusIn(eq(booking.getId()), eq("NO_SHOW"), any()))
+                .thenReturn(List.of(report));
+
+        service.contestDriverNoShow(booking.getId(), driver.getId(), new ContestNoShowRequest("  J etais a la gare a 6 h, le passager ne repondait pas.  "));
+
+        assertThat(booking.getDriverNoShowContestedAt()).isNotNull();
+        assertThat(booking.getDriverNoShowContestDetails()).isEqualTo("J etais a la gare a 6 h, le passager ne repondait pas.");
+        assertThat(booking.getStatus()).isEqualTo(BookingStatus.DRIVER_NO_SHOW);
+        assertThat(report.getStatus()).isEqualTo(ReportStatus.IN_REVIEW);
+        verify(notificationService).notify(eq(passenger), eq(NotificationType.NO_SHOW_CONTESTED), any());
+        verify(auditService).log(eq(driver.getId()), eq("BOOKING_DRIVER_NO_SHOW_CONTESTED"), eq("booking"), eq(booking.getId()), any());
+
+        // Une seule contestation, par le conducteur seulement, et sur une absence declaree.
+        assertThatThrownBy(() -> service.contestDriverNoShow(booking.getId(), driver.getId(), new ContestNoShowRequest("encore")))
+                .isInstanceOf(ConflictException.class).hasMessageContaining("deja conteste");
+        assertThatThrownBy(() -> service.contestDriverNoShow(booking.getId(), passenger.getId(), new ContestNoShowRequest("x")))
+                .isInstanceOf(ForbiddenException.class);
+        Booking honoured = booking(trip(TripStatus.COMPLETED, Instant.now().minus(3, ChronoUnit.HOURS)), BookingStatus.COMPLETED);
+        assertThatThrownBy(() -> service.contestDriverNoShow(honoured.getId(), driver.getId(), new ContestNoShowRequest("x")))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("Aucune absence");
+    }
+
+    @Test
+    void resolveDriverNoShow_automaticRefund_refundsTheWholeDeposit_closesTheReport_andTellsBothParties() {
+        Booking booking = declaredNoShow(Instant.now().minus(30, ChronoUnit.HOURS));
+        Report report = Report.builder().id(UUID.randomUUID()).bookingId(booking.getId()).reasonCode("NO_SHOW").build();
+        when(reportRepository.findByBookingIdAndReasonCodeAndStatusIn(eq(booking.getId()), eq("NO_SHOW"), any()))
+                .thenReturn(List.of(report));
+        when(paymentService.refundBooking(any(), anyLong(), any()))
+                .thenReturn(new PaymentService.RefundOutcome(PaymentService.RefundOutcome.Status.REQUESTED, "ok"));
+
+        service.resolveDriverNoShow(null, booking.getId(), NoShowResolution.REFUND_PASSENGER, null);
+
+        // Tout l acompte (seul montant encaisse), motif dedie ; la reservation reste hors reversement.
+        verify(paymentService).refundBooking(booking, 1000L, "CONDUCTEUR_ABSENT");
+        assertThat(booking.getStatus()).isEqualTo(BookingStatus.DRIVER_NO_SHOW);
+        assertThat(booking.getDriverNoShowResolution()).isEqualTo(NoShowResolution.REFUND_PASSENGER);
+        assertThat(booking.getDriverNoShowResolvedBy()).isNull();
+        assertThat(report.getStatus()).isEqualTo(ReportStatus.RESOLVED);
+        assertThat(report.getResolvedBy()).isNull();
+        assertThat(report.getResolutionNote()).contains("automatique");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> payload = ArgumentCaptor.forClass(Map.class);
+        verify(notificationService).notify(eq(passenger), eq(NotificationType.NO_SHOW_DISPUTE_RESOLVED), payload.capture());
+        assertThat(payload.getValue()).containsEntry("decision", "REFUND_PASSENGER").containsEntry("forPassenger", true)
+                .containsEntry("automatic", true).containsEntry("refundStatus", "REQUESTED");
+        verify(notificationService).notify(eq(driver), eq(NotificationType.NO_SHOW_DISPUTE_RESOLVED), any());
+        verify(auditService).log(isNull(), eq("BOOKING_DRIVER_NO_SHOW_RESOLVED"), eq("booking"), eq(booking.getId()), any());
+
+        // Un dossier tranche ne se rejoue pas, et ne se conteste plus.
+        assertThatThrownBy(() -> service.resolveDriverNoShow(UUID.randomUUID(), booking.getId(), NoShowResolution.PAY_DRIVER, "x"))
+                .isInstanceOf(ConflictException.class).hasMessageContaining("deja tranche");
+        assertThatThrownBy(() -> service.contestDriverNoShow(booking.getId(), driver.getId(), new ContestNoShowRequest("trop tard")))
+                .isInstanceOf(ConflictException.class).hasMessageContaining("deja tranche");
+    }
+
+    @Test
+    void resolveDriverNoShow_payDriver_makesTheBookingPayableAgain_withoutAnyRefund() {
+        Booking booking = declaredNoShow(Instant.now().minus(30, ChronoUnit.HOURS));
+        booking.setDriverNoShowContestedAt(Instant.now().minus(20, ChronoUnit.HOURS));
+        UUID adminId = UUID.randomUUID();
+        User admin = User.builder().id(adminId).firstName("Modo").build();
+        when(userRepository.findById(adminId)).thenReturn(Optional.of(admin));
+        Report report = Report.builder().id(UUID.randomUUID()).bookingId(booking.getId()).reasonCode("NO_SHOW")
+                .status(ReportStatus.IN_REVIEW).build();
+        when(reportRepository.findByBookingIdAndReasonCodeAndStatusIn(eq(booking.getId()), eq("NO_SHOW"), any()))
+                .thenReturn(List.of(report));
+
+        service.resolveDriverNoShow(adminId, booking.getId(), NoShowResolution.PAY_DRIVER, "Captures des messages : le passager a renonce.");
+
+        // COMPLETED = statut reversable (PayoutService#PAYABLE_STATUSES) ; le constat du passager reste trace.
+        assertThat(booking.getStatus()).isEqualTo(BookingStatus.COMPLETED);
+        assertThat(booking.getPassengerConfirmation()).isEqualTo(PassengerConfirmation.DRIVER_NO_SHOW);
+        assertThat(booking.getDriverNoShowResolution()).isEqualTo(NoShowResolution.PAY_DRIVER);
+        assertThat(booking.getDriverNoShowResolvedBy()).isEqualTo(adminId);
+        verify(paymentService, never()).refundBooking(any(), anyLong(), any());
+        assertThat(report.getStatus()).isEqualTo(ReportStatus.RESOLVED);
+        assertThat(report.getResolvedBy()).isSameAs(admin);
+        assertThat(report.getResolutionNote()).isEqualTo("Captures des messages : le passager a renonce.");
+        verify(notificationService).notify(eq(passenger), eq(NotificationType.NO_SHOW_DISPUTE_RESOLVED), any());
+        verify(notificationService).notify(eq(driver), eq(NotificationType.NO_SHOW_DISPUTE_RESOLVED), any());
+    }
+
+    @Test
+    void resolveDriverNoShow_refusesABookingWithoutADeclaredAbsence_orWithoutDecision() {
+        Booking booking = booking(trip(TripStatus.COMPLETED, Instant.now().minus(30, ChronoUnit.HOURS)), BookingStatus.COMPLETED);
+        assertThatThrownBy(() -> service.resolveDriverNoShow(UUID.randomUUID(), booking.getId(), NoShowResolution.REFUND_PASSENGER, "x"))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("Aucune absence");
+        Booking declared = declaredNoShow(Instant.now().minus(30, ChronoUnit.HOURS));
+        assertThatThrownBy(() -> service.resolveDriverNoShow(UUID.randomUUID(), declared.getId(), null, "x"))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("obligatoire");
+        verify(paymentService, never()).refundBooking(any(), anyLong(), any());
+    }
+
+    @Test
+    void findDriverNoShowRefundsDue_delegatesToTheRepository() {
+        Instant now = Instant.now();
+        UUID id = UUID.randomUUID();
+        when(bookingRepository.findDriverNoShowRefundsDue(now)).thenReturn(List.of(id));
+
+        assertThat(service.findDriverNoShowRefundsDue(now)).containsExactly(id);
     }
 }

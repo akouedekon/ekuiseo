@@ -44,7 +44,7 @@ class BookingServiceQuoteTest {
         return new BookingService(mock(BookingRepository.class), tripRepository, mock(bj.ekuiseo.api.repository.TripStopRepository.class), mock(UserRepository.class),
                 driverSubscriptionRepository, mock(MessageRepository.class), mock(bj.ekuiseo.api.repository.ReviewRepository.class), mock(bj.ekuiseo.api.repository.ReportRepository.class), mock(BookingMapper.class),
                 new CancellationPolicy(), new DriverCancellationPolicy(), mock(NotificationService.class),
-                mock(PaymentService.class), mock(AuditService.class), REAL_FEE_POLICY, new DriverApprovalPolicy(24), 20);
+                mock(PaymentService.class), mock(AuditService.class), REAL_FEE_POLICY, new DriverApprovalPolicy(24), 20, 24);
     }
 
     private Trip publishedTrip(UUID driverId, long pricePerSeat, int seatsAvailable) {

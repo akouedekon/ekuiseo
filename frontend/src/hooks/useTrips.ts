@@ -233,6 +233,21 @@ export function useTripPassengers(tripId: string | null) {
   })
 }
 
+/**
+ * POST /api/v1/bookings/{id}/contest-driver-no-show { details } (V25) : le conducteur conteste
+ * l absence declaree par un passager. Le remboursement automatique est gele, la moderation tranche.
+ */
+export function useContestDriverNoShow() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ bookingId, details }: { bookingId: string; tripId: string; details: string }) =>
+      apiClient.post<BookingResponse>(`/api/v1/bookings/${bookingId}/contest-driver-no-show`, { details: details.trim() }),
+    onSuccess: (_result, { tripId }) => {
+      queryClient.invalidateQueries({ queryKey: ['trips', tripId, 'passengers'] })
+    },
+  })
+}
+
 /** POST /api/v1/bookings/{id}/no-show : le conducteur signale l absence d un passager (jusqu a 48 h apres le depart). */
 export function useMarkNoShow() {
   const queryClient = useQueryClient()

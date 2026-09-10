@@ -82,8 +82,23 @@ GitHub Actions, cible de déploiement : VPS Hostinger.
     après le départ, le passager confirme que le trajet a eu lieu (`POST /bookings/{id}/trip-done`)
     ou déclare le conducteur absent (`POST /bookings/{id}/driver-no-show`, jusqu à 24 h après le
     départ) ; sans réponse sous 24 h, confirmation tacite. Un conducteur déclaré absent fait
-    passer la réservation en `DRIVER_NO_SHOW` : hors reversement, signalement `NO_SHOW` ouvert
-    pour la modération, qui décide du remboursement de l acompte (jamais automatique).
+    passer la réservation en `DRIVER_NO_SHOW` : hors reversement, signalement `NO_SHOW` ouvert.
+12. **Sort de l argent quand la course n a pas lieu (V25)** : l utilisateur qui a payé est
+    remboursé, le conducteur qui a roulé est payé — sans intervention humaine dans le cas
+    normal. Annulation par le conducteur, refus ou délai d accord dépassé, expiration :
+    remboursement intégral automatique (`RefundService`, déjà en place). Conducteur déclaré
+    absent : échéance `bookings.driver_no_show_refund_due_at` = déclaration + 24 h
+    (`ekuiseo.booking.driver-no-show-contest-hours`) ; le conducteur peut **contester**
+    (`POST /bookings/{id}/contest-driver-no-show`, explication obligatoire) → remboursement gelé,
+    signalement en examen ; sans contestation à l échéance, `BookingExpiryScheduler` rembourse
+    l acompte intégralement (`driver_no_show_resolution = REFUND_PASSENGER`, `resolved_by` NULL) ;
+    la modération peut trancher à tout moment (`POST /admin/reports/{id}/no-show-decision`
+    `{decision, note}`) : `REFUND_PASSENGER` ou `PAY_DRIVER` (la réservation redevient
+    `COMPLETED` et rejoint le prochain reversement). **Reversements** : lot constitué
+    automatiquement chaque lundi 6 h (`PayoutScheduler`, `ekuiseo.payout.auto-batch-cron`,
+    désactivable), conducteur prévenu (`PAYOUT_PREPARED`) ; le virement mobile money reste
+    manuel (`settle` / `fail` depuis `/admin/payouts`) faute d API de décaissement Kkiapay
+    confirmée. Le passager voit le sort de son argent (`BookingDetailResponse.refund`).
 10. **Abonnement conducteur** : 2 000 FCFA/mois, commission ramenée à 0 %.
 
 ## Conventions
@@ -93,7 +108,7 @@ GitHub Actions, cible de déploiement : VPS Hostinger.
   Classement par distance de détour, écart horaire et note du conducteur.
 - Erreurs HTTP en **RFC 7807** (`ProblemDetail`).
 - Migrations Flyway **numérotées à la suite**. Ne jamais modifier une migration déjà
-  écrite — V1 à V24 existent (la prochaine est V25).
+  écrite — V1 à V25 existent (la prochaine est V26).
 - Le front ne recalcule jamais un montant pour une réservation existante : il lit le
   `paymentPlan` renvoyé par l'API. Les estimations locales sont autorisées **avant**
   création, et doivent être affichées comme telles.
@@ -385,8 +400,11 @@ s'interprète pas.
   clés VAPID `PUSH_VAPID_PUBLIC_KEY` / `PUSH_VAPID_PRIVATE_KEY` ; vides = désactivé proprement),
   service worker maison `src/sw.ts` (`injectManifest`), abonnement par appareil depuis les réglages.
   Sur iPhone, seul un site installé sur l'écran d'accueil peut s'abonner.
-- Le décaissement effectif des reversements est manuel (référence de virement et échec
-  consignés depuis le back-office).
+- Les lots de reversement se constituent seuls chaque lundi (`PayoutScheduler`, V25), mais le
+  décaissement effectif reste manuel : le fondateur fait le virement mobile money depuis son
+  compte marchand puis marque le lot « réglé » (référence) ou « en échec » dans `/admin/payouts`.
+  Aucune API de décaissement (transfert sortant) Kkiapay n a pu être confirmée ; le jour où elle
+  l est, `PayoutService#settle` est le seul point à brancher.
 - Le mode `CASH` confirme immédiatement la réservation sans validation du conducteur ; il
   n est proposé qu avec un conducteur à identité vérifiée. Une validation conducteur
   (accept/decline) reste à concevoir si la commission contournée devient un problème.

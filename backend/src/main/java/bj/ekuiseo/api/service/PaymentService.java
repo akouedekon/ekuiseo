@@ -20,6 +20,7 @@ import bj.ekuiseo.api.dto.payment.InitiatePaymentResponse;
 import bj.ekuiseo.api.dto.payment.KkiapayWebhookPayload;
 import bj.ekuiseo.api.dto.payment.PaymentClientStatus;
 import bj.ekuiseo.api.dto.payment.PaymentStatusResponse;
+import bj.ekuiseo.api.dto.payment.RefundSummaryResponse;
 import bj.ekuiseo.api.repository.BookingRepository;
 import bj.ekuiseo.api.repository.DriverSubscriptionRepository;
 import bj.ekuiseo.api.repository.PaymentRepository;
@@ -36,6 +37,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Locale;
@@ -709,6 +711,24 @@ public class PaymentService {
      * de l'acompte (ex : 50% retenus, regle metier n.7) est marque MANUAL_REQUIRED et traite par
      * le back-office.</p>
      */
+    /**
+     * Sort de l argent encaisse sur une reservation, pour le passager (V25) : le dernier paiement
+     * en cours de remboursement, a traiter a la main ou rembourse ; vide si rien n a ete decide.
+     */
+    @Transactional(readOnly = true)
+    public Optional<RefundSummaryResponse> refundSummary(UUID bookingId) {
+        return paymentRepository.findByBookingId(bookingId).stream()
+                .filter(p -> p.getStatus() == PaymentStatus.REFUND_PENDING || p.getStatus() == PaymentStatus.REFUND_MANUAL
+                        || p.getStatus() == PaymentStatus.REFUNDED)
+                .max(Comparator.comparing(p -> p.getRefundRequestedAt() != null ? p.getRefundRequestedAt() : p.getCreatedAt(),
+                        Comparator.nullsFirst(Comparator.naturalOrder())))
+                .map(p -> new RefundSummaryResponse(
+                        p.getStatus() == PaymentStatus.REFUNDED ? RefundSummaryResponse.REFUNDED
+                                : p.getStatus() == PaymentStatus.REFUND_MANUAL ? RefundSummaryResponse.MANUAL : RefundSummaryResponse.PENDING,
+                        p.getRefundAmount() != null ? p.getRefundAmount() : p.getAmount(),
+                        p.getRefundRequestedAt(), p.getRefundedAt()));
+    }
+
     @Transactional
     public RefundOutcome refundBooking(Booking booking, long refundAmountFcfa, String reason) {
         RefundService.RequestOutcome outcome = refundService.requestForBooking(booking, refundAmountFcfa, reason);

@@ -64,6 +64,15 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     List<Booking> findExpirable(@Param("status") BookingStatus status, @Param("now") Instant now);
 
     /**
+     * Conducteur declare absent, jamais conteste ni tranche, dont la fenetre de contestation est
+     * echue (V25) : l acompte est a rembourser automatiquement (BookingService#refundUncontestedDriverNoShows).
+     */
+    @Query("select b.id from Booking b where b.status = bj.ekuiseo.api.domain.enums.BookingStatus.DRIVER_NO_SHOW "
+            + "and b.driverNoShowResolution is null and b.driverNoShowContestedAt is null "
+            + "and b.driverNoShowRefundDueAt is not null and b.driverNoShowRefundDueAt < :now")
+    List<UUID> findDriverNoShowRefundsDue(@Param("now") Instant now);
+
+    /**
      * Demandes en attente de l accord du conducteur (V19) restees sans reponse : echeance
      * depassee, ou trajet deja parti (le cycle de vie ne laisse pas une demande survivre au
      * depart). Traitees comme un refus par BookingService#expireStaleApprovals.

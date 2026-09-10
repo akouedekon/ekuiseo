@@ -110,6 +110,12 @@ public class PayoutService {
         this.eligibilityDelayHours = eligibilityDelayHours;
     }
 
+    /** « +229 01 ** ** ** 01 » : la fin du numero suffit au conducteur pour reconnaitre son compte. */
+    static String maskMsisdn(String msisdn) {
+        if (msisdn == null || msisdn.length() < 4) return "";
+        return "**** " + msisdn.substring(msisdn.length() - 4);
+    }
+
     private Instant eligibilityCutoff() {
         return Instant.now().minus(eligibilityDelayHours, ChronoUnit.HOURS);
     }
@@ -132,7 +138,8 @@ public class PayoutService {
      * eligible, regroupant toutes ses reservations MoMo payees, voyagees et non encore
      * reversees). N'inclut un conducteur que si son solde atteint le seuil minimum et
      * qu il a un compte mobile money verifie par defaut ; sinon il est liste dans
-     * {@code skipped} et notifie. Declenche par l'admin (AdminPayoutController).
+     * {@code skipped} et notifie. Declenche par l admin (AdminPayoutController) ou chaque lundi
+     * par PayoutScheduler (V25, adminId null).
      */
     @Transactional
     public PayoutBatchResultResponse runWeeklyBatch(UUID adminId) {
@@ -186,6 +193,10 @@ public class PayoutService {
 
             created.add(payoutMapper.toResponse(savedPayout));
             totalAmount += amount;
+            // V25 : le conducteur sait que son argent est en route (le virement suit, depuis le back-office).
+            notificationService.notify(driver, NotificationType.PAYOUT_PREPARED,
+                    Map.of("payoutId", savedPayout.getId().toString(), "amountFcfa", amount,
+                            "tripCount", payable.size(), "destination", maskMsisdn(account.get().getPhone())));
         }
 
         auditService.log(adminId, "PAYOUT_BATCH_RUN", "driver_payout", null,

@@ -1,12 +1,14 @@
 package bj.ekuiseo.api.dto.booking;
 
 import bj.ekuiseo.api.domain.enums.BookingStatus;
+import bj.ekuiseo.api.domain.enums.NoShowResolution;
 import bj.ekuiseo.api.domain.enums.PassengerConfirmation;
 import bj.ekuiseo.api.domain.enums.ComfortLevel;
 import bj.ekuiseo.api.domain.enums.VehicleType;
 import bj.ekuiseo.api.domain.enums.PaymentMethod;
 import bj.ekuiseo.api.domain.enums.TripType;
 import bj.ekuiseo.api.dto.payment.PaymentPlanResponse;
+import bj.ekuiseo.api.dto.payment.RefundSummaryResponse;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -41,7 +43,14 @@ public record BookingDetailResponse(
         boolean reviewedByMe,
         /** Constat du passager apres le depart (V21) : PENDING (tacite apres 24 h), TRIP_DONE ou DRIVER_NO_SHOW. */
         PassengerConfirmation passengerConfirmation,
-        Instant passengerConfirmedAt
+        Instant passengerConfirmedAt,
+        /** Sort de l argent encaisse (V25) : remboursement en cours, manuel ou effectue ; null si rien n a ete decide. */
+        RefundSummaryResponse refund,
+        /** Dossier « conducteur absent » (V25) : echeance du remboursement automatique, contestation du conducteur, issue. */
+        Instant driverNoShowRefundDueAt,
+        Instant driverNoShowContestedAt,
+        NoShowResolution driverNoShowResolution,
+        Instant driverNoShowResolvedAt
 ) {
 
     public record TripSummary(

@@ -19,6 +19,7 @@ import type {
   AuditLogResponse,
   FailPayoutRequest,
   IdentityVerificationStatus,
+  NoShowDecisionRequest,
   PayoutBatchResultResponse,
   PayoutResponse,
   PayoutStatus,
@@ -138,6 +139,25 @@ export function useUpdateReportStatus() {
       apiClient.patch<AdminReportResponse>(`/api/v1/admin/reports/${id}`, { status }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'reports'] })
+      invalidateOverview(queryClient)
+    },
+  })
+}
+
+/**
+ * POST /api/v1/admin/reports/{id}/no-show-decision { decision, note } (V25) : la moderation tranche
+ * un dossier « conducteur absent » - remboursement du passager ou trajet maintenu (reversement).
+ * Le signalement est clos par le serveur ; les listes de paiements et de reversements bougent aussi.
+ */
+export function useDecideNoShow() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string } & NoShowDecisionRequest) =>
+      apiClient.post<AdminReportResponse>(`/api/v1/admin/reports/${id}/no-show-decision`, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'reports'] })
+      queryClient.invalidateQueries({ queryKey: ['admin', 'payments'] })
+      queryClient.invalidateQueries({ queryKey: ['admin', 'payouts'] })
       invalidateOverview(queryClient)
     },
   })

@@ -1,5 +1,8 @@
 package bj.ekuiseo.api.dto.report;
 
+import bj.ekuiseo.api.domain.enums.BookingStatus;
+import bj.ekuiseo.api.domain.enums.NoShowResolution;
+import bj.ekuiseo.api.domain.enums.PaymentMethod;
 import bj.ekuiseo.api.domain.enums.ReportReason;
 import bj.ekuiseo.api.domain.enums.ReportStatus;
 
@@ -34,8 +37,20 @@ public record AdminReportResponse(
         String resolutionNote,
         UUID resolvedBy,
         Instant resolvedAt,
-        long priorReportsAgainstTarget
+        long priorReportsAgainstTarget,
+        /** Dossier « conducteur absent » (V25) lie a la reservation ; null pour les autres motifs. */
+        NoShowDispute noShowDispute
 ) {
     public record PersonRef(UUID id, String firstName, String lastName) {
+    }
+
+    /**
+     * Etat du dossier « conducteur absent » : acompte en jeu, echeance du remboursement automatique,
+     * contestation du conducteur (date et version), issue (REFUND_PASSENGER / PAY_DRIVER) et qui l a
+     * prise (resolvedBy null = automatique).
+     */
+    public record NoShowDispute(UUID bookingId, BookingStatus bookingStatus, PaymentMethod paymentMethod,
+                                long depositAmountFcfa, Instant refundDueAt, Instant contestedAt, String contestDetails,
+                                NoShowResolution resolution, Instant resolvedAt, UUID resolvedBy) {
     }
 }

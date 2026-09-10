@@ -80,7 +80,7 @@ class BookingServiceDriverCancellationTest {
 
         BookingService bookingService = new BookingService(bookingRepository, tripRepository, mock(bj.ekuiseo.api.repository.TripStopRepository.class), userRepository,
                 driverSubscriptionRepository, messageRepository, mock(bj.ekuiseo.api.repository.ReviewRepository.class), mock(bj.ekuiseo.api.repository.ReportRepository.class), bookingMapper, new CancellationPolicy(), new DriverCancellationPolicy(),
-                notificationService, paymentService, auditService, feePolicy, new DriverApprovalPolicy(24), 20);
+                notificationService, paymentService, auditService, feePolicy, new DriverApprovalPolicy(24), 20, 24);
 
         bookingService.cascadeCancelForDriverTripCancellation(trip);
 
@@ -128,7 +128,7 @@ class BookingServiceDriverCancellationTest {
                 mock(DriverSubscriptionRepository.class), mock(MessageRepository.class),
                 mock(bj.ekuiseo.api.repository.ReviewRepository.class), mock(bj.ekuiseo.api.repository.ReportRepository.class), mock(BookingMapper.class),
                 new CancellationPolicy(), new DriverCancellationPolicy(), notificationService, paymentService,
-                mock(AuditService.class), new FeePolicy(0.08, 5, 1000), new DriverApprovalPolicy(24), 20);
+                mock(AuditService.class), new FeePolicy(0.08, 5, 1000), new DriverApprovalPolicy(24), 20, 24);
 
         bookingService.cascadeCancelForDriverTripCancellation(trip);
 
@@ -167,7 +167,7 @@ class BookingServiceDriverCancellationTest {
 
         BookingService bookingService = new BookingService(bookingRepository, tripRepository, mock(bj.ekuiseo.api.repository.TripStopRepository.class), userRepository,
                 driverSubscriptionRepository, messageRepository, mock(bj.ekuiseo.api.repository.ReviewRepository.class), mock(bj.ekuiseo.api.repository.ReportRepository.class), bookingMapper, new CancellationPolicy(), new DriverCancellationPolicy(),
-                notificationService, paymentService, auditService, feePolicy, new DriverApprovalPolicy(24), 20);
+                notificationService, paymentService, auditService, feePolicy, new DriverApprovalPolicy(24), 20, 24);
 
         bookingService.cascadeCancelForDriverTripCancellation(trip);
 

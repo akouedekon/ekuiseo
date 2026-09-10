@@ -21,6 +21,12 @@ export type BookingStatus =
 
 /** Constat du passager apres le depart (V21) : PENDING vaut confirmation tacite passe 24 h. */
 export type PassengerConfirmation = 'PENDING' | 'TRIP_DONE' | 'DRIVER_NO_SHOW'
+/**
+ * Issue d une declaration « conducteur absent » (V25) : acompte rembourse au passager
+ * (automatique a l echeance de la fenetre de contestation, ou decide par la moderation),
+ * ou trajet maintenu et reservation reversee au conducteur.
+ */
+export type NoShowResolution = 'REFUND_PASSENGER' | 'PAY_DRIVER'
 // Alignes sur bj.ekuiseo.api.domain.enums.PaymentMethod : MOMO_DEPOSIT (acompte,
 // defaut), MOMO_FULL (paiement integral en ligne), CASH (rien en ligne).
 export type PaymentMethod = 'MOMO_DEPOSIT' | 'MOMO_FULL' | 'CASH'
@@ -67,6 +73,11 @@ export type NotificationType =
   /* Validation conducteur (V19) : demande recue (conducteur) ou transmise (passager, forPassenger), refus ou delai depasse. */
   | 'BOOKING_REQUESTED'
   | 'BOOKING_DECLINED'
+  /* Conducteur declare absent (V21/V25) : alerte au conducteur, contestation (passager), issue (les deux), lot de reversement prepare (conducteur). */
+  | 'DRIVER_NO_SHOW_REPORTED'
+  | 'NO_SHOW_CONTESTED'
+  | 'NO_SHOW_DISPUTE_RESOLVED'
+  | 'PAYOUT_PREPARED'
 
 /** GET /api/v1/notifications/unread-count : compteur seul, rafraichi chaque minute pour la pastille. */
 export interface UnreadCountResponse {
@@ -287,6 +298,10 @@ export interface TripBookingResponse {
   createdAt: string
   /** Echeance de la reponse du conducteur (V19) ; renseignee seulement en PENDING_DRIVER_APPROVAL. */
   approvalDeadlineAt?: string | null
+  /** Conducteur declare absent (V25) : echeance du remboursement automatique, contestation, issue. */
+  driverNoShowRefundDueAt?: string | null
+  driverNoShowContestedAt?: string | null
+  driverNoShowResolution?: NoShowResolution | null
 }
 
 /** POST /api/v1/bookings/{id}/decline : motif facultatif transmis au passager. */
@@ -337,6 +352,13 @@ export interface BookingResponse {
   status: BookingStatus
   paymentMethod: PaymentMethod
   createdAt: string
+  passengerConfirmation?: PassengerConfirmation | null
+  passengerConfirmedAt?: string | null
+  /** Dossier « conducteur absent » (V25) ; absents sur une reponse d un serveur plus ancien. */
+  driverNoShowRefundDueAt?: string | null
+  driverNoShowContestedAt?: string | null
+  driverNoShowResolution?: NoShowResolution | null
+  driverNoShowResolvedAt?: string | null
 }
 
 /** POST /trips/{id}/bookings : le nom JSON attendu par le serveur est `paymentMode`. */

@@ -31,6 +31,9 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import bj.ekuiseo.api.domain.enums.NoShowResolution;
+import bj.ekuiseo.api.domain.enums.PaymentMethod;
+import bj.ekuiseo.api.dto.report.NoShowDecisionRequest;
 
 import java.time.Instant;
 import java.util.List;
@@ -65,8 +68,10 @@ class ReportServiceTest {
     private final ReportMapper reportMapper = mock(ReportMapper.class);
     private final AuditService auditService = mock(AuditService.class);
     private final NotificationService notificationService = mock(NotificationService.class);
+    private final BookingService bookingService = mock(BookingService.class);
     private final ReportService service = new ReportService(reportRepository, userRepository, tripRepository,
-            bookingRepository, conversationRepository, messageRepository, reportMapper, auditService, notificationService);
+            bookingRepository, conversationRepository, messageRepository, reportMapper, auditService, notificationService,
+            bookingService);
 
     private final User reporter = user();
     private final User driver = user();
@@ -291,5 +296,34 @@ class ReportServiceTest {
 
     private static User user() {
         return User.builder().id(UUID.randomUUID()).firstName("A").lastName("B").phone("+2290100000000").build();
+    }
+
+    /** V25 : la decision d un dossier « conducteur absent » passe par BookingService, seule source de verite. */
+    @Test
+    void decideNoShow_delegatesToBookingService_andRefusesOtherReports() {
+        UUID bookingId = UUID.randomUUID();
+        Report noShow = Report.builder().id(UUID.randomUUID()).reporter(reporter).reportedTrip(trip).bookingId(bookingId)
+                .reasonCode("NO_SHOW").status(ReportStatus.IN_REVIEW).build();
+        when(reportRepository.findById(noShow.getId())).thenReturn(Optional.of(noShow));
+        Booking booking = Booking.builder().id(bookingId).status(BookingStatus.DRIVER_NO_SHOW)
+                .passengerConfirmation(bj.ekuiseo.api.domain.enums.PassengerConfirmation.DRIVER_NO_SHOW)
+                .paymentMethod(PaymentMethod.MOMO_DEPOSIT).depositAmount(1000).amount(3000).serviceFee(240)
+                .driverNoShowContestedAt(Instant.now()).driverNoShowContestDetails("J etais la").build();
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(booking));
+
+        AdminReportResponse response = service.decideNoShow(adminId, noShow.getId(),
+                new NoShowDecisionRequest(NoShowResolution.PAY_DRIVER, "Le passager a renonce"));
+
+        verify(bookingService).resolveDriverNoShow(adminId, bookingId, NoShowResolution.PAY_DRIVER, "Le passager a renonce");
+        // Le dossier est expose a la moderation : acompte en jeu et version du conducteur.
+        assertThat(response.noShowDispute()).isNotNull();
+        assertThat(response.noShowDispute().depositAmountFcfa()).isEqualTo(1000);
+        assertThat(response.noShowDispute().contestDetails()).isEqualTo("J etais la");
+
+        Report fraud = Report.builder().id(UUID.randomUUID()).reporter(reporter).reportedUser(driver).reasonCode("FRAUD").build();
+        when(reportRepository.findById(fraud.getId())).thenReturn(Optional.of(fraud));
+        assertThatThrownBy(() -> service.decideNoShow(adminId, fraud.getId(), new NoShowDecisionRequest(NoShowResolution.REFUND_PASSENGER, "x")))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("conducteur absent");
+        verify(bookingService, never()).resolveDriverNoShow(any(), eq(fraud.getId()), any(), any());
     }
 }

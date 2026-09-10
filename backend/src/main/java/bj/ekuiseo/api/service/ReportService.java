@@ -18,6 +18,7 @@ import bj.ekuiseo.api.domain.enums.ReportStatus;
 import bj.ekuiseo.api.dto.report.AdminReportConversationResponse;
 import bj.ekuiseo.api.dto.report.AdminReportResponse;
 import bj.ekuiseo.api.dto.report.CreateReportRequest;
+import bj.ekuiseo.api.dto.report.NoShowDecisionRequest;
 import bj.ekuiseo.api.dto.report.ReportResponse;
 import bj.ekuiseo.api.dto.report.ResolveReportRequest;
 import bj.ekuiseo.api.mapper.ReportMapper;
@@ -87,12 +88,14 @@ public class ReportService {
     private final ReportMapper reportMapper;
     private final AuditService auditService;
     private final NotificationService notificationService;
+    private final BookingService bookingService;
 
     public ReportService(ReportRepository reportRepository, UserRepository userRepository,
                           TripRepository tripRepository, BookingRepository bookingRepository,
                           ConversationRepository conversationRepository, MessageRepository messageRepository,
                           ReportMapper reportMapper, AuditService auditService,
-                          NotificationService notificationService) {
+                          NotificationService notificationService, BookingService bookingService) {
+        this.bookingService = bookingService;
         this.reportRepository = reportRepository;
         this.userRepository = userRepository;
         this.tripRepository = tripRepository;
@@ -199,6 +202,23 @@ public class ReportService {
     public AdminReportResponse updateStatus(UUID adminId, UUID reportId, ReportStatus status, String resolutionNote) {
         Report report = transition(adminId, reportId, status, resolutionNote, "REPORT_STATUS_UPDATED");
         return toAdminResponse(report);
+    }
+
+    /**
+     * POST /api/v1/admin/reports/{id}/no-show-decision (V25) : la moderation tranche un dossier
+     * « conducteur absent ». Le signalement doit etre un NO_SHOW lie a une reservation ; tout le
+     * travail (remboursement ou remise en reversement, cloture du signalement, notifications)
+     * est fait par BookingService#resolveDriverNoShow, une seule source pour l automatique et
+     * le manuel.
+     */
+    @Transactional
+    public AdminReportResponse decideNoShow(UUID adminId, UUID reportId, NoShowDecisionRequest req) {
+        Report report = reportRepository.findById(reportId).orElseThrow(() -> new NotFoundException("Signalement introuvable"));
+        if (!ReportReason.NO_SHOW.name().equals(report.getReasonCode()) || report.getBookingId() == null) {
+            throw new BadRequestException("Ce signalement n est pas un dossier « conducteur absent » lie a une reservation");
+        }
+        bookingService.resolveDriverNoShow(adminId, report.getBookingId(), req.decision(), req.note());
+        return toAdminResponse(reportRepository.findById(reportId).orElse(report));
     }
 
     /** Variante historique sans note (IN_REVIEW seulement : clore exige une note). */
@@ -326,7 +346,25 @@ public class ReportService {
                 report.getReportedTrip() != null ? report.getReportedTrip().getId() : null,
                 report.getBookingId(), report.getResolutionNote(),
                 report.getResolvedBy() != null ? report.getResolvedBy().getId() : null,
-                report.getResolvedAt(), priors);
+                report.getResolvedAt(), priors, noShowDispute(report));
+    }
+
+    /**
+     * Dossier « conducteur absent » (V25) : ce que la moderation doit voir avant de trancher -
+     * l acompte en jeu, l echeance du remboursement automatique, la version du conducteur s il a
+     * conteste, et l issue. Null pour tout autre signalement.
+     */
+    private AdminReportResponse.NoShowDispute noShowDispute(Report report) {
+        if (!ReportReason.NO_SHOW.name().equals(report.getReasonCode()) || report.getBookingId() == null) {
+            return null;
+        }
+        return bookingRepository.findById(report.getBookingId())
+                .filter(b -> b.getPassengerConfirmation() == bj.ekuiseo.api.domain.enums.PassengerConfirmation.DRIVER_NO_SHOW)
+                .map(b -> new AdminReportResponse.NoShowDispute(b.getId(), b.getStatus(), b.getPaymentMethod(),
+                        b.getDepositAmount(), b.getDriverNoShowRefundDueAt(), b.getDriverNoShowContestedAt(),
+                        b.getDriverNoShowContestDetails(), b.getDriverNoShowResolution(), b.getDriverNoShowResolvedAt(),
+                        b.getDriverNoShowResolvedBy()))
+                .orElse(null);
     }
 
     private AdminReportResponse.PersonRef toPersonRef(User user) {

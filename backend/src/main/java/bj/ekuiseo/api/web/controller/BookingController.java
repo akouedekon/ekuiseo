@@ -2,6 +2,7 @@ package bj.ekuiseo.api.web.controller;
 
 import bj.ekuiseo.api.dto.booking.BookingDetailResponse;
 import bj.ekuiseo.api.dto.booking.BookingResponse;
+import bj.ekuiseo.api.dto.booking.ContestNoShowRequest;
 import bj.ekuiseo.api.dto.booking.DeclineBookingRequest;
 import bj.ekuiseo.api.dto.booking.DriverNoShowRequest;
 import bj.ekuiseo.api.dto.message.MessageResponse;
@@ -71,10 +72,16 @@ public class BookingController {
         return bookingService.confirmTripDone(id, currentUser.id());
     }
 
-    @Operation(summary = "Declarer que le conducteur n est pas venu", description = "Reserve au passager, entre l heure de depart et 24 h apres : la reservation passe DRIVER_NO_SHOW (hors reversement) et un signalement NO_SHOW est ouvert pour la moderation, qui decide du remboursement.")
+    @Operation(summary = "Declarer que le conducteur n est pas venu", description = "Reserve au passager, entre l heure de depart et 24 h apres : la reservation passe DRIVER_NO_SHOW (hors reversement) et un signalement NO_SHOW est ouvert. Sans contestation du conducteur sous 24 h, l acompte est rembourse automatiquement (V25) ; sinon la moderation tranche.")
     @PostMapping("/{id}/driver-no-show")
     public BookingResponse driverNoShow(@PathVariable UUID id, @Valid @RequestBody(required = false) DriverNoShowRequest req) {
         return bookingService.reportDriverNoShow(id, currentUser.id(), req == null ? null : req.details());
+    }
+
+    @Operation(summary = "Contester une absence declaree par un passager", description = "Reserve au conducteur du trajet (V25). La reservation est DRIVER_NO_SHOW et le dossier non tranche : le remboursement automatique de l acompte est gele et la moderation decide avec les deux versions. Explication obligatoire.")
+    @PostMapping("/{id}/contest-driver-no-show")
+    public BookingResponse contestDriverNoShow(@PathVariable UUID id, @Valid @RequestBody ContestNoShowRequest req) {
+        return bookingService.contestDriverNoShow(id, currentUser.id(), req);
     }
 
     @Operation(summary = "Annuler ma reservation", description = "Remboursement selon le bareme : integral si plus de 24h avant le depart, 50% retenus si moins de 24h, rien si apres le depart. Une demande encore en attente de l accord du conducteur s annule sans frais.")

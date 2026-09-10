@@ -3,6 +3,7 @@ package bj.ekuiseo.api.web.controller.admin;
 import bj.ekuiseo.api.domain.enums.ReportStatus;
 import bj.ekuiseo.api.dto.report.AdminReportConversationResponse;
 import bj.ekuiseo.api.dto.report.AdminReportResponse;
+import bj.ekuiseo.api.dto.report.NoShowDecisionRequest;
 import bj.ekuiseo.api.dto.report.ReportResponse;
 import bj.ekuiseo.api.dto.report.ResolveReportRequest;
 import bj.ekuiseo.api.dto.report.UpdateReportStatusRequest;
@@ -56,6 +57,12 @@ public class AdminReportController {
     @PostMapping("/{id}/resolve")
     public ReportResponse resolve(@PathVariable UUID id, @Valid @RequestBody ResolveReportRequest req) {
         return reportService.resolve(currentUser.id(), id, req);
+    }
+
+    @Operation(summary = "Trancher un dossier « conducteur absent »", description = "Signalement NO_SHOW lie a une reservation DRIVER_NO_SHOW non tranchee (V25). REFUND_PASSENGER : acompte rembourse integralement au passager. PAY_DRIVER : trajet maintenu, la reservation redevient COMPLETED et rejoint le prochain reversement. Le signalement est clos avec la note ; les deux parties sont prevenues. 409 si deja tranche.")
+    @PostMapping("/{id}/no-show-decision")
+    public AdminReportResponse decideNoShow(@PathVariable UUID id, @Valid @RequestBody NoShowDecisionRequest req) {
+        return reportService.decideNoShow(currentUser.id(), id, req);
     }
 
     @Operation(summary = "Conversations liees a un signalement", description = "Echanges prives entre l auteur et la personne visee (reservation du signalement et reservations partagees). Chaque consultation est journalisee (ADMIN_CONVERSATION_VIEWED).")

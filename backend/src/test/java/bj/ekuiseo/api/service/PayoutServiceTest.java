@@ -150,6 +150,18 @@ class PayoutServiceTest {
         assertThat(payoutCaptor.getValue().getDestinationProvider()).isEqualTo(MobileMoneyOperator.MOOV_MONEY);
         verify(userRepository, never()).findById(driverBelow);
         verify(driverPayoutItemRepository).saveAll(anyList());
+        // V25 : le conducteur est prevenu que son reversement est prepare (virement a suivre), numero masque.
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<java.util.Map<String, Object>> payload = ArgumentCaptor.forClass(java.util.Map.class);
+        verify(notificationService).notify(eq(eligibleDriver), eq(NotificationType.PAYOUT_PREPARED), payload.capture());
+        assertThat(payload.getValue()).containsEntry("amountFcfa", 2600L).containsEntry("tripCount", 2).containsEntry("destination", "**** 0001");
+    }
+
+    @Test
+    void maskMsisdn_keepsOnlyTheLastFourDigits() {
+        assertThat(PayoutService.maskMsisdn("+2290155000001")).isEqualTo("**** 0001");
+        assertThat(PayoutService.maskMsisdn(null)).isEmpty();
+        assertThat(PayoutService.maskMsisdn("12")).isEmpty();
     }
 
     @Test

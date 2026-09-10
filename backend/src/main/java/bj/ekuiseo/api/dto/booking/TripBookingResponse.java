@@ -1,6 +1,7 @@
 package bj.ekuiseo.api.dto.booking;
 
 import bj.ekuiseo.api.domain.enums.BookingStatus;
+import bj.ekuiseo.api.domain.enums.NoShowResolution;
 import bj.ekuiseo.api.domain.enums.PaymentMethod;
 
 import java.time.Instant;
@@ -27,6 +28,12 @@ public record TripBookingResponse(
         UUID dropoffStopId,
         Instant createdAt,
         /** Echeance de la reponse du conducteur (V19) ; renseignee seulement en PENDING_DRIVER_APPROVAL. */
-        Instant approvalDeadlineAt
+        Instant approvalDeadlineAt,
+        /** Conducteur declare absent (V25) : echeance du remboursement automatique si le conducteur ne conteste pas. */
+        Instant driverNoShowRefundDueAt,
+        /** Date de la contestation du conducteur ; null s il n a pas conteste. */
+        Instant driverNoShowContestedAt,
+        /** Issue du dossier (REFUND_PASSENGER, PAY_DRIVER) ; null tant qu il est ouvert. */
+        NoShowResolution driverNoShowResolution
 ) {
 }

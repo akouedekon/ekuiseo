@@ -33,6 +33,8 @@ import { EmptyState, ErrorState, ListSkeleton } from '@/components/ui/states'
 import { PageContainer, PageHeader } from '@/components/layout/PageContainer'
 import { PageMeta } from '@/components/layout/PageMeta'
 import { DepositCountdown } from '@/components/booking/Countdown'
+import { RefundStatusLine } from '@/components/booking/RefundStatusLine'
+import { describeNoShowDisputeForPassenger } from '@/lib/noShowDispute'
 import { EditTripSheet } from '@/features/trips/EditTripSheet'
 import { LiveSharingControl } from '@/features/trips/LiveSharingControl'
 import { TripPassengersSheet } from '@/features/trips/TripPassengersSheet'
@@ -215,7 +217,7 @@ export function MyTripsPage({ defaultTab = 'upcoming' }: { defaultTab?: TabKey }
           setNoShowTarget(null)
           setNoShowDetails('')
           toast.success('Absence du conducteur signalée', {
-            description: "La modération examine votre signalement et vous tiendra informé du remboursement.",
+            description: 'Sans contestation du conducteur sous 24 h, votre acompte vous est remboursé automatiquement.',
           })
         },
         onError: (error) => toast.error(describeError(error, "Le signalement n'a pas abouti.")),
@@ -449,7 +451,9 @@ export function MyTripsPage({ defaultTab = 'upcoming' }: { defaultTab?: TabKey }
         title="Le conducteur n'est pas venu ?"
         description={
           noShowTarget
-            ? `Trajet ${noShowTarget.trip.originLabel} → ${noShowTarget.trip.destLabel}. Votre réservation est mise de côté : le conducteur ne sera pas payé pour votre place, et la modération examinera votre signalement avant de décider du remboursement de votre acompte. Cette déclaration est définitive.`
+            ? `Trajet ${noShowTarget.trip.originLabel} → ${noShowTarget.trip.destLabel}. Le conducteur ne sera pas payé pour votre place. Il dispose de 24 h pour contester ; sans contestation, votre acompte${
+                noShowTarget.paymentPlan.depositAmount > 0 ? ` de ${formatFcfa(noShowTarget.paymentPlan.depositAmount)}` : ''
+              } vous est remboursé automatiquement. S'il conteste, la modération tranche avec les deux versions. Cette déclaration est définitive.`
             : undefined
         }
         tone="danger"
@@ -650,10 +654,17 @@ function BookingCard({
             </div>
           </div>
         ) : confirmation === 'driver-no-show' ? (
-          <p className="border-t border-rule px-3 py-2 text-caption text-muted">
-            Absence du conducteur signalée{booking.passengerConfirmedAt ? ` le ${formatDateTime(booking.passengerConfirmedAt)}` : ''} :
-            la modération examine votre dossier et vous informera du remboursement.
-          </p>
+          /* Dossier « conducteur absent » (V25) : echeance du remboursement automatique, contestation, issue. */
+          <div className="space-y-1.5 border-t border-rule px-3 py-2.5">
+            <p className="text-caption leading-relaxed text-ink-2">
+              Absence du conducteur signalée{booking.passengerConfirmedAt ? ` le ${formatDateTime(booking.passengerConfirmedAt)}` : ''}.{' '}
+              {describeNoShowDisputeForPassenger(booking, booking.paymentPlan.depositAmount)}
+            </p>
+            {booking.refund ? <RefundStatusLine refund={booking.refund} /> : null}
+          </div>
+        ) : booking.refund ? (
+          /* Reservation annulee ou expiree : ou en est l argent (V25). */
+          <RefundStatusLine refund={booking.refund} className="border-t border-rule px-3 py-2.5" />
         ) : onReview ? (
           <div className="flex items-center gap-2 border-t border-rule px-3 py-2">
             <Button asChild variant="ghost" size="sm">

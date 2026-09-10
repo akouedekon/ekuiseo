@@ -1,6 +1,7 @@
 package bj.ekuiseo.api.domain;
 
 import bj.ekuiseo.api.domain.enums.BookingStatus;
+import bj.ekuiseo.api.domain.enums.NoShowResolution;
 import bj.ekuiseo.api.domain.enums.PassengerConfirmation;
 import bj.ekuiseo.api.domain.enums.PaymentMethod;
 import jakarta.persistence.*;
@@ -93,6 +94,29 @@ public class Booking {
 
     @Column(name = "passenger_confirmed_at")
     private Instant passengerConfirmedAt;
+
+    /** Conducteur declare absent (V25) : echeance du remboursement automatique de l acompte (declaration + fenetre de contestation). */
+    @Column(name = "driver_no_show_refund_due_at")
+    private Instant driverNoShowRefundDueAt;
+
+    /** Le conducteur conteste l absence : le remboursement automatique est gele jusqu a la decision de la moderation. */
+    @Column(name = "driver_no_show_contested_at")
+    private Instant driverNoShowContestedAt;
+
+    @Column(name = "driver_no_show_contest_details", columnDefinition = "text")
+    private String driverNoShowContestDetails;
+
+    /** Issue de la declaration : remboursement du passager (automatique ou decide) ou trajet maintenu au profit du conducteur. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "driver_no_show_resolution", length = 20)
+    private NoShowResolution driverNoShowResolution;
+
+    @Column(name = "driver_no_show_resolved_at")
+    private Instant driverNoShowResolvedAt;
+
+    /** Administrateur ayant tranche ; null pour le remboursement automatique a l echeance. */
+    @Column(name = "driver_no_show_resolved_by")
+    private UUID driverNoShowResolvedBy;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)

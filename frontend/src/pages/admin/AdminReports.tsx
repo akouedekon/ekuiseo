@@ -1,5 +1,5 @@
 import { m } from 'motion/react'
-import { Ban, CheckCircle2, Eye, History, MessagesSquare, ShieldQuestion, XCircle } from 'lucide-react'
+import { Ban, Banknote, CheckCircle2, Eye, History, MessagesSquare, ShieldQuestion, Wallet, XCircle } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { toast } from 'sonner'
@@ -15,12 +15,14 @@ import { AdminPageHeader } from '@/components/layout/AdminPageHeader'
 import { EmptyState, ErrorState } from '@/components/ui/states'
 import { AdminPagination } from '@/features/admin/AdminPagination'
 import { SuspendUserDialog, type SuspensionTarget } from '@/features/admin/SuspendUserDialog'
-import { useAdminReports, useReportConversations, useResolveReport, useUpdateReportStatus } from '@/hooks/useAdmin'
+import { useAdminReports, useDecideNoShow, useReportConversations, useResolveReport, useUpdateReportStatus } from '@/hooks/useAdmin'
 import { useMe } from '@/hooks/useAuth'
 import { describeError } from '@/lib/errors'
-import { formatDateTime, formatFromNow } from '@/lib/format'
+import { formatDateTime, formatFcfa, formatFromNow } from '@/lib/format'
+import { NO_SHOW_RESOLUTION_LABEL } from '@/lib/labels'
 import { listContainer, listItem } from '@/lib/motion'
-import type { AdminReportConversationResponse, AdminReportResponse, ReportReason, ReportStatus } from '@/api/extended'
+import type { AdminReportConversationResponse, AdminReportResponse, NoShowDispute, ReportReason, ReportStatus } from '@/api/extended'
+import type { NoShowResolution } from '@/api/types'
 
 const REASON_LABEL: Record<ReportReason, string> = {
   NO_SHOW: 'Absence au départ',
@@ -48,6 +50,50 @@ const STATUS_LABEL: Record<ReportStatus, string> = {
 }
 
 type Closing = { report: AdminReportResponse; status: 'RESOLVED' | 'DISMISSED' }
+/** Decision d un dossier « conducteur absent » (V25) : l argent suit la decision, pas une simple note. */
+type Deciding = { report: AdminReportResponse; decision: NoShowResolution }
+
+/** Dossier « conducteur absent » encore ouvert : la cloture passe par une decision sur l acompte, pas par « Résoudre ». */
+function openNoShowDispute(report: AdminReportResponse): NoShowDispute | null {
+  return report.noShowDispute && !report.noShowDispute.resolution && !isClosed(report.status) ? report.noShowDispute : null
+}
+
+/** Encart lu par la moderation avant de trancher : acompte en jeu, echeance automatique, version du conducteur, issue. */
+function NoShowDisputePanel({ dispute }: { dispute: NoShowDispute }) {
+  const resolved = dispute.resolution !== null
+  return (
+    <div className="mt-3 rounded-[var(--radius-control)] border border-accent/40 bg-accent-soft px-3 py-2.5 text-label" data-testid="no-show-dispute">
+      <p className="font-medium text-ink">
+        Acompte en jeu : <span className="tnum">{formatFcfa(dispute.depositAmountFcfa)}</span>
+        {dispute.paymentMethod === 'CASH' ? ' (espèces : rien à rembourser)' : ''}
+      </p>
+      {resolved ? (
+        <p className="mt-1 text-ink-2">
+          {NO_SHOW_RESOLUTION_LABEL[dispute.resolution!]}
+          {dispute.resolvedAt ? ` · ${formatDateTime(dispute.resolvedAt)}` : ''}
+          {dispute.resolvedBy ? '' : ' · automatique (aucune contestation dans le délai)'}
+        </p>
+      ) : dispute.contestedAt ? (
+        <div className="mt-1 text-ink-2">
+          <p>
+            Le conducteur conteste (le {formatDateTime(dispute.contestedAt)}) ; le remboursement automatique est suspendu jusqu'à votre
+            décision.
+          </p>
+          <p className="mt-1 rounded-[var(--radius-control)] bg-surface px-2.5 py-2 leading-relaxed text-ink">
+            <span className="text-caption font-medium text-muted">Version du conducteur</span>
+            <br />
+            {dispute.contestDetails || '—'}
+          </p>
+        </div>
+      ) : (
+        <p className="mt-1 text-ink-2">
+          Non contesté par le conducteur.
+          {dispute.refundDueAt ? ` Sans contestation ni décision, l'acompte est remboursé automatiquement le ${formatDateTime(dispute.refundDueAt)}.` : ''}
+        </p>
+      )}
+    </div>
+  )
+}
 
 function isClosed(status: ReportStatus): boolean {
   return status === 'RESOLVED' || status === 'DISMISSED'
@@ -66,9 +112,34 @@ export function AdminReports() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [conversationsOf, setConversationsOf] = useState<AdminReportResponse | null>(null)
   const [suspension, setSuspension] = useState<SuspensionTarget | null>(null)
+  const [deciding, setDeciding] = useState<Deciding | null>(null)
+  const [decisionNote, setDecisionNote] = useState('')
   const reports = useAdminReports(filter, page)
   const update = useUpdateReportStatus()
   const resolve = useResolveReport()
+  const decide = useDecideNoShow()
+
+  const closeDecision = () => {
+    setDeciding(null)
+    setDecisionNote('')
+  }
+
+  const confirmDecision = () => {
+    if (!deciding || !decisionNote.trim()) return
+    decide.mutate(
+      { id: deciding.report.id, decision: deciding.decision, note: decisionNote.trim() },
+      {
+        onSuccess: () => {
+          toast.success(
+            deciding.decision === 'REFUND_PASSENGER' ? 'Remboursement du passager demandé' : 'Trajet maintenu : réservation reversée au conducteur',
+            { description: 'Le signalement est clos ; les deux parties sont prévenues.' },
+          )
+          closeDecision()
+        },
+        onError: (error) => toast.error(describeError(error, "La décision n'a pas pu être enregistrée.")),
+      },
+    )
+  }
   const me = useMe()
 
   const list = reports.data?.content ?? []
@@ -145,6 +216,7 @@ export function AdminReports() {
           {list.map((report) => {
             const priors = report.priorReportsAgainstTarget ?? 0
             const targetIsMe = me.data?.id === report.target.id
+            const dispute = openNoShowDispute(report)
             return (
               <m.li key={report.id} variants={listItem}>
                 <Card
@@ -206,6 +278,8 @@ export function AdminReports() {
                       ) : null}
                     </dl>
 
+                    {report.noShowDispute ? <NoShowDisputePanel dispute={report.noShowDispute} /> : null}
+
                     {/* Dossier clos : la decision, qui l'a prise et quand - ce que le prochain moderateur doit lire en premier. */}
                     {isClosed(report.status) ? (
                       <div className="mt-3 rounded-[var(--radius-control)] bg-surface-2 px-3 py-2.5 text-label">
@@ -232,7 +306,20 @@ export function AdminReports() {
                         Prendre en charge
                       </Button>
                     ) : null}
-                    {!isClosed(report.status) ? (
+                    {dispute ? (
+                      /* Conducteur absent (V25) : la cloture est une decision sur l acompte, pas une note. */
+                      <>
+                        <Button size="sm" variant="success" onClick={() => setDeciding({ report, decision: 'REFUND_PASSENGER' })}>
+                          <Banknote className="size-4" aria-hidden />
+                          Rembourser le passager
+                        </Button>
+                        <Button size="sm" variant="secondary" onClick={() => setDeciding({ report, decision: 'PAY_DRIVER' })}>
+                          <Wallet className="size-4" aria-hidden />
+                          Trajet maintenu, payer le conducteur
+                        </Button>
+                      </>
+                    ) : null}
+                    {!isClosed(report.status) && !dispute ? (
                       <Button
                         size="sm"
                         variant="success"
@@ -258,7 +345,7 @@ export function AdminReports() {
                         Suspendre
                       </Button>
                     ) : null}
-                    {!isClosed(report.status) ? (
+                    {!isClosed(report.status) && !dispute ? (
                       <Button
                         size="sm"
                         variant="ghost"
@@ -311,6 +398,33 @@ export function AdminReports() {
           maxLength={500}
           value={note}
           onChange={(event) => setNote(event.target.value)}
+        />
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={deciding !== null}
+        onOpenChange={(open) => !open && closeDecision()}
+        title={deciding?.decision === 'REFUND_PASSENGER' ? 'Rembourser le passager ?' : 'Maintenir le trajet et payer le conducteur ?'}
+        description={
+          deciding
+            ? deciding.decision === 'REFUND_PASSENGER'
+              ? `L'acompte${deciding.report.noShowDispute ? ` de ${formatFcfa(deciding.report.noShowDispute.depositAmountFcfa)}` : ''} est remboursé intégralement au passager (Kkiapay, ou file manuelle si l'agrégateur refuse) ; la réservation ne sera jamais reversée au conducteur. Le signalement est clos avec votre note, les deux parties sont prévenues.`
+              : "Vous retenez que le trajet a bien eu lieu : la réservation redevient terminée et rejoint le prochain reversement du conducteur ; le passager n'est pas remboursé. Le signalement est clos avec votre note, les deux parties sont prévenues."
+            : undefined
+        }
+        tone={deciding?.decision === 'PAY_DRIVER' ? 'danger' : 'default'}
+        confirmLabel={deciding?.decision === 'REFUND_PASSENGER' ? 'Rembourser' : 'Maintenir et payer le conducteur'}
+        confirmDisabled={!decisionNote.trim()}
+        loading={decide.isPending}
+        onConfirm={confirmDecision}
+      >
+        <Textarea
+          label="Note de décision"
+          hint="Obligatoire. Ce que vous avez vérifié (messages, position en direct, versions des deux parties)."
+          rows={3}
+          maxLength={500}
+          value={decisionNote}
+          onChange={(event) => setDecisionNote(event.target.value)}
         />
       </ConfirmDialog>
 

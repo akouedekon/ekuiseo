@@ -47,4 +47,7 @@ public interface ReportRepository extends JpaRepository<Report, UUID> {
 
     /** Signalements deposes par un utilisateur (export de ses donnees, UserDataExportService). */
     List<Report> findByReporterIdOrderByCreatedAtDesc(UUID reporterId);
+
+    /** Signalements lies a une reservation pour un motif donne (dossier « conducteur absent », V25). */
+    List<Report> findByBookingIdAndReasonCodeAndStatusIn(UUID bookingId, String reasonCode, List<ReportStatus> statuses);
 }

@@ -121,6 +121,9 @@ ekuiseo:
     refresh-absolute-ttl-days: ${JWT_REFRESH_ABSOLUTE_TTL_DAYS:90}
   booking:
     pending-payment-ttl-minutes: 20
+    # Conducteur declare absent par le passager (V21/V25) : delai laisse au conducteur pour
+    # contester avant que l acompte soit rembourse automatiquement (BookingExpiryScheduler).
+    driver-no-show-contest-hours: ${DRIVER_NO_SHOW_CONTEST_HOURS:24}
     # Trajets a accord conducteur (trips.instant_booking = false, V19) : delai de reponse du
     # conducteur a une demande, plafonne a 2 h avant le depart (DriverApprovalPolicy). Passe ce
     # delai, la demande est traitee comme un refus : acompte rembourse, places liberees.
@@ -277,6 +280,9 @@ ekuiseo:
     minimum-threshold-fcfa: ${PAYOUT_MIN_THRESHOLD_FCFA:2000}
     # Une reservation n est reversable qu une fois le depart passe depuis ce delai (heures).
     eligibility-delay-hours: ${PAYOUT_ELIGIBILITY_DELAY_HOURS:24}
+    # Lot hebdomadaire automatique (PayoutScheduler, V25) : cron Spring a 6 champs, heure du Benin.
+    auto-batch-enabled: ${PAYOUT_AUTO_BATCH_ENABLED:true}
+    auto-batch-cron: ${PAYOUT_AUTO_BATCH_CRON:0 0 6 * * MON}
   refund:
     # Tentatives Kkiapay avant de basculer un remboursement en traitement manuel.
     max-attempts: ${REFUND_MAX_ATTEMPTS:5}

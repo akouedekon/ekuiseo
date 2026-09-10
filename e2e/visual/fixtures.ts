@@ -143,6 +143,17 @@ export const BOOKINGS = [
   booking('b-2', TRIPS[2], 'PENDING_PAYMENT', { paymentPlan: { ...paymentPlan(TRIPS[2].pricePerSeat), paymentStatus: 'PENDING', depositDueAt: iso(15) } }),
   booking('b-3', trip(7, { departureAt: iso(-180), status: 'ONGOING' }), 'CONFIRMED'),
   booking('b-4', trip(8, { departureAt: iso(-60 * 24 * 3), status: 'COMPLETED' }), 'COMPLETED', { passengerConfirmation: 'TRIP_DONE', passengerConfirmedAt: iso(-60 * 24 * 2) }),
+  // Conducteur declare absent (V25) : remboursement automatique a l echeance si le conducteur ne conteste pas.
+  booking('b-5', trip(9, { departureAt: iso(-60 * 20), status: 'COMPLETED' }), 'DRIVER_NO_SHOW', {
+    passengerConfirmation: 'DRIVER_NO_SHOW',
+    passengerConfirmedAt: iso(-60 * 18),
+    driverNoShowRefundDueAt: iso(60 * 6),
+  }),
+  // Annulee par le conducteur : acompte rembourse (V25, ligne de remboursement).
+  booking('b-6', trip(10, { departureAt: iso(60 * 24 * 2) }), 'CANCELLED_BY_DRIVER', {
+    paymentPlan: { ...paymentPlan(TRIPS[0].pricePerSeat), paymentStatus: 'CANCELLED' },
+    refund: { status: 'REFUNDED', amountFcfa: 1000, requestedAt: iso(-60 * 5), refundedAt: iso(-60 * 4) },
+  }),
 ]
 
 const NOTIFICATIONS = [

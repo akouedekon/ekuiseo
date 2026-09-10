@@ -71,7 +71,12 @@ public final class NotificationTemplates {
             case TRIP_UPDATED:
                 return "/bookings";
             case DRIVER_NO_SHOW_REPORTED:
+            case PAYOUT_PREPARED:
                 return "/trips/mine";
+            case NO_SHOW_CONTESTED:
+                return "/bookings";
+            case NO_SHOW_DISPUTE_RESOLVED:
+                return Boolean.TRUE.equals(p.get("forPassenger")) ? "/bookings" : "/trips/mine";
             case BOOKING_CONFIRMED:
                 return Boolean.TRUE.equals(p.get("forPassenger")) ? "/bookings" : "/trips/mine";
             case NEW_MESSAGE: {
@@ -342,16 +347,80 @@ public final class NotificationTemplates {
                         "Votre abonnement conducteur est actif pour 30 jours : aucune commission n'est prelevee sur vos trajets "
                                 + "pendant cette periode.",
                         "Ekuiseo : votre abonnement conducteur est actif, vous ne payez plus de commission ce mois-ci.");
-            case DRIVER_NO_SHOW_REPORTED:
-                // Au conducteur (V21) : l identite et les details du passager ne sont pas transmis.
+            case DRIVER_NO_SHOW_REPORTED: {
+                // Au conducteur (V21/V25) : l identite et les details du passager ne sont pas transmis.
+                String until = instant(p, "contestUntil");
+                String deadline = until.isEmpty() ? "sous 24 heures" : "avant le " + until;
                 return finish("Un passager signale votre absence au depart",
                         "Un passager de votre trajet" + (tripLine.isEmpty() ? "" : " " + tripLine)
                                 + " declare que vous n'etiez pas au depart. Sa reservation est mise de cote et "
-                                + "ne sera pas comptee dans votre prochain reversement tant que la moderation n'a pas tranche."
-                                + "\n\nSi vous avez bien effectue ce trajet, repondez a ce message ou ecrivez a la moderation "
-                                + "depuis l'application : votre version sera examinee avant toute decision.",
+                                + "ne sera pas comptee dans votre prochain reversement."
+                                + "\n\nSi vous avez bien effectue ce trajet, contestez " + deadline
+                                + " depuis Mes trajets > Passagers : la moderation examinera les deux versions avant de decider."
+                                + " Sans contestation de votre part dans ce delai, l'acompte"
+                                + (has(p, "depositAmountFcfa") ? " de " + money(p, "depositAmountFcfa") : "")
+                                + " est rembourse automatiquement au passager.",
                         "Ekuiseo : un passager signale votre absence au depart" + (tripLine.isEmpty() ? "" : " " + tripLine)
-                                + ". Repondez-nous si vous avez bien effectue le trajet.");
+                                + ". Contestez " + deadline + " si vous avez bien effectue le trajet, sinon il sera rembourse.");
+            }
+            case NO_SHOW_CONTESTED:
+                // Au passager (V25) : le remboursement automatique est gele, la moderation tranche.
+                return finish("Le conducteur conteste votre signalement",
+                        "Le conducteur du trajet" + (tripLine.isEmpty() ? "" : " " + tripLine) + " conteste l'absence que vous avez "
+                                + "declaree. Le remboursement automatique de votre acompte"
+                                + (has(p, "depositAmountFcfa") ? " (" + money(p, "depositAmountFcfa") + ")" : "")
+                                + " est suspendu le temps que la moderation examine les deux versions."
+                                + "\n\nSi vous avez des elements (messages, heure et lieu d'attente), repondez a ce message.",
+                        "Ekuiseo : le conducteur conteste votre signalement, la moderation examine le dossier.");
+            case NO_SHOW_DISPUTE_RESOLVED: {
+                boolean forPassenger = Boolean.TRUE.equals(p.get("forPassenger"));
+                boolean refund = "REFUND_PASSENGER".equals(str(p, "decision"));
+                boolean automatic = Boolean.TRUE.equals(p.get("automatic"));
+                String amount = has(p, "depositAmountFcfa") ? " de " + money(p, "depositAmountFcfa") : "";
+                String subject;
+                String body;
+                String sms;
+                if (forPassenger) {
+                    if (refund) {
+                        subject = "Votre acompte vous est rembourse";
+                        body = "Absence du conducteur retenue" + (automatic ? " (aucune contestation dans le delai)" : " par la moderation")
+                                + " sur le trajet" + (tripLine.isEmpty() ? "" : " " + tripLine) + " : votre acompte" + amount
+                                + " vous est rembourse integralement."
+                                + ("MANUAL_REQUIRED".equals(str(p, "refundStatus"))
+                                        ? "\nCe remboursement est traite manuellement par notre equipe : il vous parviendra sous 5 jours ouvres."
+                                        : "\nIl est en cours aupres de votre operateur mobile money et apparait generalement sous 48 heures.");
+                        sms = "Ekuiseo : absence du conducteur retenue, votre acompte" + amount + " vous est rembourse.";
+                    } else {
+                        subject = "Votre signalement n'a pas ete retenu";
+                        body = "Apres examen des deux versions, la moderation retient que le trajet" + (tripLine.isEmpty() ? "" : " " + tripLine)
+                                + " a bien eu lieu : votre acompte" + amount + " reste acquis au conducteur."
+                                + "\n\nSi vous contestez cette decision, repondez a ce message avec vos elements.";
+                        sms = "Ekuiseo : votre signalement d'absence n'a pas ete retenu, l'acompte reste acquis au conducteur.";
+                    }
+                } else if (refund) {
+                    subject = "Absence retenue : la reservation est remboursee au passager";
+                    body = (automatic ? "Vous n'avez pas conteste dans le delai" : "La moderation a retenu") + " l'absence signalee sur votre trajet"
+                            + (tripLine.isEmpty() ? "" : " " + tripLine) + " : l'acompte" + amount
+                            + " est rembourse au passager et cette reservation ne figure dans aucun reversement."
+                            + "\n\nDes absences repetees peuvent conduire a la suspension du compte.";
+                    sms = "Ekuiseo : absence retenue, la reservation est remboursee au passager et ne vous sera pas reversee.";
+                } else {
+                    subject = "Trajet maintenu : la reservation vous sera reversee";
+                    body = "La moderation a examine le signalement d'absence sur votre trajet" + (tripLine.isEmpty() ? "" : " " + tripLine)
+                            + " et retient que le trajet a bien eu lieu : la reservation rejoint votre prochain reversement.";
+                    sms = "Ekuiseo : trajet maintenu, la reservation contestee vous sera reversee.";
+                }
+                return finish(subject, body, sms);
+            }
+            case PAYOUT_PREPARED:
+                return finish("Votre reversement est prepare",
+                        "Un reversement" + (has(p, "amountFcfa") ? " de " + money(p, "amountFcfa") : "")
+                                + (has(p, "tripCount") ? " (" + number(p, "tripCount") + " reservation(s))" : "")
+                                + " vient d'etre constitue pour vous"
+                                + (str(p, "destination").isEmpty() ? "" : ", a destination de votre compte mobile money " + str(p, "destination"))
+                                + ". Le virement est effectue par notre equipe dans les jours qui suivent ; vous recevrez une confirmation."
+                                + "\n\nSuivez vos reversements depuis Mon compte > Revenus.",
+                        "Ekuiseo : votre reversement" + (has(p, "amountFcfa") ? " de " + money(p, "amountFcfa") : "") + " est prepare, virement sous quelques jours.");
             case REPORT_RECEIVED:
                 // Adressee a la personne visee (constat F550), sans jamais reveler l identite de l auteur.
                 return finish("Un signalement vous concerne",

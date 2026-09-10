@@ -12,15 +12,18 @@ import bj.ekuiseo.api.domain.Trip;
 import bj.ekuiseo.api.domain.TripStop;
 import bj.ekuiseo.api.domain.User;
 import bj.ekuiseo.api.domain.enums.BookingStatus;
+import bj.ekuiseo.api.domain.enums.NoShowResolution;
 import bj.ekuiseo.api.domain.enums.NotificationType;
 import bj.ekuiseo.api.domain.enums.PassengerConfirmation;
 import bj.ekuiseo.api.domain.enums.PaymentMethod;
 import bj.ekuiseo.api.domain.enums.ReportReason;
+import bj.ekuiseo.api.domain.enums.ReportStatus;
 import bj.ekuiseo.api.domain.enums.TripStatus;
 import bj.ekuiseo.api.domain.enums.UserStatus;
 import bj.ekuiseo.api.dto.booking.BookingDetailResponse;
 import bj.ekuiseo.api.dto.booking.BookingQuoteRequest;
 import bj.ekuiseo.api.dto.booking.BookingResponse;
+import bj.ekuiseo.api.dto.booking.ContestNoShowRequest;
 import bj.ekuiseo.api.dto.booking.CreateBookingRequest;
 import bj.ekuiseo.api.dto.booking.TripBookingResponse;
 import bj.ekuiseo.api.dto.payment.PaymentPlanResponse;
@@ -67,6 +70,8 @@ public class BookingService {
     static final String REFUND_REASON_DECLINED = "REFUS_CONDUCTEUR";
     /** Motif de remboursement d une demande restee sans reponse dans le delai (V19). */
     static final String REFUND_REASON_TIMED_OUT = "DELAI_ACCORD_CONDUCTEUR";
+    /** Motif de remboursement d un acompte apres declaration d un conducteur absent (V25). */
+    static final String REFUND_REASON_DRIVER_NO_SHOW = "CONDUCTEUR_ABSENT";
     /** Point n.13 de l audit : le paiement en especes contourne l acompte, il est reserve aux conducteurs a identite verifiee. */
     static final String CASH_REQUIRES_VERIFIED_DRIVER =
             "Le paiement en especes n est possible qu avec un conducteur dont l identite est verifiee";
@@ -88,6 +93,8 @@ public class BookingService {
     private final FeePolicy feePolicy;
     private final DriverApprovalPolicy driverApprovalPolicy;
     private final int pendingPaymentTtlMinutes;
+    /** Fenetre pendant laquelle le conducteur declare absent peut contester avant le remboursement automatique (V25). */
+    private final Duration driverNoShowContestWindow;
 
     public BookingService(BookingRepository bookingRepository, TripRepository tripRepository,
                            TripStopRepository tripStopRepository, UserRepository userRepository, DriverSubscriptionRepository driverSubscriptionRepository,
@@ -96,7 +103,8 @@ public class BookingService {
                            CancellationPolicy cancellationPolicy, DriverCancellationPolicy driverCancellationPolicy,
                            NotificationService notificationService, PaymentService paymentService,
                            AuditService auditService, FeePolicy feePolicy, DriverApprovalPolicy driverApprovalPolicy,
-                           @Value("${ekuiseo.booking.pending-payment-ttl-minutes:20}") int pendingPaymentTtlMinutes) {
+                           @Value("${ekuiseo.booking.pending-payment-ttl-minutes:20}") int pendingPaymentTtlMinutes,
+                           @Value("${ekuiseo.booking.driver-no-show-contest-hours:24}") long driverNoShowContestHours) {
         this.bookingRepository = bookingRepository;
         this.tripRepository = tripRepository;
         this.tripStopRepository = tripStopRepository;
@@ -114,6 +122,7 @@ public class BookingService {
         this.feePolicy = feePolicy;
         this.driverApprovalPolicy = driverApprovalPolicy;
         this.pendingPaymentTtlMinutes = pendingPaymentTtlMinutes;
+        this.driverNoShowContestWindow = Duration.ofHours(driverNoShowContestHours);
     }
 
     /**
@@ -394,7 +403,10 @@ public class BookingService {
                 booking.getSeats(), booking.getAmount(), booking.getServiceFee(), booking.getStatus(),
                 booking.getPaymentMethod(), booking.getCreatedAt(), buildPaymentPlan(booking), tripSummary, unread,
                 reviewRepository.existsByTripIdAndAuthorIdAndTargetId(trip.getId(), requesterId, driver.getId()),
-                booking.getPassengerConfirmation(), booking.getPassengerConfirmedAt());
+                booking.getPassengerConfirmation(), booking.getPassengerConfirmedAt(),
+                paymentService.refundSummary(booking.getId()).orElse(null),
+                booking.getDriverNoShowRefundDueAt(), booking.getDriverNoShowContestedAt(),
+                booking.getDriverNoShowResolution(), booking.getDriverNoShowResolvedAt());
     }
 
     /**
@@ -591,13 +603,14 @@ public class BookingService {
         }
         return bookingRepository.findByTripIdAndStatusIn(tripId,
                         List.of(BookingStatus.PENDING_DRIVER_APPROVAL, BookingStatus.CONFIRMED,
-                                BookingStatus.COMPLETED, BookingStatus.NO_SHOW)).stream()
+                                BookingStatus.COMPLETED, BookingStatus.NO_SHOW, BookingStatus.DRIVER_NO_SHOW)).stream()
                 .sorted(Comparator.comparing(Booking::getCreatedAt))
                 .map(b -> new TripBookingResponse(b.getId(), b.getPassenger().getId(),
                         b.getPassenger().getFirstName(), b.getPassenger().getLastName(), b.getPassenger().getPhotoUrl(),
                         b.getPassenger().getRatingAvg(), b.getSeats(), b.getStatus(), b.getPaymentMethod(),
                         b.getBalanceDueOnBoard(), b.getPickupStopId(), b.getDropoffStopId(), b.getCreatedAt(),
-                        b.getStatus() == BookingStatus.PENDING_DRIVER_APPROVAL ? b.getApprovalDeadlineAt() : null))
+                        b.getStatus() == BookingStatus.PENDING_DRIVER_APPROVAL ? b.getApprovalDeadlineAt() : null,
+                        b.getDriverNoShowRefundDueAt(), b.getDriverNoShowContestedAt(), b.getDriverNoShowResolution()))
                 .toList();
     }
 
@@ -770,9 +783,13 @@ public class BookingService {
      * {@link #PASSENGER_CONFIRMATION_WINDOW} apres (au-dela, la reservation est eligible au
      * reversement et la confirmation tacite). La reservation passe DRIVER_NO_SHOW - elle sort
      * des reversements (PayoutService ne verse que CONFIRMED / COMPLETED / NO_SHOW) - et un
-     * signalement NO_SHOW est ouvert pour la moderation, qui decide du remboursement de
-     * l acompte apres avoir entendu les deux parties. Le conducteur est prevenu (critique :
+     * signalement NO_SHOW est ouvert pour la moderation. Le conducteur est prevenu (critique :
      * son argent est en jeu), sans les details du passager.
+     *
+     * <p>V25 : l acompte est rembourse <b>automatiquement</b> a l echeance de la fenetre de
+     * contestation ({@code ekuiseo.booking.driver-no-show-contest-hours}, 24 h) si le conducteur
+     * ne conteste pas ({@link #contestDriverNoShow}) ; la moderation peut trancher avant
+     * ({@link #resolveDriverNoShow}).</p>
      */
     @Transactional
     public BookingResponse reportDriverNoShow(UUID id, UUID passengerId, String details) {
@@ -783,9 +800,11 @@ public class BookingService {
         if (now.isAfter(trip.getDepartureAt().plus(PASSENGER_CONFIRMATION_WINDOW))) {
             throw new BadRequestException("Le delai pour signaler l absence du conducteur (24 h apres le depart) est depasse");
         }
+        Instant refundDueAt = now.plus(driverNoShowContestWindow);
         booking.setStatus(BookingStatus.DRIVER_NO_SHOW);
         booking.setPassengerConfirmation(PassengerConfirmation.DRIVER_NO_SHOW);
         booking.setPassengerConfirmedAt(now);
+        booking.setDriverNoShowRefundDueAt(refundDueAt);
         bookingRepository.save(booking);
 
         String trimmed = details == null ? null : details.trim();
@@ -801,13 +820,159 @@ public class BookingService {
 
         auditService.log(passengerId, "BOOKING_DRIVER_NO_SHOW", "booking", booking.getId(),
                 Map.of("tripId", trip.getId().toString(), "reportId", report.getId().toString(),
-                        "depositAmountFcfa", booking.getDepositAmount()));
+                        "depositAmountFcfa", booking.getDepositAmount(), "refundDueAt", refundDueAt.toString()));
         notificationService.notifyCritical(trip.getDriver(), NotificationType.DRIVER_NO_SHOW_REPORTED,
                 Map.of("bookingId", booking.getId().toString(), "tripId", trip.getId().toString(),
                         "reportId", report.getId().toString(),
                         "route", trip.getOriginLabel() + " -> " + trip.getDestLabel(),
-                        "departureAt", trip.getDepartureAt().toString()));
+                        "departureAt", trip.getDepartureAt().toString(),
+                        "contestUntil", refundDueAt.toString(),
+                        "depositAmountFcfa", booking.getDepositAmount()));
         return bookingMapper.toResponse(booking);
+    }
+
+    /**
+     * Le conducteur conteste l absence declaree (V25) : le remboursement automatique est gele,
+     * le signalement passe en examen et la moderation tranche avec les deux versions. Possible
+     * tant que le dossier n est pas tranche - meme apres l echeance, si le scheduler n est pas
+     * encore passe : c est la resolution qui fait foi, pas l heure.
+     */
+    @Transactional
+    public BookingResponse contestDriverNoShow(UUID id, UUID driverId, ContestNoShowRequest req) {
+        Booking booking = findBooking(id);
+        Trip trip = booking.getTrip();
+        if (!trip.getDriver().getId().equals(driverId)) {
+            throw new ForbiddenException("Vous n etes pas le conducteur de ce trajet");
+        }
+        if (booking.getStatus() != BookingStatus.DRIVER_NO_SHOW) {
+            throw new BadRequestException("Aucune absence declaree sur cette reservation");
+        }
+        if (booking.getDriverNoShowResolution() != null) {
+            throw new ConflictException("Ce dossier est deja tranche : " + noShowResolutionLabel(booking.getDriverNoShowResolution()));
+        }
+        if (booking.getDriverNoShowContestedAt() != null) {
+            throw new ConflictException("Vous avez deja conteste cette absence ; la moderation examine le dossier");
+        }
+        Instant now = Instant.now();
+        booking.setDriverNoShowContestedAt(now);
+        booking.setDriverNoShowContestDetails(req.details().trim());
+        bookingRepository.save(booking);
+        for (Report report : openNoShowReports(booking)) {
+            if (report.getStatus() == ReportStatus.OPEN) {
+                report.setStatus(ReportStatus.IN_REVIEW);
+                reportRepository.save(report);
+            }
+        }
+        auditService.log(driverId, "BOOKING_DRIVER_NO_SHOW_CONTESTED", "booking", booking.getId(),
+                Map.of("tripId", trip.getId().toString(), "depositAmountFcfa", booking.getDepositAmount()));
+        notificationService.notify(booking.getPassenger(), NotificationType.NO_SHOW_CONTESTED,
+                Map.of("bookingId", booking.getId().toString(), "tripId", trip.getId().toString(),
+                        "route", trip.getOriginLabel() + " -> " + trip.getDestLabel(),
+                        "departureAt", trip.getDepartureAt().toString(),
+                        "depositAmountFcfa", booking.getDepositAmount()));
+        log.info("Reservation {} : absence du conducteur contestee, remboursement gele", booking.getId());
+        return bookingMapper.toResponse(booking);
+    }
+
+    /**
+     * Tranche un dossier « conducteur absent » (V25). {@code adminId} null = decision automatique
+     * a l echeance de la fenetre de contestation (toujours REFUND_PASSENGER).
+     * <ul>
+     *   <li>REFUND_PASSENGER : l acompte encaisse est rembourse integralement (RefundService,
+     *       Kkiapay hors transaction avec reprise) ; la reservation reste DRIVER_NO_SHOW, donc
+     *       hors reversement.</li>
+     *   <li>PAY_DRIVER : le trajet est repute effectue ; la reservation redevient COMPLETED et
+     *       rejoint le prochain lot de reversement du conducteur.</li>
+     * </ul>
+     * Dans les deux cas le signalement lie est clos (RESOLVED, note conservee) et les deux
+     * parties sont prevenues.
+     */
+    @Transactional
+    public BookingResponse resolveDriverNoShow(UUID adminId, UUID id, NoShowResolution decision, String note) {
+        Booking booking = findBooking(id);
+        if (decision == null) {
+            throw new BadRequestException("La decision est obligatoire");
+        }
+        if (booking.getStatus() != BookingStatus.DRIVER_NO_SHOW) {
+            throw new BadRequestException("Aucune absence du conducteur declaree sur cette reservation");
+        }
+        if (booking.getDriverNoShowResolution() != null) {
+            throw new ConflictException("Ce dossier est deja tranche : " + noShowResolutionLabel(booking.getDriverNoShowResolution()));
+        }
+        Trip trip = booking.getTrip();
+        Instant now = Instant.now();
+        String resolutionNote = note == null || note.isBlank() ? defaultNoShowNote(decision, adminId == null) : note.trim();
+        booking.setDriverNoShowResolution(decision);
+        booking.setDriverNoShowResolvedAt(now);
+        booking.setDriverNoShowResolvedBy(adminId);
+        String refundStatus = "NOT_APPLICABLE";
+        if (decision == NoShowResolution.REFUND_PASSENGER) {
+            PaymentService.RefundOutcome refund = paymentService.refundBooking(booking, booking.getDepositAmount(), REFUND_REASON_DRIVER_NO_SHOW);
+            refundStatus = refund.status().name();
+            log.info("Reservation {} : conducteur absent, remboursement de {} FCFA : {} ({})",
+                    booking.getId(), booking.getDepositAmount(), refund.status(), refund.message());
+        } else {
+            // Trajet maintenu : la reservation redevient reversable (PayoutService#PAYABLE_STATUSES).
+            booking.setStatus(BookingStatus.COMPLETED);
+        }
+        bookingRepository.save(booking);
+
+        User admin = adminId == null ? null : userRepository.findById(adminId).orElse(null);
+        for (Report report : openNoShowReports(booking)) {
+            report.setStatus(ReportStatus.RESOLVED);
+            report.setResolutionNote(resolutionNote);
+            report.setResolvedBy(admin);
+            report.setResolvedAt(now);
+            reportRepository.save(report);
+        }
+
+        Map<String, Object> audit = new LinkedHashMap<>();
+        audit.put("tripId", trip.getId().toString());
+        audit.put("decision", decision.name());
+        audit.put("automatic", adminId == null);
+        audit.put("depositAmountFcfa", booking.getDepositAmount());
+        audit.put("refundStatus", refundStatus);
+        audit.put("note", resolutionNote);
+        auditService.log(adminId, "BOOKING_DRIVER_NO_SHOW_RESOLVED", "booking", booking.getId(), audit);
+
+        Map<String, Object> payload = NotificationTemplates.payload("bookingId", booking.getId().toString(),
+                "tripId", trip.getId().toString(), "decision", decision.name(), "automatic", adminId == null,
+                "depositAmountFcfa", booking.getDepositAmount(), "refundStatus", refundStatus,
+                "route", trip.getOriginLabel() + " -> " + trip.getDestLabel(),
+                "departureAt", trip.getDepartureAt().toString());
+        Map<String, Object> passengerPayload = new LinkedHashMap<>(payload);
+        passengerPayload.put("forPassenger", true);
+        notificationService.notify(booking.getPassenger(), NotificationType.NO_SHOW_DISPUTE_RESOLVED, passengerPayload);
+        notificationService.notify(trip.getDriver(), NotificationType.NO_SHOW_DISPUTE_RESOLVED, payload);
+        return bookingMapper.toResponse(booking);
+    }
+
+    /**
+     * Identifiants des declarations « conducteur absent » dont la fenetre de contestation est
+     * echue sans contestation ni decision (V25) : le scheduler les rembourse une par une, chacune
+     * dans sa propre transaction (une reservation en erreur n en bloque pas une autre).
+     */
+    @Transactional(readOnly = true)
+    public List<UUID> findDriverNoShowRefundsDue(Instant now) {
+        return bookingRepository.findDriverNoShowRefundsDue(now);
+    }
+
+    private List<Report> openNoShowReports(Booking booking) {
+        return reportRepository.findByBookingIdAndReasonCodeAndStatusIn(booking.getId(), ReportReason.NO_SHOW.name(),
+                List.of(ReportStatus.OPEN, ReportStatus.IN_REVIEW));
+    }
+
+    private static String defaultNoShowNote(NoShowResolution decision, boolean automatic) {
+        if (decision == NoShowResolution.REFUND_PASSENGER) {
+            return automatic
+                    ? "Remboursement automatique de l acompte : le conducteur n a pas conteste l absence dans le delai."
+                    : "Absence du conducteur retenue : acompte rembourse au passager.";
+        }
+        return "Trajet maintenu : la reservation est reversee au conducteur.";
+    }
+
+    static String noShowResolutionLabel(NoShowResolution resolution) {
+        return resolution == NoShowResolution.REFUND_PASSENGER ? "acompte rembourse au passager" : "trajet maintenu, conducteur paye";
     }
 
     /** Garde commune des deux constats du passager : sa reservation, honoree, apres le depart, sans constat prealable. */

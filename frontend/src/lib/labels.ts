@@ -1,5 +1,5 @@
 import type { ReportReason } from '@/api/extended'
-import type { BookingStatus, ComfortLevel, VehicleType } from '@/api/types'
+import type { BookingStatus, ComfortLevel, NoShowResolution, VehicleType } from '@/api/types'
 
 /*
  * Libelles partages entre le parcours public et le back-office (audit F239) :
@@ -99,6 +99,12 @@ export const BOOKING_STATUS_LABEL: Record<BookingStatus, string> = {
   NO_SHOW: 'Non présenté',
   DRIVER_NO_SHOW: 'Conducteur absent (signalé)',
   EXPIRED: 'Expirée (acompte non reçu)',
+}
+
+/** Issue d un dossier « conducteur absent » (V25), pour le back-office et les deux parties. */
+export const NO_SHOW_RESOLUTION_LABEL: Record<NoShowResolution, string> = {
+  REFUND_PASSENGER: 'Acompte remboursé au passager',
+  PAY_DRIVER: 'Trajet maintenu, reversé au conducteur',
 }
 
 /** Mention affichee sur un trajet dont le conducteur accepte chaque passager (`instantBooking = false`, V19). */

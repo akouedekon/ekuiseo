@@ -5,7 +5,7 @@
  * (`non_null`), un champ type `X | null` arrive donc comme `undefined` quand il
  * est vide - tester avec `== null` ou `??`, jamais avec `=== null`.
  */
-import type { BookingStatus, ComfortLevel, PassengerConfirmation, PaymentMethod, TripType, VehicleSummary, VehicleType } from './types'
+import type { BookingStatus, ComfortLevel, NoShowResolution, PassengerConfirmation, PaymentMethod, TripType, VehicleSummary, VehicleType } from './types'
 
 /* --------------------------------------------------------- Trajet detaille */
 
@@ -168,6 +168,24 @@ export interface BookingDetailResponse {
   /** Constat du passager apres le depart (V21) ; absent sur une reponse d'un serveur plus ancien. */
   passengerConfirmation?: PassengerConfirmation | null
   passengerConfirmedAt?: string | null
+  /** Sort de l'argent encaisse (V25) : null tant qu'aucun remboursement n'a ete decide. */
+  refund?: RefundSummary | null
+  /** Dossier « conducteur absent » (V25) : echeance du remboursement automatique, contestation du conducteur, issue. */
+  driverNoShowRefundDueAt?: string | null
+  driverNoShowContestedAt?: string | null
+  driverNoShowResolution?: NoShowResolution | null
+  driverNoShowResolvedAt?: string | null
+}
+
+/**
+ * Remboursement d'une reservation, vu par le passager (V25). PENDING : demande a Kkiapay,
+ * reprise automatique ; MANUAL : file du back-office (sous 5 jours ouvres) ; REFUNDED : confirme.
+ */
+export interface RefundSummary {
+  status: 'PENDING' | 'MANUAL' | 'REFUNDED'
+  amountFcfa: number
+  requestedAt: string | null
+  refundedAt: string | null
 }
 
 /* ------------------------------------------------------------- Preferences */
@@ -470,6 +488,31 @@ export interface AdminReportResponse {
   resolvedAt: string | null
   /** Signalements deja clos ou en cours contre la meme personne, celui-ci exclu : un recidiviste se traite autrement. */
   priorReportsAgainstTarget: number
+  /** Dossier « conducteur absent » (V25) lie a la reservation ; null pour les autres motifs. */
+  noShowDispute?: NoShowDispute | null
+}
+
+/**
+ * Etat d'un dossier « conducteur absent » : acompte en jeu, echeance du remboursement automatique,
+ * contestation du conducteur (date et version), issue et qui l'a prise (resolvedBy null = automatique).
+ */
+export interface NoShowDispute {
+  bookingId: string
+  bookingStatus: BookingStatus
+  paymentMethod: PaymentMethod
+  depositAmountFcfa: number
+  refundDueAt: string | null
+  contestedAt: string | null
+  contestDetails: string | null
+  resolution: NoShowResolution | null
+  resolvedAt: string | null
+  resolvedBy: string | null
+}
+
+/** POST /admin/reports/{id}/no-show-decision (V25). */
+export interface NoShowDecisionRequest {
+  decision: NoShowResolution
+  note: string
 }
 
 /**

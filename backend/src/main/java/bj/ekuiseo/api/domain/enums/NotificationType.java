@@ -48,6 +48,12 @@ public enum NotificationType {
     BOOKING_REQUESTED,
     /** Demande refusee par le conducteur, ou restee sans reponse dans le delai : acompte rembourse integralement. */
     BOOKING_DECLINED,
-    /** Au conducteur (critique) : un passager declare qu il n est pas venu au depart (V21) ; la reservation sort des reversements, la moderation tranche. */
-    DRIVER_NO_SHOW_REPORTED
+    /** Au conducteur (critique) : un passager declare qu il n est pas venu au depart (V21) ; sans contestation sous 24 h, l acompte est rembourse (V25). */
+    DRIVER_NO_SHOW_REPORTED,
+    /** Au passager : le conducteur conteste l absence declaree ; le remboursement est gele, la moderation tranche (V25). */
+    NO_SHOW_CONTESTED,
+    /** Aux deux parties : issue d une declaration « conducteur absent » (remboursement du passager ou trajet maintenu), V25. */
+    NO_SHOW_DISPUTE_RESOLVED,
+    /** Au conducteur : un reversement vient d etre constitue (lot hebdomadaire automatique, V25) ; le virement suit. */
+    PAYOUT_PREPARED
 }

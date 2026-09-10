@@ -8,6 +8,7 @@ import bj.ekuiseo.api.domain.enums.BookingStatus;
 import bj.ekuiseo.api.domain.enums.MobileMoneyOperator;
 import bj.ekuiseo.api.domain.enums.PaymentMethod;
 import bj.ekuiseo.api.dto.booking.BookingResponse;
+import bj.ekuiseo.api.dto.booking.ContestNoShowRequest;
 import bj.ekuiseo.api.dto.message.MessageResponse;
 import bj.ekuiseo.api.dto.message.SendMessageRequest;
 import bj.ekuiseo.api.dto.payment.InitiateDepositRequest;
@@ -18,6 +19,7 @@ import bj.ekuiseo.api.service.PaymentService;
 import bj.ekuiseo.api.web.controller.BookingController;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -26,6 +28,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -158,6 +161,28 @@ class BookingControllerWebMvcTest extends AbstractWebMvcTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    /** V25 : contestation du conducteur, explication obligatoire, identifiant du conducteur = sujet du jeton. */
+    @Test
+    void contestDriverNoShow_requiresDetails_andPassesTheTokenSubject() throws Exception {
+        when(bookingService.contestDriverNoShow(eq(bookingId), eq(passenger.getId()), any()))
+                .thenReturn(booking(bookingId, BookingStatus.DRIVER_NO_SHOW));
+        mockMvc.perform(authed(post("/api/v1/bookings/" + bookingId + "/contest-driver-no-show"), bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"details\":\"J etais a la gare a 6 h\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DRIVER_NO_SHOW"));
+        ArgumentCaptor<ContestNoShowRequest> req = ArgumentCaptor.forClass(ContestNoShowRequest.class);
+        verify(bookingService).contestDriverNoShow(eq(bookingId), eq(passenger.getId()), req.capture());
+        assertThat(req.getValue().details()).isEqualTo("J etais a la gare a 6 h");
+
+        mockMvc.perform(authed(post("/api/v1/bookings/" + bookingId + "/contest-driver-no-show"), bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"details\":\"   \"}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(fromNewIp(post("/api/v1/bookings/" + bookingId + "/contest-driver-no-show")))
+                .andExpect(status().isUnauthorized());
+    }
+
     /** V19 : accord et refus du conducteur, l identifiant du conducteur vient du jeton. */
     @Test
     void accept_confirmsTheRequest_forTheTokenSubject() throws Exception {
@@ -282,6 +307,6 @@ class BookingControllerWebMvcTest extends AbstractWebMvcTest {
 
     private static BookingResponse booking(UUID id, BookingStatus status) {
         return new BookingResponse(id, UUID.randomUUID(), UUID.randomUUID(), 1, 2500, 200, status,
-                PaymentMethod.MOMO_DEPOSIT, Instant.now(), null, null);
+                PaymentMethod.MOMO_DEPOSIT, Instant.now(), null, null, null, null, null, null);
     }
 }

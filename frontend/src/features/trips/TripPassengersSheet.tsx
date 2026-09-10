@@ -10,10 +10,11 @@ import { Textarea } from '@/components/ui/input'
 import { Avatar } from '@/components/ui/misc'
 import { Sheet } from '@/components/ui/sheet'
 import { EmptyState, ErrorState, ListSkeleton } from '@/components/ui/states'
-import { useMarkNoShow, useRespondToBooking, useTripPassengers } from '@/hooks/useTrips'
+import { useContestDriverNoShow, useMarkNoShow, useRespondToBooking, useTripPassengers } from '@/hooks/useTrips'
 import { describeError } from '@/lib/errors'
 import { formatDateTime, formatFcfa, formatRelativeDay, formatTime } from '@/lib/format'
 import { BOOKING_STATUS_LABEL } from '@/lib/labels'
+import { canContestNoShow, describeNoShowDisputeForDriver } from '@/lib/noShowDispute'
 import type { TripBookingResponse, TripResponse } from '@/api/types'
 
 /** Fenetre pendant laquelle le conducteur peut signaler une absence apres le depart (alignee sur le backend). */
@@ -50,6 +51,30 @@ export function TripPassengersSheet({ trip, onOpenChange }: { trip: TripResponse
   const [declineReason, setDeclineReason] = useState('')
   const [reviewing, setReviewing] = useState<TripBookingResponse | null>(null)
   const [reviewed, setReviewed] = useState<Set<string>>(() => new Set())
+  const contest = useContestDriverNoShow()
+  const [contesting, setContesting] = useState<TripBookingResponse | null>(null)
+  const [contestDetails, setContestDetails] = useState('')
+
+  const closeContest = () => {
+    setContesting(null)
+    setContestDetails('')
+  }
+
+  const confirmContest = () => {
+    if (!contesting || !trip || !contestDetails.trim()) return
+    contest.mutate(
+      { bookingId: contesting.id, tripId: trip.id, details: contestDetails },
+      {
+        onSuccess: () => {
+          toast.success('Contestation enregistrée', {
+            description: 'Le remboursement est suspendu ; la modération examine les deux versions avant de décider.',
+          })
+          closeContest()
+        },
+        onError: (error) => toast.error(describeError(error, "La contestation n'a pas pu être enregistrée.")),
+      },
+    )
+  }
 
   const now = Date.now()
   const departureMs = trip ? new Date(trip.departureAt).getTime() : 0
@@ -94,8 +119,8 @@ export function TripPassengersSheet({ trip, onOpenChange }: { trip: TripResponse
 
   const list = passengers.data ?? []
   const requests = list.filter((p) => p.status === 'PENDING_DRIVER_APPROVAL')
-  const seats = list.filter((p) => p.status !== 'NO_SHOW').reduce((sum, p) => sum + p.seats, 0)
-  const cashDue = list.filter((p) => p.status !== 'NO_SHOW').reduce((sum, p) => sum + p.balanceDueOnBoard, 0)
+  const seats = list.filter((p) => p.status !== 'NO_SHOW' && p.status !== 'DRIVER_NO_SHOW').reduce((sum, p) => sum + p.seats, 0)
+  const cashDue = list.filter((p) => p.status !== 'NO_SHOW' && p.status !== 'DRIVER_NO_SHOW').reduce((sum, p) => sum + p.balanceDueOnBoard, 0)
 
   return (
     <>
@@ -162,6 +187,17 @@ export function TripPassengersSheet({ trip, onOpenChange }: { trip: TripResponse
                         ) : null}
                       </span>
                     </div>
+                    {p.status === 'DRIVER_NO_SHOW' ? (
+                      /* Dossier « conducteur absent » (V25) : echeance, contestation possible, issue. */
+                      <div className="mt-2 flex flex-wrap items-center gap-2 rounded-[var(--radius-control)] bg-danger-soft px-3 py-2">
+                        <p className="flex-1 text-caption leading-relaxed text-danger-ink">{describeNoShowDisputeForDriver(p)}</p>
+                        {canContestNoShow(p) ? (
+                          <Button size="sm" variant="secondary" onClick={() => setContesting(p)}>
+                            Contester
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : null}
                     {awaiting && !departed ? (
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         <p className="tnum flex-1 text-caption text-accent-ink">
@@ -237,6 +273,26 @@ export function TripPassengersSheet({ trip, onOpenChange }: { trip: TripResponse
             onChange={(event) => setDeclineReason(event.target.value)}
           />
         ) : null}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={contesting !== null}
+        onOpenChange={(open) => !open && closeContest()}
+        title={contesting ? `Contester l'absence déclarée par ${contesting.firstName} ?` : "Contester l'absence ?"}
+        description="Le remboursement automatique de l'acompte est suspendu et la modération lit les deux versions avant de décider : soit l'acompte est remboursé au passager, soit le trajet est maintenu et la place vous est reversée. Expliquez précisément ce qui s'est passé."
+        confirmLabel="Envoyer ma version"
+        confirmDisabled={!contestDetails.trim()}
+        loading={contest.isPending}
+        onConfirm={confirmContest}
+      >
+        <Textarea
+          label="Votre version des faits"
+          hint="Obligatoire. Lieu et heure d'arrivée, messages échangés, temps d'attente… 1 000 caractères maximum."
+          rows={4}
+          maxLength={1000}
+          value={contestDetails}
+          onChange={(event) => setContestDetails(event.target.value)}
+        />
       </ConfirmDialog>
 
       {reviewing && trip ? (
