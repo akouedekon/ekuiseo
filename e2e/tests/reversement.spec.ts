@@ -49,9 +49,13 @@ test.describe('Reversement conducteur', () => {
     await expect(page.getByText('Constituer les lots de la semaine ?')).toBeVisible()
     await page.getByRole('button', { name: 'Constituer' }).click()
 
-    // Le lot du conducteur apparait « À verser » avec le net de la reservation.
-    const row = page.locator('tr, [role="row"], div').filter({ hasText: `${SEED_DRIVER.firstName} ${SEED_DRIVER.lastName}` }).filter({ hasText: /3.680/ }).last()
-    await expect(row).toBeVisible({ timeout: 30_000 })
+    // Le lot du conducteur apparait « À verser » avec le net de la reservation (tableau sur
+    // bureau, cartes sur mobile) : on part du montant et on remonte au plus proche conteneur
+    // qui porte le bouton de reglement.
+    const amount = page.getByText(/3.680 FCFA/).first()
+    await expect(amount).toBeVisible({ timeout: 30_000 })
+    const row = amount.locator('xpath=ancestor::*[.//button[normalize-space()="Marquer réglé"]][1]')
+    await expect(row).toContainText(SEED_DRIVER.lastName)
     await row.getByRole('button', { name: 'Marquer réglé' }).click()
 
     await expect(page.getByText('Confirmer le versement ?')).toBeVisible()

@@ -72,8 +72,15 @@ case "$JWT_SECRET" in
 esac
 [ "${#JWT_SECRET}" -ge 32 ] || die "JWT_SECRET fait moins de 32 caracteres."
 case "${CORS_ALLOWED_ORIGINS:-*}" in
-  *"*"*) log "AVERTISSEMENT : CORS_ALLOWED_ORIGINS contient * ; restreignez a https://$DOMAIN (docs/DEPLOIEMENT.md §6)." ;;
+  *"*"*) die "CORS_ALLOWED_ORIGINS contient * : restreignez a https://$DOMAIN (docs/DEPLOIEMENT.md §6)." ;;
 esac
+# Valeurs de l exemple qui ne conviennent qu au developpement (audit securite 2026-09-10).
+case "$DB_PASSWORD" in
+  ekuiseo_dev_change_me|change-me*) die "DB_PASSWORD vaut encore la valeur d'exemple : generez-en un (openssl rand -base64 24)." ;;
+esac
+[ "${SPRINGDOC_ENABLED:-false}" = "false" ] || die "SPRINGDOC_ENABLED=true expose la documentation de l'API au public : mettez false."
+[ "${KKIAPAY_MODE:-stub}" = "http" ] || die "KKIAPAY_MODE=${KKIAPAY_MODE:-stub} : en production, seul le mode http (vraie passerelle Kkiapay) est admis."
+[ "${KKIAPAY_SANDBOX:-true}" = "false" ] || log "AVERTISSEMENT : KKIAPAY_SANDBOX=true, les paiements sont simules par le bac a sable Kkiapay (aucun encaissement reel)."
 
 # Sauvegarde quotidienne : cron installe de facon idempotente (03:15, heure du serveur),
 # journal dans /var/log/ekuiseo-backup.log ; copie hors site si BACKUP_REMOTE est defini

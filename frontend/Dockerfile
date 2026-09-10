@@ -21,6 +21,9 @@ ARG VITE_SUPPORT_EMAIL=contact@ekuiseo.com
 ENV VITE_SUPPORT_EMAIL=$VITE_SUPPORT_EMAIL
 
 RUN npm run build
+# Les sourcemaps servent au debogage local et a la collecte d erreurs, jamais au public :
+# elles restitueraient tout le TypeScript d origine (audit F440, audit securite 2026-09-10).
+RUN find dist -name '*.map' -type f -delete
 
 FROM nginx:1.27-alpine
 COPY --from=build /build/dist /usr/share/nginx/html

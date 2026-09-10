@@ -29,6 +29,7 @@
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
 		X-Frame-Options "SAMEORIGIN"
+		Cross-Origin-Opener-Policy "same-origin-allow-popups"
 		Permissions-Policy "geolocation=(self), camera=(), microphone=(), payment=(self)"
 		# CSP (constat F403) : connect-src et img-src limites aux hotes reellement
 		# contactes par le navigateur (API du site, tuiles MapTiler, widget Kkiapay).

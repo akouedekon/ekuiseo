@@ -62,6 +62,10 @@ COMPOSE_FILE="${COMPOSE_FILE:-$DEFAULT_COMPOSE_FILE}"
 BACKUP_DIR="${BACKUP_DIR:-$ROOT_DIR/backups}"
 BACKUP_REMOTE="${BACKUP_REMOTE:-}"
 BACKUP_REMOTE_KEEP_DAYS="${BACKUP_REMOTE_KEEP_DAYS:-30}"
+# Phrase secrete du chiffrement de la copie hors site (gpg symetrique AES-256). Le dump
+# contient des donnees personnelles (numeros, e-mails, messages) : sans elle, la copie
+# distante part en clair et le script le dit. A conserver HORS du serveur (docs/EXPLOITATION.md).
+BACKUP_PASSPHRASE="${BACKUP_PASSPHRASE:-}"
 
 command -v docker >/dev/null 2>&1 || die "docker n'est pas installe ou pas dans le PATH."
 
@@ -150,9 +154,26 @@ if [[ -n "$BACKUP_REMOTE" ]]; then
   if [[ -n "$IDENTITY_ARCHIVE" ]]; then
     rclone copyto "$IDENTITY_ARCHIVE" "$BACKUP_REMOTE/daily/$(basename "$IDENTITY_ARCHIVE")" --retries 3 --low-level-retries 5       || log "AVERTISSEMENT : l archive des pieces d identite n a pas ete envoyee hors site."
   fi
-  if ! rclone copyto "$DEST_PATH" "$BACKUP_REMOTE/daily/$FILENAME" --retries 3 --low-level-retries 5; then
+  UPLOAD_PATH="$DEST_PATH"
+  UPLOAD_NAME="$FILENAME"
+  if [[ -n "$BACKUP_PASSPHRASE" ]]; then
+    command -v gpg >/dev/null 2>&1 || die "BACKUP_PASSPHRASE est definie mais gpg est introuvable (apt install gnupg)."
+    UPLOAD_PATH="$DEST_PATH.gpg"
+    UPLOAD_NAME="$FILENAME.gpg"
+    if ! gpg --batch --yes --quiet --symmetric --cipher-algo AES256 --pinentry-mode loopback \
+        --passphrase-fd 3 -o "$UPLOAD_PATH" "$DEST_PATH" 3<<<"$BACKUP_PASSPHRASE"; then
+      rm -f "$UPLOAD_PATH"
+      die "chiffrement gpg de la sauvegarde impossible : rien n'a ete envoye hors site."
+    fi
+    log "Copie hors site chiffree (AES-256, gpg symetrique) : $UPLOAD_NAME"
+  else
+    log "AVERTISSEMENT : BACKUP_PASSPHRASE absente, la copie hors site part EN CLAIR (donnees personnelles). Definissez-la dans .env."
+  fi
+  if ! rclone copyto "$UPLOAD_PATH" "$BACKUP_REMOTE/daily/$UPLOAD_NAME" --retries 3 --low-level-retries 5; then
+    [[ "$UPLOAD_PATH" != "$DEST_PATH" ]] && rm -f "$UPLOAD_PATH"
     die "l'envoi hors site vers $BACKUP_REMOTE a echoue : la sauvegarde n'existe QUE sur ce serveur."
   fi
+  [[ "$UPLOAD_PATH" != "$DEST_PATH" ]] && rm -f "$UPLOAD_PATH"
   # Retention distante : on garde BACKUP_REMOTE_KEEP_DAYS jours ; un echec ici n'est pas bloquant.
   rclone delete "$BACKUP_REMOTE/daily" --min-age "${BACKUP_REMOTE_KEEP_DAYS}d" 2>/dev/null \
     || log "AVERTISSEMENT : retention distante non appliquee (rclone delete a echoue)."

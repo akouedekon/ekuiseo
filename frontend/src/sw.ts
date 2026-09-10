@@ -82,7 +82,8 @@ registerRoute(
 
 // Tuiles de carte : cache d'abord, elles changent rarement.
 registerRoute(
-  ({ url }) => /tiles?|maptiler|basemaps/.test(url.hostname),
+  // Hote exact (aligne sur la CSP) : un domaine tiers contenant « tiles » ne doit pas entrer dans ce cache.
+  ({ url }) => url.hostname === 'api.maptiler.com',
   new CacheFirst({
     cacheName: 'ekuiseo-tiles',
     plugins: [

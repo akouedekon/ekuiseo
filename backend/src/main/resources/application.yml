@@ -73,7 +73,9 @@ server:
   # accorde 30 s (stop_grace_period) pour couvrir les 25 s ci-dessous.
   shutdown: graceful
   error:
-    include-message: always
+    # Le message d une exception qui echappe a GlobalExceptionHandler (filtre, convertisseur)
+    # n est jamais renvoye : l identifiant errorId suffit au support (audit securite 2026-09-10).
+    include-message: never
 
 springdoc:
   # Documentation OpenAPI : utile en developpement, desactivee en production par

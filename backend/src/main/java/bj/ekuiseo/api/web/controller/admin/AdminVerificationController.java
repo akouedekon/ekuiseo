@@ -68,14 +68,14 @@ public class AdminVerificationController {
         return identityDocumentService.listForAdmin(id);
     }
 
-    @Operation(summary = "Contenu d une piece", description = "Flux dechiffre, affiche en ligne (Content-Disposition: inline), jamais mis en cache. Chaque lecture est journalisee (ADMIN_IDENTITY_DOCUMENT_VIEWED).")
+    @Operation(summary = "Contenu d une piece", description = "Flux dechiffre, en piece jointe (Content-Disposition: attachment : un PDF piege ne s ouvre jamais dans l origine du back-office ; le front l affiche via un blob), jamais mis en cache. Chaque lecture est journalisee (ADMIN_IDENTITY_DOCUMENT_VIEWED).")
     @GetMapping("/{id}/documents/{side}")
     public ResponseEntity<byte[]> document(@PathVariable UUID id, @PathVariable IdentityDocumentSide side) {
         IdentityDocumentService.StoredDocument doc = identityDocumentService.openForAdmin(currentUser.id(), id, side);
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(doc.contentType()))
                 .cacheControl(CacheControl.noStore())
-                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline()
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
                         .filename("identite-" + side.name().toLowerCase(Locale.ROOT) + extensionOf(doc.contentType())).build().toString())
                 .header("X-Content-Type-Options", "nosniff")
                 .body(doc.content());

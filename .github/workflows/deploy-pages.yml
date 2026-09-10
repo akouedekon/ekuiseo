@@ -50,6 +50,9 @@ jobs:
           VITE_API_URL: https://ekuiseo.com
         run: npm run build
 
+      - name: Retirer les sourcemaps (jamais publiees)
+        run: find frontend/dist -name '*.map' -type f -delete
+
       - name: Preparer l'artefact Pages
         uses: actions/configure-pages@v5
 

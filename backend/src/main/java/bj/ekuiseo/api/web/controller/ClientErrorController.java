@@ -55,6 +55,8 @@ public class ClientErrorController {
             return "-";
         }
         String flat = value.replaceAll("[\\r\\n]+", " ↵ ").replaceAll("[\\p{Cntrl}]", " ").trim();
+        // Le jeton du lien public de suivi (/live/{token}) donne la position d un vehicule : jamais en clair dans un journal.
+        flat = flat.replaceAll("(/live/)[A-Za-z0-9_-]{8,}", "$1***");
         return flat.length() > max ? flat.substring(0, max) : flat;
     }
 }

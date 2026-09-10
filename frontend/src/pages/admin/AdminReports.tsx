@@ -60,7 +60,8 @@ function openNoShowDispute(report: AdminReportResponse): NoShowDispute | null {
 
 /** Encart lu par la moderation avant de trancher : acompte en jeu, echeance automatique, version du conducteur, issue. */
 function NoShowDisputePanel({ dispute }: { dispute: NoShowDispute }) {
-  const resolved = dispute.resolution !== null
+  // Jackson omet les champs nuls : un dossier non tranche arrive sans cle `resolution`.
+  const resolved = dispute.resolution != null
   return (
     <div className="mt-3 rounded-[var(--radius-control)] border border-accent/40 bg-accent-soft px-3 py-2.5 text-label" data-testid="no-show-dispute">
       <p className="font-medium text-ink">
@@ -69,7 +70,7 @@ function NoShowDisputePanel({ dispute }: { dispute: NoShowDispute }) {
       </p>
       {resolved ? (
         <p className="mt-1 text-ink-2">
-          {NO_SHOW_RESOLUTION_LABEL[dispute.resolution!]}
+          {dispute.resolution ? NO_SHOW_RESOLUTION_LABEL[dispute.resolution] : ''}
           {dispute.resolvedAt ? ` · ${formatDateTime(dispute.resolvedAt)}` : ''}
           {dispute.resolvedBy ? '' : ' · automatique (aucune contestation dans le délai)'}
         </p>

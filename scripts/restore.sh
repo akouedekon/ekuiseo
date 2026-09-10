@@ -95,6 +95,20 @@ docker compose -f "$COMPOSE_FILE" exec -T -e PGPASSWORD="$DB_PASSWORD" \
   postgis psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 \
   -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
 
+# Copie hors site chiffree (scripts/backup.sh, BACKUP_PASSPHRASE) : dechiffree dans un fichier
+# temporaire supprime a la fin, quelle que soit l issue.
+if [[ "$DUMP_PATH" == *.gpg ]]; then
+  [[ -n "${BACKUP_PASSPHRASE:-}" ]] || die "ce dump est chiffre : exportez BACKUP_PASSPHRASE (la meme que pour la sauvegarde) avant de restaurer."
+  command -v gpg >/dev/null 2>&1 || die "gpg est introuvable (apt install gnupg)."
+  DECRYPTED_PATH="$(mktemp "${TMPDIR:-/tmp}/ekuiseo_restore_XXXXXX.dump")"
+  trap 'rm -f "$DECRYPTED_PATH"' EXIT
+  gpg --batch --yes --quiet --decrypt --pinentry-mode loopback --passphrase-fd 3 \
+      -o "$DECRYPTED_PATH" "$DUMP_PATH" 3<<<"$BACKUP_PASSPHRASE" \
+    || die "dechiffrement impossible : phrase secrete incorrecte ou fichier corrompu."
+  DUMP_PATH="$DECRYPTED_PATH"
+  log "Dump dechiffre dans un fichier temporaire."
+fi
+
 log "Restauration du dump en cours (peut prendre plusieurs minutes selon la taille)..."
 docker compose -f "$COMPOSE_FILE" exec -T -e PGPASSWORD="$DB_PASSWORD" \
   postgis pg_restore -U "$DB_USER" -d "$DB_NAME" --no-owner --role="$DB_USER" \
