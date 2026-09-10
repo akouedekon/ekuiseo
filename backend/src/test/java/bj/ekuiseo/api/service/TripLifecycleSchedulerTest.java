@@ -24,7 +24,7 @@ class TripLifecycleSchedulerTest {
 
     private final TripRepository tripRepository = mock(TripRepository.class);
     private final BookingRepository bookingRepository = mock(BookingRepository.class);
-    private final TripLifecycleScheduler scheduler = new TripLifecycleScheduler(tripRepository, bookingRepository, mock(org.springframework.transaction.PlatformTransactionManager.class), 6);
+    private final TripLifecycleScheduler scheduler = new TripLifecycleScheduler(tripRepository, bookingRepository, mock(bj.ekuiseo.api.repository.UserRepository.class), mock(org.springframework.transaction.PlatformTransactionManager.class), 6);
 
     @Test
     void advance_startsDepartedTrips_completesOldOnes_andClosesConfirmedBookings() {

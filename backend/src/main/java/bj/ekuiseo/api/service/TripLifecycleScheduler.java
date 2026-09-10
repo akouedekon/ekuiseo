@@ -6,6 +6,7 @@ import bj.ekuiseo.api.domain.enums.BookingStatus;
 import bj.ekuiseo.api.domain.enums.TripStatus;
 import bj.ekuiseo.api.repository.BookingRepository;
 import bj.ekuiseo.api.repository.TripRepository;
+import bj.ekuiseo.api.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,7 +18,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Cycle de vie automatique des trajets (constats F035/F101/F201/F209) :
@@ -25,7 +28,9 @@ import java.util.List;
  *   <li>PUBLISHED / FULL dont le depart est passe -> ONGOING (plus de reservation, plus
  *       d annulation passager) ;</li>
  *   <li>ONGOING depuis plus de {@code ekuiseo.trip.completion-delay-hours} (6 h par
- *       defaut, au-dela de la duree de tout trajet interurbain du Benin) -> COMPLETED ;</li>
+ *       defaut, au-dela de la duree de tout trajet interurbain du Benin) -> COMPLETED, et le
+ *       compteur {@code users.trips_completed_as_driver} du conducteur avance (V27, niveau de
+ *       confiance) ;</li>
  *   <li>reservations CONFIRMED de ces trajets -> COMPLETED : elles deviennent
  *       reversables au conducteur (PayoutService) et comptent dans « trajets effectues »
  *       et la fiabilite. Un NO_SHOW pose par le conducteur avant la cloture est conserve.</li>
@@ -42,14 +47,16 @@ public class TripLifecycleScheduler {
 
     private final TripRepository tripRepository;
     private final BookingRepository bookingRepository;
+    private final UserRepository userRepository;
     private final TransactionTemplate transaction;
     private final long completionDelayHours;
 
     public TripLifecycleScheduler(TripRepository tripRepository, BookingRepository bookingRepository,
-                                  PlatformTransactionManager transactionManager,
+                                  UserRepository userRepository, PlatformTransactionManager transactionManager,
                                   @Value("${ekuiseo.trip.completion-delay-hours:6}") long completionDelayHours) {
         this.tripRepository = tripRepository;
         this.bookingRepository = bookingRepository;
+        this.userRepository = userRepository;
         this.transaction = new TransactionTemplate(transactionManager);
         this.completionDelayHours = completionDelayHours;
     }
@@ -79,9 +86,13 @@ public class TripLifecycleScheduler {
         }
         Instant completionCutoff = now.minus(completionDelayHours, ChronoUnit.HOURS);
         int completed = 0;
+        List<UUID> completedDrivers = new ArrayList<>();
         for (Trip trip : tripRepository.findByStatusInAndDepartureAtBefore(List.of(TripStatus.ONGOING), completionCutoff)) {
             trip.setStatus(TripStatus.COMPLETED);
             tripRepository.save(trip);
+            if (trip.getDriver() != null) {
+                completedDrivers.add(trip.getDriver().getId());
+            }
             completed++;
         }
         int bookingsCompleted = 0;
@@ -90,6 +101,10 @@ public class TripLifecycleScheduler {
             booking.setExpiresAt(null);
             bookingRepository.save(booking);
             bookingsCompleted++;
+        }
+        // En dernier : la requete de mise a jour vide le contexte de persistance (clearAutomatically).
+        for (UUID driverId : completedDrivers) {
+            userRepository.incrementTripsCompletedAsDriver(driverId);
         }
         return new Result(started, completed, bookingsCompleted);
     }

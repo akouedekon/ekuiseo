@@ -480,6 +480,30 @@ public final class NotificationTemplates {
                                 + "\n\nMerci de contribuer a la securite de la communaute.",
                         "Ekuiseo : votre signalement a ete traite, consultez l'application.");
             }
+            case CASH_CONFIRMATION_REQUESTED: {
+                // Contrat A.6 : l autre partie a confirme le solde en especes ; on demande la confirmation en retour.
+                boolean toDriver = Boolean.TRUE.equals(p.get("forDriver"));
+                String amount = has(p, "cashExpectedFcfa") ? money(p, "cashExpectedFcfa") : "";
+                String body = (toDriver
+                        ? "Votre passager confirme avoir regle le solde en especes"
+                        : "Le conducteur confirme avoir recu le solde en especes")
+                        + (amount.isEmpty() ? "" : " (" + amount + ")")
+                        + (tripLine.isEmpty() ? "" : " pour le trajet " + tripLine) + "."
+                        + "\n\nConfirmez a votre tour depuis l'application, ou signalez un desaccord. Sans reponse de votre "
+                        + "part, le reglement sera considere comme effectue 48 heures apres le depart.";
+                return finish("Confirmez le reglement en especes", body,
+                        "Ekuiseo : confirmez le reglement du solde en especes" + (amount.isEmpty() ? "" : " (" + amount + ")") + " dans l'application.");
+            }
+            case CASH_DISPUTED: {
+                String amount = has(p, "cashExpectedFcfa") ? money(p, "cashExpectedFcfa") : "";
+                String by = "DRIVER".equals(str(p, "disputedBy")) ? "le conducteur" : "le passager";
+                String body = "Un desaccord sur le solde en especes" + (amount.isEmpty() ? "" : " (" + amount + ")")
+                        + (tripLine.isEmpty() ? "" : " du trajet " + tripLine) + " a ete signale par " + by + "."
+                        + "\n\nNotre equipe de moderation examine le dossier et reviendra vers les deux parties. "
+                        + "Vous pouvez apporter votre version depuis la messagerie de la reservation.";
+                return finish("Desaccord sur le reglement en especes", body,
+                        "Ekuiseo : un desaccord sur le solde en especes a ete signale, la moderation examine le dossier.");
+            }
             default:
                 return finish("Notification Ekuiseo", "Vous avez une nouvelle notification dans l'application Ekuiseo.",
                         "Ekuiseo : vous avez une nouvelle notification.");

@@ -32,6 +32,11 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query("update User u set u.lateCancellationsCount = u.lateCancellationsCount + 1 where u.id = :id")
     int incrementLateCancellations(@Param("id") UUID id);
 
+    /** Trajet termine comme conducteur (V27, TripLifecycleScheduler) : compteur du niveau de confiance, increment atomique. */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update User u set u.tripsCompletedAsDriver = u.tripsCompletedAsDriver + 1 where u.id = :id")
+    int incrementTripsCompletedAsDriver(@Param("id") UUID id);
+
     /**
      * Note moyenne (2 decimales) et nombre d avis recalcules par la base a partir de la table
      * reviews (constat F147) : deux avis simultanes ne s ecrasent plus mutuellement.

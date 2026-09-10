@@ -1,5 +1,6 @@
 package bj.ekuiseo.api.dto.user;
 
+import bj.ekuiseo.api.domain.enums.TrustLevel;
 import bj.ekuiseo.api.dto.trip.VehicleSummary;
 
 import java.math.BigDecimal;
@@ -37,6 +38,10 @@ public record PublicUserProfileResponse(
         /** Delai median (minutes) entre le premier message d'un passager et la premiere reponse du conducteur, 90 derniers jours ; {@code null} en dessous de 5 echanges mesurables. */
         Integer responseTimeMinutes,
         /** Preferences a bord publiques uniquement (jamais les preferences de notification) ; jamais {@code null} (valeurs par defaut si aucune ligne enregistree, regle n.17). */
-        PublicPreferencesResponse preferences
+        PublicPreferencesResponse preferences,
+        /** Niveau de confiance (contrat A.9) : UNVERIFIED, VERIFIED, EXPERIENCED. */
+        TrustLevel trustLevel,
+        /** Trajets termines comme conducteur (compteur V27, meme source que tripsCompleted). */
+        int tripsCompletedAsDriver
 ) {
 }

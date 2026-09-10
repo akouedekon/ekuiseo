@@ -55,5 +55,9 @@ public enum NotificationType {
     /** Aux deux parties : issue d une declaration « conducteur absent » (remboursement du passager ou trajet maintenu), V25. */
     NO_SHOW_DISPUTE_RESOLVED,
     /** Au conducteur : un reversement vient d etre constitue (lot hebdomadaire automatique, V25) ; le virement suit. */
-    PAYOUT_PREPARED
+    PAYOUT_PREPARED,
+    /** A l autre partie : l une vient de confirmer le reglement du solde en especes a bord (V27, contrat A.6). */
+    CASH_CONFIRMATION_REQUESTED,
+    /** Aux deux parties (critique) : litige sur le solde en especes a bord, signalement CASH_DISPUTE ouvert (V27). */
+    CASH_DISPUTED
 }

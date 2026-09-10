@@ -12,5 +12,7 @@ public enum ReportReason {
     HARASSMENT,
     FRAUD,
     VEHICLE_MISMATCH,
+    /** Litige sur le solde en especes a bord (V27, contrat A.6), ouvert par POST /bookings/{id}/cash/dispute. */
+    CASH_DISPUTE,
     OTHER
 }

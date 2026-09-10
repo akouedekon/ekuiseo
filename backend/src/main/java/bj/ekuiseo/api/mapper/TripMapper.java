@@ -19,6 +19,8 @@ public interface TripMapper {
     @Mapping(target = "segmentPriceFcfa", ignore = true)
     TripResponse toResponse(Trip trip);
 
+    /** Niveau de confiance calcule depuis les colonnes de users (contrat A.9), sans requete supplementaire. */
+    @Mapping(target = "trustLevel", expression = "java(bj.ekuiseo.api.common.TrustPolicy.of(user))")
     DriverSummary toDriverSummary(bj.ekuiseo.api.domain.User user);
 
     TripStopResponse toStopResponse(TripStop stop);
