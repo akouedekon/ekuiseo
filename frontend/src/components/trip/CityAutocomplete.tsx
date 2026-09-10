@@ -1,5 +1,5 @@
 import { AnimatePresence, m } from 'motion/react'
-import { History, MapPin, X } from 'lucide-react'
+import { History, LocateFixed, MapPin, X } from 'lucide-react'
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { FieldError } from '@/components/ui/input'
 import { cn } from '@/lib/cn'
@@ -15,6 +15,13 @@ interface CityAutocompleteProps {
   error?: string
   /** Ville a exclure des suggestions (on ne propose pas A -> A). */
   exclude?: CityOption | null
+  /**
+   * « Ma position » : bouton dans le champ, visible tant que rien n est saisi ni choisi.
+   * Le parent obtient la position (lib/geolocation) et remplit le champ ; `locating`
+   * desactive le bouton le temps de la mesure.
+   */
+  onLocate?: () => void
+  locating?: boolean
 }
 
 /**
@@ -33,6 +40,8 @@ export function CityAutocomplete({
   icon,
   error,
   exclude,
+  onLocate,
+  locating = false,
 }: CityAutocompleteProps) {
   const inputId = useId()
   const listId = `${inputId}-list`
@@ -160,6 +169,18 @@ export function CityAutocomplete({
             className="absolute right-0.5 flex size-11 items-center justify-center rounded-[var(--radius-control)] text-muted transition-colors hover:text-ink"
           >
             <X className="size-4" aria-hidden />
+          </button>
+        ) : onLocate ? (
+          <button
+            type="button"
+            aria-label={locating ? 'Recherche de votre position' : 'Ma position'}
+            title="Ma position"
+            aria-busy={locating || undefined}
+            disabled={locating}
+            onClick={onLocate}
+            className="absolute right-0.5 flex size-11 items-center justify-center rounded-[var(--radius-control)] text-muted transition-colors hover:text-primary-ink disabled:opacity-60"
+          >
+            <LocateFixed className={cn('size-[18px]', locating && 'motion-safe:animate-pulse')} aria-hidden />
           </button>
         ) : null}
       </div>

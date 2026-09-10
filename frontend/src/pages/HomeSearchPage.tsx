@@ -6,6 +6,7 @@ import {
   CircleDot,
   Clock,
   Flag,
+  LocateFixed,
   Search,
   ShieldCheck,
   Sparkles,
@@ -26,9 +27,11 @@ import { CityAutocomplete } from '@/components/trip/CityAutocomplete'
 import { PageContainer, SectionTitle } from '@/components/layout/PageContainer'
 import { PageMeta } from '@/components/layout/PageMeta'
 import { useIsAuthenticated } from '@/hooks/useAuth'
+import { useGeoPlaces } from '@/hooks/useGeo'
 import { usePopularRoutes, useRecurringTrips } from '@/hooks/useTrips'
-import type { CityOption } from '@/lib/cities'
+import { FALLBACK_PLACES, myPositionOption, type CityOption } from '@/lib/cities'
 import { BENIN_TIME_HINT, deviceClockDiffersFromBenin, formatFcfa, toInputDate } from '@/lib/format'
+import { GEOLOCATION_MESSAGES, getCurrentPosition, isGeolocationSupported } from '@/lib/geolocation'
 import { WEEKDAYS } from '@/lib/labels'
 import { DEPOSIT_FLOOR } from '@/lib/payments'
 import { listContainer, listItem } from '@/lib/motion'
@@ -100,9 +103,35 @@ export function HomeSearchPage() {
     setDestination(origin)
   }
 
+  /*
+   * « Ma position » dans le champ Depart : la position de l appareil, libellee par le lieu du
+   * referentiel le plus proche (« Ma position (Agla — Cotonou) »). Le referentiel est celui de
+   * l autocompletion (GET /api/v1/geo/places, deja en cache), la liste de repli sinon.
+   */
+  const places = useGeoPlaces()
+  const [locating, setLocating] = useState(false)
+  const [locateError, setLocateError] = useState<string>()
+  const locateOrigin = async () => {
+    if (!isGeolocationSupported()) {
+      setLocateError(GEOLOCATION_MESSAGES.unsupported)
+      return
+    }
+    setLocating(true)
+    setLocateError(undefined)
+    try {
+      const position = await getCurrentPosition()
+      setOrigin(myPositionOption(places.data ?? FALLBACK_PLACES, position.lat, position.lng))
+    } catch (error) {
+      setLocateError(error instanceof Error ? error.message : GEOLOCATION_MESSAGES.unavailable)
+    } finally {
+      setLocating(false)
+    }
+  }
+
   const goTo = (from: CityOption, to: CityOption) => {
-    rememberPlace(from)
-    rememberPlace(to)
+    // Un point « Ma position » ne vaut qu une fois : il n entre pas dans les villes recentes.
+    if (!from.transient) rememberPlace(from)
+    if (!to.transient) rememberPlace(to)
     const params = new URLSearchParams({
       from: from.label,
       fromLat: String(from.lat),
@@ -205,11 +234,16 @@ export function HomeSearchPage() {
                 <CityAutocomplete
                   label="Départ"
                   value={origin}
-                  onChange={setOrigin}
+                  onChange={(city) => {
+                    setOrigin(city)
+                    setLocateError(undefined)
+                  }}
                   exclude={destination}
-                  error={errors.origin}
+                  error={errors.origin ?? locateError}
                   icon={<CircleDot />}
                   placeholder="D'où partez-vous ?"
+                  onLocate={() => void locateOrigin()}
+                  locating={locating}
                 />
                 <CityAutocomplete
                   label="Arrivée"
@@ -271,6 +305,13 @@ export function HomeSearchPage() {
               </Button>
             </form>
           </Card>
+          {/* Entree secondaire : les departs proches sur la carte, sans saisir d axe ni de date. */}
+          <Button asChild variant="secondary" size="lg" block className="mt-3">
+            <Link to="/autour">
+              <LocateFixed aria-hidden />
+              Autour de moi
+            </Link>
+          </Button>
         </m.div>
 
         {/* --- Trajet de la semaine (mode quotidien) --- */}
