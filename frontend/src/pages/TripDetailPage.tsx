@@ -24,6 +24,7 @@ import { PageContainer, PageHeader, SectionTitle } from '@/components/layout/Pag
 import { PageMeta } from '@/components/layout/PageMeta'
 import { StickyActionBar, stickyClearanceClass } from '@/components/layout/StickyActionBar'
 import { RouteMap, type RouteMapPoint } from '@/components/trip/RouteMap'
+import { VehicleTypeBadge, VehicleTypeIcon } from '@/components/trip/VehicleTypeIcon'
 import { RouteTimeline } from '@/components/trip/RouteTimeline'
 import { ShareTripButton } from '@/components/trip/ShareTripButton'
 import { buildRoutePoints, estimateArrival } from '@/lib/route'
@@ -283,15 +284,21 @@ export function TripDetailPage() {
             <Card className="p-4 sm:p-5">
               <SectionTitle>Véhicule et conditions</SectionTitle>
               <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-                <div>
-                  <p className="font-display text-base font-bold">
-                    {data.vehicle.brand} {data.vehicle.model}
-                  </p>
-                  <p className="text-label text-muted">
-                    {data.vehicle.color ?? 'Couleur non précisée'} · {COMFORT_LABEL[data.vehicle.comfortLevel]}
-                  </p>
+                <div className="flex items-center gap-3">
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-surface-2 text-ink-2">
+                    <VehicleTypeIcon type={data.vehicle.vehicleType} className="size-5" />
+                  </span>
+                  <div>
+                    <p className="font-display text-base font-bold">
+                      {data.vehicle.brand} {data.vehicle.model}
+                    </p>
+                    <p className="text-label text-muted">
+                      {data.vehicle.color ?? 'Couleur non précisée'} · {COMFORT_LABEL[data.vehicle.comfortLevel]}
+                    </p>
+                  </div>
                 </div>
                 <div className="ml-auto flex flex-wrap gap-1.5">
+                  <VehicleTypeBadge type={data.vehicle.vehicleType} />
                   <Badge tone={full ? 'danger' : 'neutral'}>
                     <Users aria-hidden />
                     {full ? 'Complet' : `${data.seatsAvailable}/${data.seatsTotal} places`}
@@ -310,6 +317,11 @@ export function TripDetailPage() {
                   ) : null}
                 </div>
               </div>
+              {data.vehicle.vehicleType === 'MOTO' ? (
+                <p className="mt-3 rounded-[var(--radius-control)] bg-accent-soft px-3 py-2 text-label text-accent-ink">
+                  Trajet à moto : un seul passager, casque obligatoire pour les deux, fourni par le conducteur.
+                </p>
+              ) : null}
 
               {data.luggagePolicy ? (
                 <p className="mt-3 flex items-start gap-2 text-body text-ink-2">

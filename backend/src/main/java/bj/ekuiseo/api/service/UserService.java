@@ -1,6 +1,7 @@
 package bj.ekuiseo.api.service;
 
 import bj.ekuiseo.api.common.Masking;
+import bj.ekuiseo.api.common.exception.BadRequestException;
 import bj.ekuiseo.api.common.exception.ConflictException;
 import bj.ekuiseo.api.common.exception.ForbiddenException;
 import bj.ekuiseo.api.common.exception.NotFoundException;
@@ -12,6 +13,7 @@ import bj.ekuiseo.api.domain.enums.BookingStatus;
 import bj.ekuiseo.api.domain.enums.PayoutStatus;
 import bj.ekuiseo.api.domain.enums.TripStatus;
 import bj.ekuiseo.api.domain.enums.UserStatus;
+import bj.ekuiseo.api.domain.enums.VehicleType;
 import bj.ekuiseo.api.dto.trip.VehicleSummary;
 import bj.ekuiseo.api.dto.user.PublicPreferencesResponse;
 import bj.ekuiseo.api.dto.user.PublicUserProfileResponse;
@@ -350,7 +352,17 @@ public class UserService {
     @Transactional
     public VehicleResponse addVehicle(UUID ownerId, VehicleRequest req) {
         User owner = findUser(ownerId);
+        // V22 : le type borne les places (moto : 1 passager, tricycle : 6, voiture : 8).
+        VehicleType type = req.vehicleType() != null ? req.vehicleType() : VehicleType.CAR;
+        if (req.seats() > type.maxSeats()) {
+            throw new BadRequestException(switch (type) {
+                case MOTO -> "Une moto ne transporte qu un passager";
+                case TRICYCLE -> "Un tricycle transporte au plus " + type.maxSeats() + " passagers";
+                case CAR -> "Une voiture transporte au plus " + type.maxSeats() + " passagers";
+            });
+        }
         Vehicle vehicle = Vehicle.builder()
+                .vehicleType(type)
                 .owner(owner)
                 .brand(req.brand())
                 .model(req.model())

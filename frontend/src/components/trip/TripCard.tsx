@@ -5,6 +5,7 @@ import { Avatar, RatingStars } from '@/components/ui/misc'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/cn'
 import { formatDuration, formatFcfa, formatTime } from '@/lib/format'
+import { VehicleTypeBadge } from '@/components/trip/VehicleTypeIcon'
 import { DRIVER_APPROVAL_BADGE } from '@/lib/labels'
 import { listItem } from '@/lib/motion'
 import { estimateArrival } from '@/lib/route'
@@ -100,6 +101,7 @@ export function TripCard({
         ) : null}
 
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
+          <VehicleTypeBadge type={trip.vehicle.vehicleType} />
           {!trip.instantBooking ? (
             <Badge tone="outline" title="Le conducteur accepte chaque passager avant confirmation">
               <UserCheck aria-hidden />

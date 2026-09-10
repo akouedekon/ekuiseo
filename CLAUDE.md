@@ -362,6 +362,10 @@ s'interprète pas.
   dans un format que le serveur refuse (HEIC des iPhone) est redessinée en JPEG de 2 000 px
   maximum avant l'envoi (`lib/imageReduction.ts`) : la limite serveur de 5 Mo ne vaut plus que
   pour les PDF.
+- **Types de véhicule (V22)** : `vehicles.vehicle_type` = `CAR` (défaut), `MOTO` (zémidjan, 1 passager,
+  casque obligatoire rappelé dans les CGU et sur la fiche trajet) ou `TRICYCLE` (6 places au plus) ;
+  bornes communes `VehicleType.java` / `VEHICLE_TYPE_MAX_SEATS` (`lib/labels.ts`), filtre de recherche
+  `vehicleType`, icône et badge `components/trip/VehicleTypeIcon.tsx`.
 - Aucun fournisseur de tuiles cartographiques n'est câblé : `RouteMap` dessine un tracé
   schématique tant que `VITE_MAP_STYLE_URL` n'est pas renseignée.
 - Web Push (V20) : canal complémentaire de l'e-mail (`WebPushSender`, `nl.martijndwars:web-push`,

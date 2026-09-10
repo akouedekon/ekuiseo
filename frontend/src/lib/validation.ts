@@ -76,19 +76,34 @@ export const profileSchema = z.object({
 export type ProfileValues = z.infer<typeof profileSchema>
 
 const COMFORT_LEVELS = ['BASIC', 'COMFORT', 'PREMIUM'] as const
+const VEHICLE_TYPES = ['CAR', 'MOTO', 'TRICYCLE'] as const
+/** Memes bornes que VehicleType.java (V22) : moto 1 passager, tricycle 6, voiture 8. */
+const VEHICLE_TYPE_MAX_SEATS: Record<(typeof VEHICLE_TYPES)[number], number> = { CAR: 8, MOTO: 1, TRICYCLE: 6 }
 
-export const vehicleSchema = z.object({
-  brand: z.string().trim().min(1, 'Indiquez la marque').max(40, '40 caractères maximum'),
-  model: z.string().trim().min(1, 'Indiquez le modèle').max(40, '40 caractères maximum'),
-  color: z.string().trim().max(30, '30 caractères maximum'),
-  plate: z.string().trim().min(4, "Indiquez l'immatriculation").max(15, '15 caractères maximum'),
-  seats: z
-    .number({ invalid_type_error: 'Indiquez un nombre de places' })
-    .int('Nombre entier attendu')
-    .min(1, 'Au moins 1 place')
-    .max(8, '8 places maximum'),
-  comfortLevel: z.enum(COMFORT_LEVELS),
-})
+export const vehicleSchema = z
+  .object({
+    vehicleType: z.enum(VEHICLE_TYPES),
+    brand: z.string().trim().min(1, 'Indiquez la marque').max(40, '40 caractères maximum'),
+    model: z.string().trim().min(1, 'Indiquez le modèle').max(40, '40 caractères maximum'),
+    color: z.string().trim().max(30, '30 caractères maximum'),
+    plate: z.string().trim().min(4, "Indiquez l'immatriculation").max(15, '15 caractères maximum'),
+    seats: z
+      .number({ invalid_type_error: 'Indiquez un nombre de places' })
+      .int('Nombre entier attendu')
+      .min(1, 'Au moins 1 place')
+      .max(8, '8 places maximum'),
+    comfortLevel: z.enum(COMFORT_LEVELS),
+  })
+  .superRefine((values, ctx) => {
+    const max = VEHICLE_TYPE_MAX_SEATS[values.vehicleType]
+    if (values.seats > max) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['seats'],
+        message: values.vehicleType === 'MOTO' ? 'Une moto ne transporte qu’un passager' : `${max} places maximum pour ce type`,
+      })
+    }
+  })
 export type VehicleValues = z.infer<typeof vehicleSchema>
 
 const PAYMENT_PROVIDERS = ['MTN_MOMO', 'MOOV_MONEY', 'CELTIIS_CASH'] as const

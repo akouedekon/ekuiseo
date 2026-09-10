@@ -173,6 +173,7 @@ Le front (`frontend/src/api/extended.ts`, `types.ts`, hooks) appelait des endpoi
 | `GET`/`POST /api/v1/me/identity` | Dépôt et état de la vérification d'identité (`identity_verifications`, V6). Le téléversement de la photo du document reste un TODO documenté (voir §10) : seuls le type et le numéro de document sont enregistrés. |
 | `GET`/`POST /api/v1/me/payment-methods`, `DELETE /api/v1/me/payment-methods/{id}` | Comptes mobile money de l'utilisateur (`payment_methods`, V6) : opérateur + MSISDN, un seul par défaut. Le premier ajouté devient automatiquement le défaut ; supprimer le défaut promeut le plus ancien restant. |
 | `DELETE /api/v1/me/vehicles/{id}` | Refuse (409) si le véhicule est engagé sur un trajet `PUBLISHED`/`FULL` à venir. |
+| `POST /api/v1/me/vehicles` (champ `vehicleType`, V22) | `CAR` (défaut), `MOTO` ou `TRICYCLE` ; borne les places (moto 1, tricycle 6, voiture 8). Renvoyé dans `VehicleResponse`, `VehicleSummary` (résultats de recherche) et la fiche de réservation ; `GET /api/v1/trips/search?vehicleType=` filtre les trajets. |
 | `GET /api/v1/me/recurring-trips` | Trajets récurrents de l'utilisateur ("votre trajet de la semaine"), déduits par heuristique de l'historique de réservations (voir §10 — pas une préférence stockée). |
 | `GET /api/v1/me/conversations` | Conversations de l'utilisateur avec dernier message et compteur de non-lus. |
 | `POST /api/v1/notifications/{id}/read`, `POST /api/v1/notifications/read-all` | Marquage lu, unitaire ou en masse. |

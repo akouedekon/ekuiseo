@@ -1,6 +1,7 @@
 package bj.ekuiseo.api.web.controller;
 
 import bj.ekuiseo.api.domain.enums.TripType;
+import bj.ekuiseo.api.domain.enums.VehicleType;
 import bj.ekuiseo.api.dto.booking.BookingQuoteRequest;
 import bj.ekuiseo.api.dto.booking.BookingResponse;
 import bj.ekuiseo.api.dto.booking.CreateBookingRequest;
@@ -66,7 +67,7 @@ public class TripController {
      * "validation-error" via GlobalExceptionHandler), en plus de la limitation de debit
      * par IP de RateLimitingFilter.
      */
-    @Operation(summary = "Rechercher des trajets", description = "Recherche geospatiale : un point de montee (origine ou arret intermediaire du trajet) a moins de radiusKm (5 km par defaut) de l origine cherchee ET un point de descente ulterieur a moins de radiusKm de la destination. Quand la correspondance passe par un arret, pickupStopId/dropoffStopId/segmentPriceFcfa sont renseignes. Tri serveur : sort = departure (defaut) | price | rating ; filtres : maxPrice (FCFA), minRating (0-5), verifiedOnly. originLabel/destLabel (optionnels) ne filtrent rien : ils lisibilisent la trace de recherche conservee pour les indicateurs de liquidite du back-office (table search_events).")
+    @Operation(summary = "Rechercher des trajets", description = "Recherche geospatiale : un point de montee (origine ou arret intermediaire du trajet) a moins de radiusKm (5 km par defaut) de l origine cherchee ET un point de descente ulterieur a moins de radiusKm de la destination. Quand la correspondance passe par un arret, pickupStopId/dropoffStopId/segmentPriceFcfa sont renseignes. Tri serveur : sort = departure (defaut) | price | rating ; filtres : maxPrice (FCFA), minRating (0-5), verifiedOnly, vehicleType (CAR, MOTO, TRICYCLE). originLabel/destLabel (optionnels) ne filtrent rien : ils lisibilisent la trace de recherche conservee pour les indicateurs de liquidite du back-office (table search_events).")
     @GetMapping("/search")
     public Page<TripResponse> search(@RequestParam @DecimalMin("-90") @DecimalMax("90") double originLat,
                                       @RequestParam @DecimalMin("-180") @DecimalMax("180") double originLng,
@@ -82,6 +83,7 @@ public class TripController {
                                       @RequestParam(required = false) Long maxPrice,
                                       @RequestParam(required = false) Double minRating,
                                       @RequestParam(required = false) Boolean verifiedOnly,
+                                      @RequestParam(required = false) VehicleType vehicleType,
                                       @RequestParam(defaultValue = "0") @Min(0) @Max(1000) int page,
                                       @RequestParam(defaultValue = "20") @Min(1) @Max(50) int size) {
         Pageable pageable = PageRequest.of(page, size);
@@ -89,7 +91,7 @@ public class TripController {
         // recherche est alors anonyme elle aussi).
         return tripService.search(currentUser.idOrNull(), originLabel, destLabel,
                 originLat, originLng, destLat, destLng, date, seats, radiusKm, tripType,
-                sort, maxPrice, minRating, verifiedOnly, pageable);
+                sort, maxPrice, minRating, verifiedOnly, vehicleType, pageable);
     }
 
     @Operation(summary = "Axes les plus proposes", description = "Public. Trajets PUBLISHED a venir avec au moins une place, regroupes par origine/destination, classes par nombre de departs. Alimente les raccourcis de l'accueil.")

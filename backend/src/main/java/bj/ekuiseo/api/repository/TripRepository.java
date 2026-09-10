@@ -222,6 +222,8 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
                   and (cast(:dateFrom as timestamptz) is null or t.departure_at >= cast(:dateFrom as timestamptz))
                   and (cast(:dateTo as timestamptz) is null or t.departure_at < cast(:dateTo as timestamptz))
                   and (cast(:maxPrice as bigint) is null or t.price_per_seat <= cast(:maxPrice as bigint))
+                  and (cast(:vehicleType as varchar) is null
+                       or exists (select 1 from vehicles v where v.id = t.vehicle_id and v.vehicle_type = cast(:vehicleType as varchar)))
                   and (ST_DWithin(t.origin_point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography, :radiusMeters)
                        or exists (select 1 from trip_stops s where s.trip_id = t.id
                                   and ST_DWithin(s.point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography, :radiusMeters)))
@@ -270,6 +272,8 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
                   and (cast(:dateFrom as timestamptz) is null or t.departure_at >= cast(:dateFrom as timestamptz))
                   and (cast(:dateTo as timestamptz) is null or t.departure_at < cast(:dateTo as timestamptz))
                   and (cast(:maxPrice as bigint) is null or t.price_per_seat <= cast(:maxPrice as bigint))
+                  and (cast(:vehicleType as varchar) is null
+                       or exists (select 1 from vehicles v where v.id = t.vehicle_id and v.vehicle_type = cast(:vehicleType as varchar)))
                   and (ST_DWithin(t.origin_point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography, :radiusMeters)
                        or exists (select 1 from trip_stops s where s.trip_id = t.id
                                   and ST_DWithin(s.point, ST_SetSRID(ST_MakePoint(:originLng, :originLat), 4326)::geography, :radiusMeters)))
@@ -315,6 +319,7 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
                        @Param("maxPrice") Long maxPrice,
                        @Param("minRating") Double minRating,
                        @Param("verifiedOnly") boolean verifiedOnly,
+                       @Param("vehicleType") String vehicleType,
                        Pageable pageable);
 
     /** Axe propose en ce moment, pour {@link #findPopularRoutes}. */

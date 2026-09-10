@@ -112,6 +112,9 @@ export interface AuthResponse {
   user: UserResponse
 }
 
+/** Voiture, moto (zemidjan) ou tricycle (V22) : borne les places et pilote l affichage. */
+export type VehicleType = 'CAR' | 'MOTO' | 'TRICYCLE'
+
 export interface VehicleResponse {
   id: string
   brand: string
@@ -119,6 +122,7 @@ export interface VehicleResponse {
   color: string | null
   plate: string
   seats: number
+  vehicleType: VehicleType
   comfortLevel: ComfortLevel
   photoUrl: string | null
   verified: boolean
@@ -130,6 +134,7 @@ export interface VehicleRequest {
   color?: string
   plate: string
   seats: number
+  vehicleType: VehicleType
   comfortLevel: ComfortLevel
   photoUrl?: string
 }
@@ -151,6 +156,8 @@ export interface VehicleSummary {
   model: string
   color: string | null
   comfortLevel: ComfortLevel
+  /** Absent sur une reponse d un serveur plus ancien : lire comme une voiture. */
+  vehicleType?: VehicleType
 }
 
 export interface TripResponse {

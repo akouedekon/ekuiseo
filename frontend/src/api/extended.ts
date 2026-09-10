@@ -5,7 +5,7 @@
  * (`non_null`), un champ type `X | null` arrive donc comme `undefined` quand il
  * est vide - tester avec `== null` ou `??`, jamais avec `=== null`.
  */
-import type { BookingStatus, ComfortLevel, PassengerConfirmation, PaymentMethod, TripType, VehicleSummary } from './types'
+import type { BookingStatus, ComfortLevel, PassengerConfirmation, PaymentMethod, TripType, VehicleSummary, VehicleType } from './types'
 
 /* --------------------------------------------------------- Trajet detaille */
 
@@ -159,7 +159,7 @@ export interface BookingDetailResponse {
     departureAt: string
     pricePerSeat: number
     driver: { id: string; firstName: string; lastName: string; photoUrl: string | null; ratingAvg: number }
-    vehicle: { brand: string; model: string; color: string | null; comfortLevel: ComfortLevel }
+    vehicle: { brand: string; model: string; color: string | null; comfortLevel: ComfortLevel; vehicleType?: VehicleType }
   }
   /** Nombre de messages non lus dans la conversation liee. */
   unreadMessages: number
@@ -735,6 +735,8 @@ export interface AdminUserVehicle {
   color: string | null
   plate: string
   seats: number
+  /** Absent sur une reponse d un serveur plus ancien : lire comme une voiture (V22). */
+  vehicleType?: VehicleType
   comfortLevel: ComfortLevel
   verified: boolean
 }

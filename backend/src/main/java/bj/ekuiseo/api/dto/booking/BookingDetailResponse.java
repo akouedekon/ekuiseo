@@ -3,6 +3,7 @@ package bj.ekuiseo.api.dto.booking;
 import bj.ekuiseo.api.domain.enums.BookingStatus;
 import bj.ekuiseo.api.domain.enums.PassengerConfirmation;
 import bj.ekuiseo.api.domain.enums.ComfortLevel;
+import bj.ekuiseo.api.domain.enums.VehicleType;
 import bj.ekuiseo.api.domain.enums.PaymentMethod;
 import bj.ekuiseo.api.domain.enums.TripType;
 import bj.ekuiseo.api.dto.payment.PaymentPlanResponse;
@@ -58,6 +59,6 @@ public record BookingDetailResponse(
     public record DriverRef(UUID id, String firstName, String lastName, String photoUrl, BigDecimal ratingAvg) {
     }
 
-    public record VehicleRef(String brand, String model, String color, ComfortLevel comfortLevel) {
+    public record VehicleRef(String brand, String model, String color, ComfortLevel comfortLevel, VehicleType vehicleType) {
     }
 }

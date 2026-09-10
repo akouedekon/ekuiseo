@@ -67,8 +67,12 @@ export function CguContent() {
       <ul>
         <li>être titulaire d'un <strong>permis de conduire</strong> en cours de validité ;</li>
         <li>
-          que le véhicule utilisé est celui déclaré sur son profil, en bon état de fonctionnement, régulièrement
-          immatriculé et couvert par une <strong>assurance</strong> en cours de validité ;
+          que le véhicule utilisé est celui déclaré sur son profil (voiture, moto ou tricycle), en bon état de
+          fonctionnement, régulièrement immatriculé et couvert par une <strong>assurance</strong> en cours de validité ;
+        </li>
+        <li>
+          pour un trajet à <strong>moto</strong>, ne transporter qu'un seul passager et fournir un <strong>casque</strong> à
+          ce passager, le port du casque étant obligatoire pour le conducteur et le passager ;
         </li>
         <li>
           que les informations du trajet (lieux de départ, d'arrivée et arrêts intermédiaires, horaire, nombre de

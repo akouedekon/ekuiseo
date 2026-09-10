@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BookingStatus } from '@/api/types'
-import { BOOKING_STATUS_LABEL, DRIVER_APPROVAL_BADGE } from './labels'
+import { BOOKING_STATUS_LABEL, DRIVER_APPROVAL_BADGE, VEHICLE_TYPE_LABEL, VEHICLE_TYPE_MAX_SEATS, VEHICLE_TYPE_OPTIONS } from './labels'
 
 /** Chaque statut du serveur a un libelle francais lisible ; le nouveau statut V19 est nomme sans jargon. */
 describe('BOOKING_STATUS_LABEL', () => {
@@ -12,6 +12,7 @@ describe('BOOKING_STATUS_LABEL', () => {
     'CANCELLED_BY_DRIVER',
     'COMPLETED',
     'NO_SHOW',
+    'DRIVER_NO_SHOW',
     'EXPIRED',
   ]
 
@@ -21,6 +22,12 @@ describe('BOOKING_STATUS_LABEL', () => {
       expect(label, status).toBeTruthy()
       expect(label, status).not.toMatch(/[A-Z_]{4,}/)
     }
+  })
+
+  it('nomme les types de vehicule et borne leurs places comme le serveur (VehicleType.java)', () => {
+    expect(VEHICLE_TYPE_LABEL).toEqual({ CAR: 'Voiture', MOTO: 'Moto', TRICYCLE: 'Tricycle' })
+    expect(VEHICLE_TYPE_MAX_SEATS).toEqual({ CAR: 8, MOTO: 1, TRICYCLE: 6 })
+    expect(VEHICLE_TYPE_OPTIONS.map((o) => o.value)).toEqual(['CAR', 'MOTO', 'TRICYCLE'])
   })
 
   it('nomme l attente du conducteur et le badge « sur accord » de facon coherente', () => {

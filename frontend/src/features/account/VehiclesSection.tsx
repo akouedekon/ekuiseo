@@ -1,5 +1,7 @@
 import { m } from 'motion/react'
 import { BadgeCheck, Car, Plus, Trash2 } from 'lucide-react'
+import { VehicleTypeIcon } from '@/components/trip/VehicleTypeIcon'
+import { VEHICLE_TYPE_LABEL } from '@/lib/labels'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/feedback/ConfirmDialog'
@@ -73,14 +75,14 @@ export function VehiclesSection() {
             <m.li key={vehicle.id} variants={listItem}>
               <Card className="flex items-center gap-3 p-4">
                 <span className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-surface-2 text-ink-2">
-                  <Car className="size-5" aria-hidden />
+                  <VehicleTypeIcon type={vehicle.vehicleType} className="size-5" />
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-display text-base font-bold">
                     {vehicle.brand} {vehicle.model}
                   </p>
                   <p className="tnum text-label text-muted">
-                    {vehicle.plate} · {vehicle.seats} places
+                    {VEHICLE_TYPE_LABEL[vehicle.vehicleType ?? 'CAR']} · {vehicle.plate} · {vehicle.seats} place{vehicle.seats > 1 ? 's' : ''}
                     {vehicle.color ? ` · ${vehicle.color}` : ''}
                   </p>
                 </div>

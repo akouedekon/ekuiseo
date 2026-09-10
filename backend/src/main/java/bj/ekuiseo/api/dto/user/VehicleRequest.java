@@ -1,6 +1,7 @@
 package bj.ekuiseo.api.dto.user;
 
 import bj.ekuiseo.api.domain.enums.ComfortLevel;
+import bj.ekuiseo.api.domain.enums.VehicleType;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -19,6 +20,8 @@ public record VehicleRequest(
         @Size(max = 50) String color,
         @NotBlank @Size(max = 20) String plate,
         @Min(1) @Max(8) int seats,
+        /** Voiture par defaut (V22) ; borne les places : MOTO 1, TRICYCLE 6, CAR 8 (UserService#addVehicle). */
+        VehicleType vehicleType,
         @NotNull ComfortLevel comfortLevel,
         @Null(message = "La photo du vehicule ne peut pas encore etre renseignee : le televersement n est pas disponible") String photoUrl
 ) {

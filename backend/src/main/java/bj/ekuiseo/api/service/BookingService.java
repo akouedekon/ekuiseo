@@ -389,7 +389,7 @@ public class BookingService {
                 new BookingDetailResponse.DriverRef(driver.getId(), driver.getFirstName(), driver.getLastName(),
                         driver.getPhotoUrl(), driver.getRatingAvg()),
                 new BookingDetailResponse.VehicleRef(vehicle.getBrand(), vehicle.getModel(), vehicle.getColor(),
-                        vehicle.getComfortLevel()));
+                        vehicle.getComfortLevel(), vehicle.getVehicleType()));
         return new BookingDetailResponse(booking.getId(), trip.getId(), booking.getPassenger().getId(),
                 booking.getSeats(), booking.getAmount(), booking.getServiceFee(), booking.getStatus(),
                 booking.getPaymentMethod(), booking.getCreatedAt(), buildPaymentPlan(booking), tripSummary, unread,

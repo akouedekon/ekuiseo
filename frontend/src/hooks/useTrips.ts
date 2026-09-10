@@ -9,6 +9,7 @@ import type {
   TripBookingResponse,
   TripResponse,
   TripType,
+  VehicleType,
 } from '@/api/types'
 
 export interface TripSearchParams {
@@ -28,6 +29,8 @@ export interface TripSearchParams {
   maxPrice?: number
   minRating?: number
   verifiedOnly?: boolean
+  /** Voiture, moto ou tricycle (V22) ; absent = tous. */
+  vehicleType?: VehicleType
   page?: number
   size?: number
 }

@@ -13,6 +13,7 @@ import bj.ekuiseo.api.domain.enums.BookingStatus;
 import bj.ekuiseo.api.domain.enums.NotificationType;
 import bj.ekuiseo.api.domain.enums.TripStatus;
 import bj.ekuiseo.api.domain.enums.TripType;
+import bj.ekuiseo.api.domain.enums.VehicleType;
 import bj.ekuiseo.api.dto.trip.CreateTripRequest;
 import bj.ekuiseo.api.dto.trip.PopularRouteResponse;
 import bj.ekuiseo.api.dto.trip.StopRequest;
@@ -476,13 +477,14 @@ public class TripService {
      * @param maxPrice    prix par place maximal (FCFA), optionnel
      * @param minRating   note minimale du conducteur, optionnelle
      * @param verifiedOnly ne garder que les conducteurs a identite verifiee
+     * @param vehicleType  ne garder que les trajets faits avec ce type de vehicule (V22), null = tous
      */
     @Transactional(readOnly = true)
     public Page<TripResponse> search(UUID requesterId, String originLabel, String destLabel,
                                       double originLat, double originLng, double destLat, double destLng,
                                       LocalDate date, int seats, Double radiusKm, TripType tripType,
                                       String sort, Long maxPrice, Double minRating, Boolean verifiedOnly,
-                                      Pageable pageable) {
+                                      VehicleType vehicleType, Pageable pageable) {
         double effectiveRadiusKm = effectiveRadiusKm(radiusKm != null ? radiusKm : DEFAULT_RADIUS_KM,
                 originLat, originLng, destLat, destLng);
         double radiusMeters = effectiveRadiusKm * 1000.0;
@@ -498,7 +500,8 @@ public class TripService {
         SearchSort searchSort = SearchSort.from(sort);
         Page<Trip> page = tripRepository.search(originLat, originLng, destLat, destLng, radiusMeters, seats,
                 tripType != null ? tripType.name() : null, dateFrom, dateTo, Instant.now(),
-                searchSort.name(), maxPrice, minRating, Boolean.TRUE.equals(verifiedOnly), pageable);
+                searchSort.name(), maxPrice, minRating, Boolean.TRUE.equals(verifiedOnly),
+                vehicleType != null ? vehicleType.name() : null, pageable);
         if (pageable.getPageNumber() == 0) {
             searchEventService.record(requesterId,
                     new SearchEventService.SearchRequest(originLabel, originLat, originLng,
@@ -517,7 +520,7 @@ public class TripService {
                                       LocalDate date, int seats, Double radiusKm, TripType tripType,
                                       Pageable pageable) {
         return search(requesterId, originLabel, destLabel, originLat, originLng, destLat, destLng, date, seats,
-                radiusKm, tripType, null, null, null, null, pageable);
+                radiusKm, tripType, null, null, null, null, null, pageable);
     }
 
     /**

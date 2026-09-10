@@ -78,10 +78,21 @@ describe('profileSchema', () => {
 
 describe('vehicleSchema', () => {
   it('borne les places entre 1 et 8', () => {
-    const base = { brand: 'Toyota', model: 'Corolla', color: '', plate: 'AB 1234', comfortLevel: 'COMFORT' as const }
+    const base = { vehicleType: 'CAR' as const, brand: 'Toyota', model: 'Corolla', color: '', plate: 'AB 1234', comfortLevel: 'COMFORT' as const }
     expect(vehicleSchema.safeParse({ ...base, seats: 0 }).success).toBe(false)
     expect(vehicleSchema.safeParse({ ...base, seats: 9 }).success).toBe(false)
     expect(vehicleSchema.safeParse({ ...base, seats: 4 }).success).toBe(true)
+  })
+
+  it('borne les places selon le type (V22) : moto 1, tricycle 6, voiture 8', () => {
+    const base = { brand: 'Haojue', model: 'HJ 125', color: '', plate: 'MT 4521 RB', comfortLevel: 'BASIC' as const }
+    expect(vehicleSchema.safeParse({ ...base, vehicleType: 'MOTO', seats: 1 }).success).toBe(true)
+    const moto = vehicleSchema.safeParse({ ...base, vehicleType: 'MOTO', seats: 2 })
+    expect(moto.success).toBe(false)
+    expect(moto.success ? '' : moto.error.issues[0]?.message).toMatch(/un passager/)
+    expect(vehicleSchema.safeParse({ ...base, vehicleType: 'TRICYCLE', seats: 6 }).success).toBe(true)
+    expect(vehicleSchema.safeParse({ ...base, vehicleType: 'TRICYCLE', seats: 7 }).success).toBe(false)
+    expect(vehicleSchema.safeParse({ ...base, vehicleType: 'AVION', seats: 1 }).success).toBe(false)
   })
 })
 

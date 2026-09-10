@@ -47,7 +47,7 @@ import {
 import { useMe } from '@/hooks/useAuth'
 import { describeError } from '@/lib/errors'
 import { formatDateTime, formatDayShort, formatFcfa, formatPhone } from '@/lib/format'
-import { COMFORT_LABEL, documentLabel } from '@/lib/labels'
+import { COMFORT_LABEL, documentLabel, VEHICLE_TYPE_LABEL } from '@/lib/labels'
 import { providerLabel } from '@/lib/payments'
 import type {
   AdminPaymentResponse,
@@ -554,7 +554,7 @@ function VehiclesCard({ user }: { user: AdminUserDetailResponse }) {
                   {vehicle.color ? <span className="font-normal text-muted"> · {vehicle.color}</span> : null}
                 </span>
                 <span className="tnum block text-caption text-muted">
-                  {vehicle.plate} · {vehicle.seats} places · {COMFORT_LABEL[vehicle.comfortLevel]}
+                  {VEHICLE_TYPE_LABEL[vehicle.vehicleType ?? 'CAR']} · {vehicle.plate} · {vehicle.seats} place{vehicle.seats > 1 ? 's' : ''} · {COMFORT_LABEL[vehicle.comfortLevel]}
                 </span>
                 <span className="mt-1 block">
                   {vehicle.verified ? (

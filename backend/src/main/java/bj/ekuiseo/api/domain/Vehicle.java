@@ -1,6 +1,7 @@
 package bj.ekuiseo.api.domain;
 
 import bj.ekuiseo.api.domain.enums.ComfortLevel;
+import bj.ekuiseo.api.domain.enums.VehicleType;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -43,6 +44,12 @@ public class Vehicle {
 
     @Column(nullable = false)
     private int seats;
+
+    /** Voiture, moto ou tricycle (V22) : borne les places et pilote l affichage. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "vehicle_type", nullable = false, length = 20)
+    @Builder.Default
+    private VehicleType vehicleType = VehicleType.CAR;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "comfort_level", nullable = false, length = 20)

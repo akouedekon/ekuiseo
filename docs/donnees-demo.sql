@@ -94,6 +94,13 @@ VALUES
   ('b0000000-0000-0000-0000-000000000009', 'a0000000-0000-0000-0000-000000000009', 'Toyota',  'Yaris',   'Blanc',   'AJ 3344 RB', 4, 'COMFORT', TRUE)
 ON CONFLICT (id) DO NOTHING;
 
+-- Types de vehicule (V22) : une moto (zemidjan) et un tricycle, courants a Cotonou.
+INSERT INTO vehicles (id, owner_id, brand, model, color, plate, seats, vehicle_type, comfort_level, verified)
+VALUES
+  ('b0000000-0000-0000-0000-000000000010', 'a0000000-0000-0000-0000-000000000007', 'Haojue', 'HJ 125', 'Jaune', 'MT 4521 RB', 1, 'MOTO',     'BASIC', TRUE),
+  ('b0000000-0000-0000-0000-000000000011', 'a0000000-0000-0000-0000-000000000008', 'Bajaj',  'RE',     'Bleu',  'TR 8890 RB', 4, 'TRICYCLE', 'BASIC', TRUE)
+ON CONFLICT (id) DO NOTHING;
+
 -- ============================================================
 -- 3. TRAJETS
 -- ============================================================
@@ -103,6 +110,10 @@ VALUES
   -- Cotonou <-> Bohicon (Sylvestre)
   ('c0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', 'b0000000-0000-0000-0000-000000000001', 'INTERURBAIN', 'Cotonou, gare Jonquet', 6.3703, 2.3912, 'Bohicon, gare routiere', 7.1786, 2.0667, now() + interval '2 days' + interval '8 hours', 4, 1, 4000, TRUE, 'Un sac par passager', 'Depart ponctuel, climatisation.', 'PUBLISHED'),
   ('c0000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000001', 'b0000000-0000-0000-0000-000000000001', 'INTERURBAIN', 'Bohicon, gare routiere', 7.1786, 2.0667, 'Cotonou, gare Jonquet', 6.3703, 2.3912, now() - interval '5 days' + interval '9 hours', 4, 2, 4500, TRUE, 'Un sac par passager', 'Retour Bohicon-Cotonou.', 'COMPLETED'),
+
+  -- Cotonou -> Porto-Novo a moto (V22) et Abomey-Calavi -> Cotonou en tricycle
+  ('c0000000-0000-0000-0000-000000000041', 'a0000000-0000-0000-0000-000000000007', 'b0000000-0000-0000-0000-000000000010', 'INTERURBAIN', 'Cotonou, Etoile Rouge', 6.3703, 2.3912, 'Porto-Novo, Ouando', 6.4969, 2.6289, now() + interval '1 day' + interval '7 hours', 1, 1, 1500, TRUE, 'Sac a dos seulement', 'Zemidjan, casque fourni. Depart des que le passager est la.', 'PUBLISHED'),
+  ('c0000000-0000-0000-0000-000000000042', 'a0000000-0000-0000-0000-000000000008', 'b0000000-0000-0000-0000-000000000011', 'INTERURBAIN', 'Abomey-Calavi, carrefour IITA', 6.4485, 2.3556, 'Cotonou, Etoile Rouge', 6.3703, 2.3912, now() + interval '1 day' + interval '6 hours', 4, 3, 500, TRUE, 'Petits bagages', 'Tricycle couvert, quatre places.', 'PUBLISHED'),
 
   -- Cotonou <-> Parakou (Moucharafou, minibus)
   ('c0000000-0000-0000-0000-000000000003', 'a0000000-0000-0000-0000-000000000002', 'b0000000-0000-0000-0000-000000000002', 'INTERURBAIN', 'Cotonou, Etoile Rouge', 6.3703, 2.3912, 'Parakou, gare routiere', 9.3372, 2.6303, now() + interval '4 days' + interval '6 hours', 7, 3, 10000, FALSE, '1 bagage en soute inclus', 'Minibus 7 places, arret a Bohicon et Save.', 'PUBLISHED'),

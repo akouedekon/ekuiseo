@@ -1,5 +1,5 @@
 import type { ReportReason } from '@/api/extended'
-import type { BookingStatus, ComfortLevel } from '@/api/types'
+import type { BookingStatus, ComfortLevel, VehicleType } from '@/api/types'
 
 /*
  * Libelles partages entre le parcours public et le back-office (audit F239) :
@@ -12,6 +12,26 @@ export const COMFORT_LABEL: Record<ComfortLevel, string> = {
   COMFORT: 'Confortable',
   PREMIUM: 'Haut de gamme',
 }
+
+/** Types de vehicule (V22) : la moto est le zemidjan, le tricycle le taxi-tricycle des villes du Benin. */
+export const VEHICLE_TYPE_LABEL: Record<VehicleType, string> = {
+  CAR: 'Voiture',
+  MOTO: 'Moto',
+  TRICYCLE: 'Tricycle',
+}
+
+/** Places (hors conducteur) qu un vehicule de chaque type peut declarer ; memes bornes que VehicleType.java. */
+export const VEHICLE_TYPE_MAX_SEATS: Record<VehicleType, number> = {
+  CAR: 8,
+  MOTO: 1,
+  TRICYCLE: 6,
+}
+
+export const VEHICLE_TYPE_OPTIONS = [
+  { value: 'CAR', label: 'Voiture ou minibus' },
+  { value: 'MOTO', label: 'Moto (1 passager, casque)' },
+  { value: 'TRICYCLE', label: 'Tricycle (jusqu’à 6 passagers)' },
+] as const
 
 /** Options du formulaire vehicule : la mention « climatisé » n'apparait qu'au choix. */
 export const COMFORT_OPTIONS = [

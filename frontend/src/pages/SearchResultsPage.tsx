@@ -14,6 +14,7 @@ import { EmptyState, ErrorState, ListSkeleton, OfflineState, SlowNetworkNotice, 
 import { PageContainer } from '@/components/layout/PageContainer'
 import { PageMeta } from '@/components/layout/PageMeta'
 import { RouteMap } from '@/components/trip/RouteMap'
+import { VehicleTypeIcon } from '@/components/trip/VehicleTypeIcon'
 import { TripCard } from '@/components/trip/TripCard'
 import { useCreateTripAlert } from '@/hooks/useAlerts'
 import { useIsAuthenticated } from '@/hooks/useAuth'
@@ -23,8 +24,9 @@ import { useTripSearchPages, type TripSearchParams, type TripSearchSort } from '
 import { describeError, errorStatus, isDefinitiveError } from '@/lib/errors'
 import { haversineKm, searchRadiusKm, type PlaceKind } from '@/lib/cities'
 import { BENIN_TIME_HINT, deviceClockDiffersFromBenin, formatDayShort, formatFcfa, toInputDate } from '@/lib/format'
+import { VEHICLE_TYPE_LABEL } from '@/lib/labels'
 import { listContainer } from '@/lib/motion'
-import type { TripResponse, TripType } from '@/api/types'
+import type { TripResponse, TripType, VehicleType } from '@/api/types'
 
 /** Tableau vide partage : evite de creer une nouvelle reference a chaque rendu. */
 const NO_TRIPS: TripResponse[] = []
@@ -47,7 +49,11 @@ interface Filters {
   minRating: number
   verifiedOnly: boolean
   availableOnly: boolean
+  /** null = tous les vehicules (V22). */
+  vehicleType: VehicleType | null
 }
+
+const VEHICLE_TYPES: VehicleType[] = ['CAR', 'MOTO', 'TRICYCLE']
 
 function readSort(value: string | null): TripSearchSort {
   return SORT_KEYS.includes(value as TripSearchSort) ? (value as TripSearchSort) : 'departure'
@@ -70,6 +76,7 @@ function readFilters(params: URLSearchParams): Filters {
     minRating: RATING_STEPS.includes(minRating) ? minRating : 0,
     verifiedOnly: params.get('verifiedOnly') === 'true',
     availableOnly: params.get('showFull') !== 'true',
+    vehicleType: VEHICLE_TYPES.find((type) => type === params.get('vehicleType')) ?? null,
   }
 }
 
@@ -105,8 +112,10 @@ export function SearchResultsPage() {
       minRating: next.minRating > 0 ? String(next.minRating) : null,
       verifiedOnly: next.verifiedOnly ? 'true' : null,
       showFull: next.availableOnly ? null : 'true',
+      vehicleType: next.vehicleType,
     })
-  const resetFilters = () => setFilters({ maxPrice: null, minRating: 0, verifiedOnly: false, availableOnly: true })
+  const resetFilters = () =>
+    setFilters({ maxPrice: null, minRating: 0, verifiedOnly: false, availableOnly: true, vehicleType: null })
 
   const dateParam = searchParams.get('date')
   const today = toInputDate(new Date())
@@ -139,6 +148,7 @@ export function SearchResultsPage() {
       maxPrice: filters.maxPrice ?? undefined,
       minRating: filters.minRating > 0 ? filters.minRating : undefined,
       verifiedOnly: filters.verifiedOnly || undefined,
+      vehicleType: filters.vehicleType ?? undefined,
       size: 20,
     }
     return params
@@ -167,7 +177,10 @@ export function SearchResultsPage() {
   )
 
   const activeFilterCount =
-    (filters.maxPrice !== null ? 1 : 0) + (filters.minRating > 0 ? 1 : 0) + (filters.verifiedOnly ? 1 : 0)
+    (filters.maxPrice !== null ? 1 : 0) +
+    (filters.minRating > 0 ? 1 : 0) +
+    (filters.verifiedOnly ? 1 : 0) +
+    (filters.vehicleType !== null ? 1 : 0)
 
   const mapPoints = useMemo(() => {
     const fromLat = Number(searchParams.get('fromLat'))
@@ -336,6 +349,9 @@ export function SearchResultsPage() {
           ) : null}
           {filters.verifiedOnly ? (
             <FilterChip label="Vérifiés" onClear={() => setFilters({ ...filters, verifiedOnly: false })} />
+          ) : null}
+          {filters.vehicleType !== null ? (
+            <FilterChip label={VEHICLE_TYPE_LABEL[filters.vehicleType]} onClear={() => setFilters({ ...filters, vehicleType: null })} />
           ) : null}
           <button
             type="button"
@@ -536,6 +552,29 @@ export function SearchResultsPage() {
               ))}
             </div>
             <p className="mt-1.5 text-caption text-muted">Un conducteur sans avis reste affiché.</p>
+          </fieldset>
+
+          <fieldset>
+            <legend className="mb-2 text-body font-semibold">Type de véhicule</legend>
+            <div className="flex gap-2" role="group" aria-label="Type de véhicule">
+              {([null, ...VEHICLE_TYPES] as (VehicleType | null)[]).map((type) => (
+                <button
+                  key={type ?? 'ALL'}
+                  type="button"
+                  aria-pressed={filters.vehicleType === type}
+                  onClick={() => setFilters({ ...filters, vehicleType: type })}
+                  className={
+                    filters.vehicleType === type
+                      ? 'flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-control)] border border-primary bg-primary-soft text-label font-semibold text-primary-ink'
+                      : 'flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-control)] border border-field-border bg-surface text-label font-medium text-ink-2'
+                  }
+                >
+                  {type ? <VehicleTypeIcon type={type} className="size-4" /> : null}
+                  {type ? VEHICLE_TYPE_LABEL[type] : 'Tous'}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-caption text-muted">Moto : un passager, casque obligatoire. Tricycle : jusqu’à six.</p>
           </fieldset>
 
           <div className="divide-y divide-rule rounded-[var(--radius-card)] border border-rule">

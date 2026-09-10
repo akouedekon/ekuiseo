@@ -132,7 +132,7 @@ class RequestBoundsTest {
                 Arguments.of("details de signalement de 501 caracteres",
                         new CreateReportRequest(UUID.randomUUID(), null, ReportReason.FRAUD, "d".repeat(501)), "details"),
                 Arguments.of("plaque de 21 caracteres",
-                        new VehicleRequest("Toyota", "Corolla", "gris", "P".repeat(21), 4, ComfortLevel.BASIC, null), "plate"),
+                        new VehicleRequest("Toyota", "Corolla", "gris", "P".repeat(21), 4, null, ComfortLevel.BASIC, null), "plate"),
                 Arguments.of("description de trajet de 2001 caracteres",
                         new CreateTripRequest(UUID.randomUUID(), TripType.INTERURBAIN, "Cotonou", 6.37, 2.39,
                                 "Bohicon", 7.18, 2.07, tomorrow, 3, 2500, true, null, "x".repeat(2001), null, List.of()),

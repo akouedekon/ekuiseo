@@ -1,6 +1,7 @@
 package bj.ekuiseo.api.dto.trip;
 
 import bj.ekuiseo.api.domain.enums.ComfortLevel;
+import bj.ekuiseo.api.domain.enums.VehicleType;
 
 import java.util.UUID;
 
@@ -9,6 +10,7 @@ public record VehicleSummary(
         String brand,
         String model,
         String color,
-        ComfortLevel comfortLevel
+        ComfortLevel comfortLevel,
+        VehicleType vehicleType
 ) {
 }
