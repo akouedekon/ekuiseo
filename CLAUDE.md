@@ -127,8 +127,8 @@ chaîne de déploiement, jeu de démonstration, documentation d'exploitation.
 
 ## État de vérification
 
-**Backend** : `mvn test` = 514 tests unitaires, 0 échec, plus 43 tests d intégration Testcontainers (`mvn verify`, exécutés en CI). **Frontend** :
-`npm run lint`, `npm test` (Vitest, 129 tests : client HTTP et rafraîchissement de jeton,
+**Backend** : `mvn test` = 565 tests unitaires, 0 échec, plus 43 tests d intégration Testcontainers (`mvn verify`, exécutés en CI). **Frontend** :
+`npm run lint`, `npm test` (Vitest, 181 tests : client HTTP et rafraîchissement de jeton,
 erreurs, règles de paiement, validation) et `npm run build` passent ; les trois tournent en CI.
 
 **Vérifié en production le 2026-09-05** (https://ekuiseo.com, `docs/RAPPORT-FONCTIONNEL.md`) :

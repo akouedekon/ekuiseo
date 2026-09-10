@@ -1,0 +1,111 @@
+name: Mobile iOS
+
+# Construction iOS de l application Capacitor (docs/MOBILE.md, section iOS) sur un runner
+# macOS, declenchee a la main : le projet natif iOS n est pas versionne (il exige macOS pour
+# etre genere), il est cree a la volee par `cap add ios`. Sans compte Apple Developer, on
+# obtient une construction pour simulateur (preuve que le projet compile) et, si les secrets
+# de signature sont fournis, une archive .ipa distribuable via TestFlight.
+#
+# Secrets facultatifs pour la signature :
+#   IOS_CERTIFICATE_P12_BASE64, IOS_CERTIFICATE_PASSWORD, IOS_PROVISIONING_PROFILE_BASE64,
+#   IOS_TEAM_ID, APPLE_KEYCHAIN_PASSWORD.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    name: Application iOS (simulateur, et archive si signature)
+    runs-on: macos-14
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - name: Recuperer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Installer les dependances (npm ci)
+        run: npm ci
+
+      - name: Generer le projet iOS (cap add ios) et synchroniser
+        run: |
+          if [ ! -d ios ]; then npx cap add ios; fi
+          npx cap sync ios
+
+      - name: Fichier Firebase iOS (GoogleService-Info.plist) si le secret est renseigne
+        env:
+          GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+        run: |
+          if [ -n "$GOOGLE_SERVICE_INFO_PLIST" ]; then
+            echo "$GOOGLE_SERVICE_INFO_PLIST" | base64 -d > ios/App/App/GoogleService-Info.plist
+            echo "GoogleService-Info.plist installe"
+          fi
+
+      - name: Construire pour le simulateur (preuve de compilation)
+        run: |
+          xcodebuild -workspace ios/App/App.xcworkspace -scheme App -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO build | xcpretty || \
+          xcodebuild -workspace ios/App/App.xcworkspace -scheme App -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO build
+
+      - name: Publier l application simulateur (.app)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ekuiseo-ios-simulator
+          path: mobile/build/simulator/Build/Products/Debug-iphonesimulator/App.app
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Signature et archive (.ipa) si les secrets existent
+        env:
+          IOS_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+          APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+        run: |
+          if [ -z "$IOS_CERTIFICATE_P12_BASE64" ] || [ -z "$IOS_PROVISIONING_PROFILE_BASE64" ]; then
+            echo "Pas de secrets de signature iOS : archive .ipa sautee (voir docs/MOBILE.md)."
+            exit 0
+          fi
+          KEYCHAIN=$RUNNER_TEMP/ekuiseo.keychain-db
+          security create-keychain -p "$APPLE_KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$APPLE_KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "$IOS_CERTIFICATE_P12_BASE64" | base64 -d > $RUNNER_TEMP/cert.p12
+          security import $RUNNER_TEMP/cert.p12 -P "$IOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security list-keychain -d user -s "$KEYCHAIN"
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo "$IOS_PROVISIONING_PROFILE_BASE64" | base64 -d > ~/Library/MobileDevice/Provisioning\ Profiles/ekuiseo.mobileprovision
+          xcodebuild -workspace ios/App/App.xcworkspace -scheme App -configuration Release \
+            -sdk iphoneos -archivePath build/App.xcarchive DEVELOPMENT_TEAM="$IOS_TEAM_ID" archive
+          cat > build/export.plist <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>uploadSymbols</key><true/>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath build/App.xcarchive -exportOptionsPlist build/export.plist -exportPath build/ipa
+          rm -f $RUNNER_TEMP/cert.p12
+
+      - name: Publier l archive .ipa (si signee)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ekuiseo-ios-ipa
+          path: mobile/build/ipa/*.ipa
+          if-no-files-found: ignore
+          retention-days: 30

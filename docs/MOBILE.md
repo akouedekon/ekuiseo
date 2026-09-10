@@ -246,10 +246,13 @@ Non généré dans ce dépôt : la plateforme iOS exige macOS et Xcode. Procédu
    quelque chose que Safari n'offre pas (notifications natives, par exemple) ou s'y préparer
    argumentairement. Sur iPhone, la PWA installée depuis Safari reste la voie sans friction.
 
-Une fois `mobile/ios/` généré, le versionner comme `mobile/android/` (les exclusions sont
-déjà dans `mobile/.gitignore`) et ajouter un job macOS au workflow (`runs-on: macos-latest`,
-`xcodebuild -workspace ios/App/App.xcworkspace -scheme App`), en gardant à l'esprit que les
-minutes macOS coûtent dix fois celles d'Ubuntu.
+**Sans Mac** : le workflow « Mobile iOS » (`.github/workflows/mobile-ios.yml`, déclenchement manuel
+depuis l'onglet Actions, runner macOS) génère le projet iOS à la volée (`cap add ios`), le compile pour
+le simulateur (artefact `ekuiseo-ios-simulator`, preuve que tout compile) et, si les secrets de
+signature sont fournis (`IOS_CERTIFICATE_P12_BASE64`, `IOS_CERTIFICATE_PASSWORD`,
+`IOS_PROVISIONING_PROFILE_BASE64`, `IOS_TEAM_ID`, `APPLE_KEYCHAIN_PASSWORD`, et `GOOGLE_SERVICE_INFO_PLIST`
+pour Firebase), produit une archive `.ipa` (artefact `ekuiseo-ios-ipa`) à envoyer sur TestFlight. Les minutes
+macOS coûtent dix fois celles d'Ubuntu : ne le lancer qu'à bon escient.
 
 ## 9. Notifications natives (Firebase Cloud Messaging)
 
