@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { getPushSubscription, pushSupport, subscribePush, unsubscribePush, type PushSupport, type SubscribeResult } from '@/lib/push'
+import { hasPushSubscription, pushSupport, subscribePush, type PushSupport, type SubscribeResult, unsubscribePush } from '@/lib/push'
 
 export type PushPermission = NotificationPermission | 'unsupported'
 
@@ -11,7 +11,7 @@ export type PushPermission = NotificationPermission | 'unsupported'
 export function usePushSubscription() {
   const [support] = useState<PushSupport>(() => pushSupport())
   const [permission, setPermission] = useState<PushPermission>(() =>
-    support === 'supported' ? Notification.permission : 'unsupported',
+    support === 'supported' ? (typeof Notification === 'undefined' ? 'default' : Notification.permission) : 'unsupported',
   )
   /** null tant que l'abonnement courant n'a pas ete lu. */
   const [subscribed, setSubscribed] = useState<boolean | null>(support === 'supported' ? null : false)
@@ -20,8 +20,8 @@ export function usePushSubscription() {
   useEffect(() => {
     if (support !== 'supported') return
     let cancelled = false
-    void getPushSubscription().then((subscription) => {
-      if (!cancelled) setSubscribed(subscription !== null)
+    void hasPushSubscription().then((subscribed) => {
+      if (!cancelled) setSubscribed(subscribed)
     })
     return () => {
       cancelled = true
@@ -32,7 +32,9 @@ export function usePushSubscription() {
     setBusy(true)
     try {
       const result = await subscribePush()
-      if (support === 'supported') setPermission(Notification.permission)
+      if (support === 'supported') {
+        setPermission(typeof Notification === 'undefined' ? (result === 'denied' ? 'denied' : 'granted') : Notification.permission)
+      }
       setSubscribed(result === 'subscribed')
       return result
     } finally {

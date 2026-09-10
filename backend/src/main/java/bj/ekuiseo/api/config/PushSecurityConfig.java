@@ -22,7 +22,7 @@ public class PushSecurityConfig {
     @Order(10)
     public SecurityFilterChain vapidPublicKeyFilterChain(HttpSecurity http) throws Exception {
         http
-                .securityMatcher(HttpMethod.GET.name(), "/api/v1/push/vapid-public-key")
+                .securityMatcher(HttpMethod.GET.name(), "/api/v1/push/vapid-public-key", "/api/v1/push/config")
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());

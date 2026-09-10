@@ -1,6 +1,7 @@
 package bj.ekuiseo.api.web.controller;
 
 import bj.ekuiseo.api.dto.push.VapidPublicKeyResponse;
+import bj.ekuiseo.api.service.push.FcmSender;
 import bj.ekuiseo.api.service.push.WebPushSender;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -20,9 +21,21 @@ import org.springframework.web.bind.annotation.RestController;
 public class PushController {
 
     private final WebPushSender webPushSender;
+    private final FcmSender fcmSender;
 
-    public PushController(WebPushSender webPushSender) {
+    public PushController(WebPushSender webPushSender, FcmSender fcmSender) {
         this.webPushSender = webPushSender;
+        this.fcmSender = fcmSender;
+    }
+
+    /** Canaux push actifs sur ce serveur (V24) : l application native sait ainsi si un jeton FCM sera servi. */
+    public record PushConfigResponse(boolean webPush, boolean nativePush) {
+    }
+
+    @Operation(summary = "Canaux push actifs", description = "webPush : cles VAPID presentes ; nativePush : compte de service Firebase present.")
+    @GetMapping("/config")
+    public PushConfigResponse config() {
+        return new PushConfigResponse(webPushSender.isEnabled(), fcmSender.isEnabled());
     }
 
     @Operation(summary = "Cle publique VAPID", description = "204 si le push est desactive sur ce serveur.")

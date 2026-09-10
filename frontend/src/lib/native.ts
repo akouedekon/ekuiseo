@@ -56,6 +56,21 @@ export async function initNativeShell(): Promise<void> {
     /* greffon absent : le bouton retour garde le comportement du WebView */
   }
   try {
+    const { PushNotifications } = await import('@capacitor/push-notifications')
+    // Notification touchee : on ouvre l ecran vise (url relative portee par le message FCM).
+    await PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+      const url = (action.notification.data as { url?: string } | undefined)?.url
+      if (typeof url === 'string' && url.startsWith('/')) window.location.assign(url)
+    })
+    // Application au premier plan : le systeme n affiche rien, on le fait en toast.
+    await PushNotifications.addListener('pushNotificationReceived', async (notification) => {
+      const { toast } = await import('sonner')
+      toast.message(notification.title ?? 'Ekuiseo', { description: notification.body ?? undefined })
+    })
+  } catch {
+    /* greffon absent */
+  }
+  try {
     const { Keyboard } = await import('@capacitor/keyboard')
     // Le WebView se redimensionne avec le clavier : les champs restent visibles, les barres fixes aussi.
     await Keyboard.setResizeMode({ mode: 'native' as never })

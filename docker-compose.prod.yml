@@ -131,6 +131,8 @@ services:
       PUSH_VAPID_PUBLIC_KEY: ${PUSH_VAPID_PUBLIC_KEY:-}
       PUSH_VAPID_PRIVATE_KEY: ${PUSH_VAPID_PRIVATE_KEY:-}
       PUSH_VAPID_SUBJECT: ${PUSH_VAPID_SUBJECT:-mailto:contact@ekuiseo.com}
+      # Notifications natives de l application (V24) : compte de service Firebase (base64 du JSON).
+      FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
       # Pieces d identite (V20) : chiffrees AES-256-GCM dans le volume ekuiseo_identity_data ;
       # cle vide = televersement desactive (503 explicite). La cle doit etre sauvegardee A PART.
       IDENTITY_STORAGE_KEY: ${IDENTITY_STORAGE_KEY:-}

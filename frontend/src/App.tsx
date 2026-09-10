@@ -9,6 +9,7 @@ import { DriverProfilePage } from '@/pages/DriverProfilePage'
 import { Skeleton } from '@/components/ui/misc'
 import { createLazyPage, preloadPagesWhenIdle, type PageGroup } from '@/lib/lazyPage'
 import { AppLoadingScreen, NotFoundPage } from '@/pages/SystemPages'
+import { NativePermissionsPrompt } from '@/features/onboarding/NativePermissionsPrompt'
 
 /**
  * Chargement paresseux par route (audit F338) : le premier paquet ne contient
@@ -99,6 +100,9 @@ export default function App() {
     preloadPagesWhenIdle('authed')
   }, [])
   return (
+    <>
+      {/* Application Android/iOS : position et notifications proposees une fois, au premier lancement. */}
+      <NativePermissionsPrompt />
     <Routes>
       <Route element={<AppShell />}>
         {/* --- Parcours public --- */}
@@ -152,5 +156,6 @@ export default function App() {
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
+    </>
   )
 }

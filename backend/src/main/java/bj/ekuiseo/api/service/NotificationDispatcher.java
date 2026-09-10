@@ -3,6 +3,7 @@ package bj.ekuiseo.api.service;
 import bj.ekuiseo.api.common.Masking;
 import bj.ekuiseo.api.config.AsyncConfig;
 import bj.ekuiseo.api.domain.PushSubscription;
+import bj.ekuiseo.api.domain.enums.PushKind;
 import bj.ekuiseo.api.domain.User;
 import bj.ekuiseo.api.domain.UserPreferences;
 import bj.ekuiseo.api.domain.enums.NotificationType;
@@ -11,6 +12,7 @@ import bj.ekuiseo.api.repository.PushSubscriptionRepository;
 import bj.ekuiseo.api.repository.UserPreferencesRepository;
 import bj.ekuiseo.api.repository.UserRepository;
 import bj.ekuiseo.api.service.mail.MailGateway;
+import bj.ekuiseo.api.service.push.FcmSender;
 import bj.ekuiseo.api.service.push.WebPushSender;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,16 +48,19 @@ public class NotificationDispatcher {
     private final SmsService smsService;
     private final PushSubscriptionRepository pushSubscriptionRepository;
     private final WebPushSender webPushSender;
+    private final FcmSender fcmSender;
 
     public NotificationDispatcher(UserRepository userRepository, UserPreferencesRepository userPreferencesRepository,
                                   MailGateway mailGateway, SmsService smsService,
-                                  PushSubscriptionRepository pushSubscriptionRepository, WebPushSender webPushSender) {
+                                  PushSubscriptionRepository pushSubscriptionRepository, WebPushSender webPushSender,
+                                  FcmSender fcmSender) {
         this.userRepository = userRepository;
         this.userPreferencesRepository = userPreferencesRepository;
         this.mailGateway = mailGateway;
         this.smsService = smsService;
         this.pushSubscriptionRepository = pushSubscriptionRepository;
         this.webPushSender = webPushSender;
+        this.fcmSender = fcmSender;
     }
 
     /**
@@ -110,7 +115,7 @@ public class NotificationDispatcher {
         // Web Push : canal complementaire (l e-mail reste la reference), vers chaque appareil
         // abonne. Un abonnement expire (404/410 du service push) est supprime ; un autre echec
         // est compte et journalise, l abonnement conserve.
-        if (prefs.isNotifyByPush() && webPushSender.isEnabled()) {
+        if (prefs.isNotifyByPush() && (webPushSender.isEnabled() || fcmSender.isEnabled())) {
             List<PushSubscription> subscriptions = pushSubscriptionRepository.findByUserIdOrderByCreatedAtAsc(userId);
             if (!subscriptions.isEmpty()) {
                 NotificationTemplates.Push content = NotificationTemplates.push(type, payload);
@@ -123,8 +128,10 @@ public class NotificationDispatcher {
 
     private void sendPush(PushSubscription subscription, NotificationType type, NotificationTemplates.Push content) {
         try {
-            WebPushSender.Outcome outcome = webPushSender.send(subscription.getEndpoint(), subscription.getP256dh(),
-                    subscription.getAuth(), content);
+            // V24 : jeton FCM de l application native, ou abonnement Web Push du navigateur.
+            WebPushSender.Outcome outcome = subscription.getKind() == PushKind.FCM
+                    ? fcmSender.send(subscription.getEndpoint(), content)
+                    : webPushSender.send(subscription.getEndpoint(), subscription.getP256dh(), subscription.getAuth(), content);
             switch (outcome) {
                 case SENT:
                     subscription.setLastUsedAt(Instant.now());

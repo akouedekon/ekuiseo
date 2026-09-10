@@ -1,7 +1,10 @@
 package bj.ekuiseo.api.domain;
 
+import bj.ekuiseo.api.domain.enums.PushKind;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
@@ -44,10 +47,16 @@ public class PushSubscription {
     @Column(nullable = false, columnDefinition = "text", unique = true)
     private String endpoint;
 
-    @Column(nullable = false, columnDefinition = "text")
+    /** WEBPUSH (navigateur) ou FCM (application native, V24) ; en FCM, endpoint = jeton et cles nulles. */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 10)
+    @Builder.Default
+    private PushKind kind = PushKind.WEBPUSH;
+
+    @Column(columnDefinition = "text")
     private String p256dh;
 
-    @Column(nullable = false, columnDefinition = "text")
+    @Column(columnDefinition = "text")
     private String auth;
 
     @Column(name = "user_agent", length = 200)

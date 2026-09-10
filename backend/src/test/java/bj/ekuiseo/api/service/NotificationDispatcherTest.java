@@ -40,9 +40,10 @@ class NotificationDispatcherTest {
     private final SmsService smsService = mock(SmsService.class);
     private final PushSubscriptionRepository pushSubscriptionRepository = mock(PushSubscriptionRepository.class);
     private final WebPushSender webPushSender = mock(WebPushSender.class);
+    private final bj.ekuiseo.api.service.push.FcmSender fcmSender = mock(bj.ekuiseo.api.service.push.FcmSender.class);
     private final NotificationDispatcher dispatcher =
             new NotificationDispatcher(userRepository, preferencesRepository, mailGateway, smsService,
-                    pushSubscriptionRepository, webPushSender);
+                    pushSubscriptionRepository, webPushSender, fcmSender);
 
     private final User user = User.builder().id(UUID.randomUUID()).firstName("Awa").phone("+2290100000000")
             .email("awa@example.bj").emailVerified(true).status(UserStatus.ACTIVE).build();

@@ -1,5 +1,7 @@
 import { apiClient } from '@/api/client'
 import { authorizedRawFetch } from '@/api/rawFetch'
+import { isNativeApp } from '@/lib/native'
+import { isNativePushEnabledOnServer, readStoredToken, registerNativePush, saveNativeToken, unregisterNativePush } from '@/lib/pushNative'
 
 /*
  * Web Push cote navigateur (V20) : prise en charge, abonnement aupres du service push
@@ -38,6 +40,8 @@ export function readPushEnvironment(): PushEnvironment {
  * tel quel a l'utilisateur plutot qu'un « non pris en charge » sans issue.
  */
 export function pushSupport(env: PushEnvironment = readPushEnvironment()): PushSupport {
+  // Application Android/iOS : notifications natives (FCM, lib/pushNative.ts), pas Web Push.
+  if (isNativeApp()) return 'supported'
   if (env.serviceWorker && env.pushManager && env.notification) return 'supported'
   const ios = /iPhone|iPad|iPod/i.test(env.userAgent)
   return ios && !env.standalone ? 'ios-not-installed' : 'unsupported'
@@ -80,9 +84,15 @@ async function pushManager(): Promise<PushManager> {
   return registration.pushManager
 }
 
+/** Cet appareil est-il abonne (navigateur ou application native) ? */
+export async function hasPushSubscription(): Promise<boolean> {
+  if (isNativeApp()) return readStoredToken() !== null
+  return (await getPushSubscription()) !== null
+}
+
 /** Abonnement courant de ce navigateur, ou null (non pris en charge, aucun abonnement, service worker absent). */
 export async function getPushSubscription(): Promise<PushSubscription | null> {
-  if (pushSupport() !== 'supported') return null
+  if (isNativeApp() || pushSupport() !== 'supported') return null
   try {
     return await (await pushManager()).getSubscription()
   } catch {
@@ -99,6 +109,13 @@ export type SubscribeResult = 'subscribed' | 'denied' | 'disabled' | 'unsupporte
  * decrites par l'interface ; les refus attendus sont des resultats, pas des erreurs.
  */
 export async function subscribePush(): Promise<SubscribeResult> {
+  if (isNativeApp()) {
+    if (!(await isNativePushEnabledOnServer())) return 'disabled'
+    const token = await registerNativePush()
+    if (!token) return 'denied'
+    await saveNativeToken(token)
+    return 'subscribed'
+  }
   if (pushSupport() !== 'supported') return 'unsupported'
   const key = await getVapidPublicKey()
   if (!key) return 'disabled'
@@ -119,6 +136,10 @@ export async function subscribePush(): Promise<SubscribeResult> {
  * (`resetSession`), ou rien ne doit bloquer la fermeture de session.
  */
 export async function unsubscribePush(): Promise<void> {
+  if (isNativeApp()) {
+    await unregisterNativePush()
+    return
+  }
   const subscription = await getPushSubscription()
   if (!subscription) return
   try {

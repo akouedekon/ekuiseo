@@ -40,7 +40,31 @@ class PushSubscriptionServiceTest {
     }
 
     private static PushSubscriptionRequest request(String endpoint) {
-        return new PushSubscriptionRequest(endpoint, new PushSubscriptionRequest.Keys("BNcR...", "tBHI..."));
+        return new PushSubscriptionRequest(endpoint, new PushSubscriptionRequest.Keys("BNcR...", "tBHI..."), null);
+    }
+
+    /** V24 : l application native enregistre un jeton FCM, sans cle, retire par le meme jeton. */
+    @Test
+    void fcmToken_isStoredWithoutKeys_andRemovedByToken() {
+        String token = "dQw4w9WgXcQ:APA91bHunNu3M4t-J6lNqbb0FAKETOKEN_abcDEF-123456789";
+        when(repository.findByEndpoint(token)).thenReturn(java.util.Optional.empty());
+        when(repository.findByUserIdOrderByCreatedAtAsc(user.getId())).thenReturn(java.util.List.of());
+
+        service.subscribe(user.getId(), new PushSubscriptionRequest(token, null, bj.ekuiseo.api.domain.enums.PushKind.FCM), "Ekuiseo/Android");
+
+        org.mockito.ArgumentCaptor<PushSubscription> saved = org.mockito.ArgumentCaptor.forClass(PushSubscription.class);
+        verify(repository).save(saved.capture());
+        assertThat(saved.getValue().getKind()).isEqualTo(bj.ekuiseo.api.domain.enums.PushKind.FCM);
+        assertThat(saved.getValue().getEndpoint()).isEqualTo(token);
+        assertThat(saved.getValue().getP256dh()).isNull();
+        assertThat(saved.getValue().getAuth()).isNull();
+
+        assertThatThrownBy(() -> service.subscribe(user.getId(),
+                new PushSubscriptionRequest("trop court", null, bj.ekuiseo.api.domain.enums.PushKind.FCM), null))
+                .isInstanceOf(bj.ekuiseo.api.common.exception.BadRequestException.class);
+
+        service.unsubscribe(user.getId(), token);
+        verify(repository).deleteByUserIdAndEndpoint(user.getId(), token);
     }
 
     private PushSubscription existing(User owner, String endpoint, Instant createdAt) {

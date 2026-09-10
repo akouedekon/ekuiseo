@@ -3,6 +3,7 @@ package bj.ekuiseo.api.service;
 import bj.ekuiseo.api.common.exception.BadRequestException;
 import bj.ekuiseo.api.common.exception.NotFoundException;
 import bj.ekuiseo.api.domain.PushSubscription;
+import bj.ekuiseo.api.domain.enums.PushKind;
 import bj.ekuiseo.api.domain.User;
 import bj.ekuiseo.api.dto.push.PushSubscriptionRequest;
 import bj.ekuiseo.api.repository.PushSubscriptionRepository;
@@ -38,7 +39,8 @@ public class PushSubscriptionService {
 
     @Transactional
     public void subscribe(UUID userId, PushSubscriptionRequest req, String userAgent) {
-        String endpoint = normalizeEndpoint(req.endpoint());
+        PushKind kind = req.kindOrDefault();
+        String endpoint = kind == PushKind.FCM ? normalizeToken(req.endpoint()) : normalizeEndpoint(req.endpoint());
         User user = userRepository.findById(userId).orElseThrow(() -> new NotFoundException("Utilisateur introuvable"));
 
         PushSubscription subscription = pushSubscriptionRepository.findByEndpoint(endpoint).orElse(null);
@@ -51,8 +53,14 @@ public class PushSubscriptionService {
         } else {
             subscription.setUser(user);
         }
-        subscription.setP256dh(req.keys().p256dh().trim());
-        subscription.setAuth(req.keys().auth().trim());
+        subscription.setKind(kind);
+        if (kind == PushKind.FCM) {
+            subscription.setP256dh(null);
+            subscription.setAuth(null);
+        } else {
+            subscription.setP256dh(req.keys().p256dh().trim());
+            subscription.setAuth(req.keys().auth().trim());
+        }
         subscription.setUserAgent(truncate(userAgent, 200));
         subscription.setFailures(0);
         subscription.setLastUsedAt(Instant.now());
@@ -62,7 +70,19 @@ public class PushSubscriptionService {
     /** Retrait silencieux : un endpoint inconnu ou appartenant a un autre compte ne change rien (idempotent). */
     @Transactional
     public void unsubscribe(UUID userId, String endpoint) {
-        pushSubscriptionRepository.deleteByUserIdAndEndpoint(userId, normalizeEndpoint(endpoint));
+        String e = endpoint == null ? "" : endpoint.trim();
+        // Jeton FCM (pas une URL) ou endpoint Web Push : meme retrait, meme controle de forme.
+        String normalized = e.toLowerCase(Locale.ROOT).startsWith("https://") ? normalizeEndpoint(e) : normalizeToken(e);
+        pushSubscriptionRepository.deleteByUserIdAndEndpoint(userId, normalized);
+    }
+
+    /** Jeton FCM : opaque, sans espace, borne ; un schema d URL n y a pas sa place. */
+    static String normalizeToken(String token) {
+        String t = token == null ? "" : token.trim();
+        if (t.length() < 20 || t.length() > 4000 || !t.matches("[A-Za-z0-9_:\\-]+")) {
+            throw new BadRequestException("Jeton de notification invalide");
+        }
+        return t;
     }
 
     /** Seul un endpoint HTTPS a un sens : le service push d un navigateur ne s expose jamais autrement. */

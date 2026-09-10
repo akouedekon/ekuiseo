@@ -93,7 +93,7 @@ GitHub Actions, cible de déploiement : VPS Hostinger.
   Classement par distance de détour, écart horaire et note du conducteur.
 - Erreurs HTTP en **RFC 7807** (`ProblemDetail`).
 - Migrations Flyway **numérotées à la suite**. Ne jamais modifier une migration déjà
-  écrite — V1 à V23 existent (la prochaine est V24).
+  écrite — V1 à V24 existent (la prochaine est V25).
 - Le front ne recalcule jamais un montant pour une réservation existante : il lit le
   `paymentPlan` renvoyé par l'API. Les estimations locales sont autorisées **avant**
   création, et doivent être affichées comme telles.
@@ -107,7 +107,7 @@ GitHub Actions, cible de déploiement : VPS Hostinger.
 Complet et cohérent de bout en bout : API, interface, back-office d'administration,
 chaîne de déploiement, jeu de démonstration, documentation d'exploitation.
 
-- `backend/` — 23 migrations. Kkiapay (initiation, webhook signé et
+- `backend/` — 24 migrations. Kkiapay (initiation, webhook signé et
   idempotent, vérification serveur, remboursements), codes de connexion par e-mail (SMS en repli) avec limitation de débit,
   géocodage des villes béninoises en base, rôles et back-office, reversements, signalements,
   journal d'audit, alertes de recherche, abonnements, trace des recherches (`search_events`,
@@ -374,6 +374,13 @@ s'interprète pas.
   quotas `live:` / `live-public:` dans `RateLimitingFilter`. Détails : `docs/CONFORMITE.md`.
 - Aucun fournisseur de tuiles cartographiques n'est câblé : `RouteMap` dessine un tracé
   schématique tant que `VITE_MAP_STYLE_URL` n'est pas renseignée.
+- Notifications natives (V24) : l application Android/iOS enregistre un jeton Firebase Cloud
+  Messaging (`push_subscriptions.kind = FCM`, `lib/pushNative.ts`, greffon
+  `@capacitor/push-notifications`) ; `FcmSender` (API HTTP v1, compte de service dans
+  `FCM_SERVICE_ACCOUNT_JSON`, JSON ou base64) l envoie ; vide = canal désactivé, `GET /push/config`
+  le dit au front. Le fichier `google-services.json` de l APK vient du secret CI
+  `GOOGLE_SERVICES_JSON` (voir `docs/MOBILE.md`). Au premier lancement de l application,
+  `NativePermissionsPrompt` demande la position et, si connecté, les notifications.
 - Web Push (V20) : canal complémentaire de l'e-mail (`WebPushSender`, `nl.martijndwars:web-push`,
   clés VAPID `PUSH_VAPID_PUBLIC_KEY` / `PUSH_VAPID_PRIVATE_KEY` ; vides = désactivé proprement),
   service worker maison `src/sw.ts` (`injectManifest`), abonnement par appareil depuis les réglages.

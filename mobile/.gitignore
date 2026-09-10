@@ -52,3 +52,7 @@ www/assets/
 www/*.js
 www/*.webmanifest
 www/icons/
+
+# Configuration Firebase de l application : fournie par le secret GOOGLE_SERVICES_JSON en CI
+android/app/google-services.json
+ios/App/App/GoogleService-Info.plist

@@ -28,6 +28,7 @@
         <springdoc.version>2.8.17</springdoc.version>
         <!-- Web Push : derniere 5.x publiee sur Maven Central ; BouncyCastle et jose4j alignes a cote. -->
         <web-push.version>5.1.2</web-push.version>
+        <google-auth.version>1.48.0</google-auth.version>
         <bouncycastle.version>1.80</bouncycastle.version>
         <jose4j.version>0.9.6</jose4j.version>
         <!-- Testcontainers, Flyway, Hibernate, Lombok, Mockito : versions gerees par le parent Spring Boot. -->
@@ -106,6 +107,13 @@
             <version>${springdoc.version}</version>
         </dependency>
 
+        <!-- Notifications natives (V24) : jeton OAuth2 du compte de service Firebase pour l API FCM v1
+             (service/push/FcmSender). L appel HTTP lui-meme passe par le RestClient de Spring. -->
+        <dependency>
+            <groupId>com.google.auth</groupId>
+            <artifactId>google-auth-library-oauth2-http</artifactId>
+            <version>${google-auth.version}</version>
+        </dependency>
         <!-- Web Push (VAPID + chiffrement aes128gcm, RFC 8291/8292), voir service/push/WebPushSender.
              Seul PushService (client Apache synchrone) est utilise : le client Netty (PushAsyncService)
              et l outil en ligne de commande sont exclus. BouncyCastle et jose4j sont remontes aux

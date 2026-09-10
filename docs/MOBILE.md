@@ -251,7 +251,38 @@ déjà dans `mobile/.gitignore`) et ajouter un job macOS au workflow (`runs-on: 
 `xcodebuild -workspace ios/App/App.xcworkspace -scheme App`), en gardant à l'esprit que les
 minutes macOS coûtent dix fois celles d'Ubuntu.
 
-## 9. Fonctions natives de l'application
+## 9. Notifications natives (Firebase Cloud Messaging)
+
+L'application reçoit ses notifications par Firebase Cloud Messaging (FCM), l'équivalent natif du
+Web Push de la PWA (V24). Rien n'est actif tant que les deux éléments ci-dessous ne sont pas
+fournis ; l'application fonctionne sans, avec les e-mails.
+
+1. **Projet Firebase** : console.firebase.google.com → créer un projet « Ekuiseo » → ajouter une
+   application Android avec le nom de paquet `bj.ekuiseo.app` → télécharger `google-services.json`.
+   Ne le commitez pas : encodez-le et placez-le dans le secret GitHub `GOOGLE_SERVICES_JSON` :
+
+   ```bash
+   base64 -w0 google-services.json
+   ```
+
+   Le workflow « Mobile Android » l'écrit dans `mobile/android/app/` avant la construction ;
+   sans secret, l'APK se construit sans notifications.
+2. **Compte de service** (pour que le serveur envoie) : Paramètres du projet → Comptes de service →
+   « Générer une nouvelle clé privée » (JSON). Sur le VPS, dans `/opt/ekuiseo/.env` :
+
+   ```bash
+   FCM_SERVICE_ACCOUNT_JSON=$(base64 -w0 ekuiseo-firebase.json)
+   ```
+
+   puis `docker compose -f docker-compose.prod.yml up -d backend`. Le journal affiche
+   « Notifications natives (FCM) actives pour le projet … ». Le fichier JSON ne doit vivre nulle part
+   ailleurs que dans le .env et votre gestionnaire de mots de passe : c'est un secret.
+
+Côté application, la demande de permission se fait au premier lancement (fenêtre « Bienvenue »),
+puis depuis les réglages du compte ; le jeton est enregistré à `POST /api/v1/me/push-subscriptions`
+avec `kind = FCM`, et retiré à la déconnexion. iOS demandera en plus un certificat APNs dans Firebase.
+
+## 10. Fonctions natives de l'application
 
 Le site détecte qu'il tourne dans l'application (`window.Capacitor`, voir `frontend/src/lib/native.ts`)
 et adapte son comportement, sans seconde base de code :
@@ -271,15 +302,11 @@ Les greffons sont déclarés **des deux côtés** avec la même version majeure 
 (la partie JavaScript, importée à la demande) et dans `mobile/package.json` (la partie native, enregistrée
 par `npx cap sync android`). Ajouter un greffon = les deux fichiers, puis `cap sync`.
 
-## 10. Limites connues
+## 11. Limites connues
 
-- **Pas de Web Push dans l'application Android.** Le WebView Android exécute le service worker
-  mais n'implémente pas l'API Push : l'abonnement proposé dans les réglages de la PWA ne
-  fonctionne pas depuis l'application (le bouton peut apparaître et échouer proprement). Les
-  **e-mails restent le canal principal** (décision du 7 septembre 2026). Pour des notifications
-  natives, prévoir plus tard Firebase Cloud Messaging via `@capacitor/push-notifications`
-  (fichier `google-services.json`, déjà attendu par `app/build.gradle`, et un envoi FCM côté
-  backend en plus de `WebPushSender`).
+- **Notifications** : pas de Web Push dans le WebView Android ; l'application passe par Firebase
+  Cloud Messaging (§ 9), actif seulement une fois le projet Firebase et le compte de service fournis.
+  Les **e-mails restent le canal principal**.
 - **Hors-ligne** : rien au-delà du service worker de la PWA. Au premier lancement sans
   réseau, seule la page de secours s'affiche.
 - **Mise à jour** : l'application affiche toujours le site en production ; un incident du
