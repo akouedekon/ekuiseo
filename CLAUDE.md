@@ -93,7 +93,7 @@ GitHub Actions, cible de déploiement : VPS Hostinger.
   Classement par distance de détour, écart horaire et note du conducteur.
 - Erreurs HTTP en **RFC 7807** (`ProblemDetail`).
 - Migrations Flyway **numérotées à la suite**. Ne jamais modifier une migration déjà
-  écrite — V1 à V21 existent (la prochaine est V22).
+  écrite — V1 à V23 existent (la prochaine est V24).
 - Le front ne recalcule jamais un montant pour une réservation existante : il lit le
   `paymentPlan` renvoyé par l'API. Les estimations locales sont autorisées **avant**
   création, et doivent être affichées comme telles.
@@ -107,7 +107,7 @@ GitHub Actions, cible de déploiement : VPS Hostinger.
 Complet et cohérent de bout en bout : API, interface, back-office d'administration,
 chaîne de déploiement, jeu de démonstration, documentation d'exploitation.
 
-- `backend/` — 21 migrations. Kkiapay (initiation, webhook signé et
+- `backend/` — 23 migrations. Kkiapay (initiation, webhook signé et
   idempotent, vérification serveur, remboursements), codes de connexion par e-mail (SMS en repli) avec limitation de débit,
   géocodage des villes béninoises en base, rôles et back-office, reversements, signalements,
   journal d'audit, alertes de recherche, abonnements, trace des recherches (`search_events`,
@@ -366,6 +366,12 @@ s'interprète pas.
   casque obligatoire rappelé dans les CGU et sur la fiche trajet) ou `TRICYCLE` (6 places au plus) ;
   bornes communes `VehicleType.java` / `VEHICLE_TYPE_MAX_SEATS` (`lib/labels.ts`), filtre de recherche
   `vehicleType`, icône et badge `components/trip/VehicleTypeIcon.tsx`.
+- **Suivi en direct (V23)** : le conducteur partage sa position (`PUT /trips/{id}/live`, `POST
+  /trips/{id}/live/positions`, `navigator.geolocation.watchPosition` côté front) de 1 h avant le départ à la
+  fin du trajet ; ses passagers confirmés la voient sur la fiche trajet (`GET /trips/{id}/live`, carte avec
+  véhicule, distance restante, arrivée estimée) et peuvent partager un lien public à jeton `/live/{token}`
+  (`GET /api/v1/live/{token}`, sans compte, prénom du conducteur seulement). Positions purgées après 24 h,
+  quotas `live:` / `live-public:` dans `RateLimitingFilter`. Détails : `docs/CONFORMITE.md`.
 - Aucun fournisseur de tuiles cartographiques n'est câblé : `RouteMap` dessine un tracé
   schématique tant que `VITE_MAP_STYLE_URL` n'est pas renseignée.
 - Web Push (V20) : canal complémentaire de l'e-mail (`WebPushSender`, `nl.martijndwars:web-push`,
