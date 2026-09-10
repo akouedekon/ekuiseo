@@ -78,6 +78,9 @@ export type NotificationType =
   | 'NO_SHOW_CONTESTED'
   | 'NO_SHOW_DISPUTE_RESOLVED'
   | 'PAYOUT_PREPARED'
+  /* Suivi en direct (V28) : conducteur a moins de 1 km, puis arrive (moins de 150 m) au point de prise en charge. */
+  | 'DRIVER_NEARBY'
+  | 'DRIVER_ARRIVED'
 
 /** GET /api/v1/notifications/unread-count : compteur seul, rafraichi chaque minute pour la pastille. */
 export interface UnreadCountResponse {
@@ -229,9 +232,11 @@ export interface LiveSharingResponse {
   /** Chemin du lien public a partager (/live/{token}) ; l origine est celle du site. */
   sharePath: string | null
   lastPositionAt: string | null
+  /** Cadence d envoi recommandee a l appareil (V28) : 30 s avant le depart, 15 s pendant, 5 s a l approche. */
+  intervalSeconds: number
 }
 
-/** POST /api/v1/trips/{id}/live/positions : une position du vehicule (202 sans corps). */
+/** POST /api/v1/trips/{id}/live/positions : une position du conducteur ou d un passager confirme. */
 export interface LivePositionRequest {
   lat: number
   lng: number
@@ -243,6 +248,16 @@ export interface LivePositionRequest {
   recordedAt?: string
 }
 
+/** Anomalies relevees par le serveur sur une position (V28) ; OUT_OF_AREA et TELEPORT ne sont pas diffusees. */
+export type LivePositionFlag = 'OUT_OF_AREA' | 'CLOCK_SKEW' | 'TELEPORT' | 'LOW_ACCURACY'
+
+/** Reponse de POST /api/v1/trips/{id}/live/positions (V28). */
+export interface LivePositionAck {
+  accepted: boolean
+  flags: LivePositionFlag[]
+  intervalSeconds: number
+}
+
 export interface LivePosition {
   lat: number
   lng: number
@@ -252,10 +267,26 @@ export interface LivePosition {
   recordedAt: string
 }
 
+export type LiveRole = 'DRIVER' | 'PASSENGER'
+
+/** Derniere position d un participant au suivi (V28) : le conducteur (bookingId null) ou un passager confirme. */
+export interface LiveParticipant {
+  role: LiveRole
+  bookingId: string | null
+  firstName: string
+  lat: number
+  lng: number
+  heading: number | null
+  speedKmh: number | null
+  accuracyM: number | null
+  recordedAt: string
+  flags: LivePositionFlag[]
+}
+
 /** GET /api/v1/trips/{id}/live : conducteur ou passager du trajet. */
 export interface LivePositionResponse {
   enabled: boolean
-  /** Null tant qu aucune position n a ete recue (ou partage coupe). */
+  /** Derniere position du conducteur ; null tant qu aucune n a ete recue (ou partage coupe). */
   position: LivePosition | null
   /** Age de la position a l instant de la reponse, en secondes ; null sans position. */
   staleSeconds: number | null
@@ -263,7 +294,20 @@ export interface LivePositionResponse {
   departureAt: string
   /** Jeton du lien public, present quand le partage est actif. */
   shareToken: string | null
+  /** Cadence recommandee (V28). */
+  intervalSeconds: number
+  /** Participants visibles par l appelant selon son role (V28). */
+  participants: LiveParticipant[]
+  /** Heure du serveur a la reponse (ISO) : sert a estimer le decalage de l horloge locale. */
+  serverTime: string
 }
+
+/** Evenements du flux SSE GET /api/v1/trips/{id}/live/stream (V28). */
+export type LiveStreamEvent =
+  | { type: 'snapshot'; tripStatus: TripStatus; sharingEnabled: boolean; intervalSeconds: number; participants: LiveParticipant[]; serverTime?: string }
+  | { type: 'position'; participant: LiveParticipant }
+  | { type: 'status'; tripStatus: TripStatus; sharingEnabled: boolean; intervalSeconds: number }
+  | { type: 'end'; reason: 'TRIP_COMPLETED' | 'SHARING_DISABLED' | 'TRIP_CANCELLED' }
 
 /** GET /api/v1/live/{token} : suivi public sans compte, aucune donnee personnelle au-dela du prenom. */
 export interface PublicLiveResponse {

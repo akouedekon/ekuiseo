@@ -14,7 +14,7 @@ import { useNow } from '@/hooks/useNow'
 import { usePublicLive } from '@/hooks/useTrips'
 import { describeError, isDefinitiveError } from '@/lib/errors'
 import { BENIN_TIME_HINT, deviceClockDiffersFromBenin, formatDateTime } from '@/lib/format'
-import { liveAgeSeconds, toVehicle } from '@/lib/liveTracking'
+import { LIVE_REFRESH_INTERVAL_MS, liveAgeSeconds, toVehicle } from '@/lib/liveTracking'
 
 /**
  * Suivi public par jeton (/live/{token}, V23) : un proche du passager suit le vehicule
@@ -106,7 +106,15 @@ export function LiveTrackingPage() {
       />
 
       <div className="space-y-4">
-        <RouteMap points={points} className="h-[240px] sm:h-[320px]" activation="on-demand" vehicle={vehicle} />
+        <RouteMap
+          points={points}
+          className="h-[240px] sm:h-[320px]"
+          activation="on-demand"
+          vehicle={vehicle}
+          intervalSeconds={LIVE_REFRESH_INTERVAL_MS / 1000}
+          defaultFollow="driver"
+          showFollowControls={!!vehicle}
+        />
 
         <Card className="p-4 sm:p-5">
           <LivePositionSummary

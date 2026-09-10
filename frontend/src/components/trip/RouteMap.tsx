@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useReducedMotion } from 'motion/react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl'
-import { Map as MapIcon, Maximize2 } from 'lucide-react'
+import { Car, LocateFixed, Map as MapIcon, Maximize2, User, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useAnimatedPosition } from '@/hooks/useAnimatedPosition'
 import { cn } from '@/lib/cn'
 import { estimateDurationMinutes, haversineKm } from '@/lib/cities'
 import { formatDuration } from '@/lib/format'
-import { projectOntoRoute } from '@/lib/liveTracking'
+import { animationDurationMs, projectOntoRoute, type AnimatedPoint } from '@/lib/liveTracking'
 import { readToken } from '@/lib/theme'
 
 export interface RouteMapPoint {
@@ -15,13 +17,16 @@ export interface RouteMapPoint {
   kind: 'origin' | 'stop' | 'destination'
 }
 
-/** Vehicule suivi en direct (V23) : position, cap eventuel, et fraicheur (`stale` = position perimee). */
+/** Vehicule ou personne suivie en direct (V23/V28) : position, cap eventuel, et fraicheur (`stale` = position perimee). */
 export interface RouteMapVehicle {
   lat: number
   lng: number
   heading?: number | null
   stale?: boolean
 }
+
+/** Ce que la carte suit : le conducteur, ma position, les deux, ou rien (libre, apres un geste de l utilisateur). */
+export type FollowMode = 'driver' | 'me' | 'both' | 'free'
 
 /**
  * Style MapLibre.
@@ -37,18 +42,33 @@ export interface RouteMapVehicle {
  */
 const MAP_STYLE_URL = import.meta.env.VITE_MAP_STYLE_URL as string | undefined
 
+interface LiveProps {
+  /** Position du conducteur en direct : marqueur anime sans recreer la carte. */
+  vehicle?: RouteMapVehicle | null
+  /** Ma propre position (passager qui partage), marqueur distinct. */
+  passenger?: RouteMapVehicle | null
+  /** Cadence du flux (s) : duree de l interpolation entre deux positions. */
+  intervalSeconds?: number | null
+  /** Mode de suivi initial ; les boutons de la carte permettent d en changer. */
+  defaultFollow?: FollowMode
+  /** Afficher « Suivre le conducteur / Ma position / Les deux » et « Recentrer ». */
+  showFollowControls?: boolean
+}
+
 export function RouteMap({
   points,
   className,
   interactive = true,
   activation = 'always',
   vehicle,
-}: {
+  passenger,
+  intervalSeconds,
+  defaultFollow,
+  showFollowControls = false,
+}: LiveProps & {
   points: RouteMapPoint[]
   className?: string
   interactive?: boolean
-  /** Position du vehicule en direct : marqueur deplace sans recreer la carte. */
-  vehicle?: RouteMapVehicle | null
   /**
    * `always` : la carte repond au doigt des l'affichage. `on-demand` (mobile,
    * audit L8) : elle n'intercepte ni le defilement ni le pincement tant que
@@ -58,11 +78,20 @@ export function RouteMap({
 }) {
   const [activated, setActivated] = useState(activation === 'always')
   if (!MAP_STYLE_URL || points.length < 2) {
-    return <StylisedRoute points={points} className={className} vehicle={vehicle} />
+    return <StylisedRoute points={points} className={className} vehicle={vehicle} passenger={passenger} intervalSeconds={intervalSeconds} />
   }
   return (
     <div className={cn('relative', className)}>
-      <LiveMap points={points} className="size-full" interactive={interactive && activated} vehicle={vehicle} />
+      <LiveMap
+        points={points}
+        className="size-full"
+        interactive={interactive && activated}
+        vehicle={vehicle}
+        passenger={passenger}
+        intervalSeconds={intervalSeconds}
+        defaultFollow={defaultFollow}
+        showFollowControls={showFollowControls}
+      />
       {!activated ? (
         <div className="absolute inset-x-0 bottom-3 flex justify-center">
           <Button variant="secondary" size="sm" onClick={() => setActivated(true)}>
@@ -88,7 +117,6 @@ function vehicleMarkerElement(): HTMLSpanElement {
   svg.setAttribute('width', '14')
   svg.setAttribute('height', '14')
   svg.setAttribute('aria-hidden', 'true')
-  svg.style.transition = 'transform .3s'
   const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
   path.setAttribute('d', 'M12 3l7 17-7-4-7 4z')
   path.setAttribute('fill', 'var(--surface)')
@@ -97,15 +125,31 @@ function vehicleMarkerElement(): HTMLSpanElement {
   return el
 }
 
-function applyVehicleStyle(el: HTMLElement, vehicle: RouteMapVehicle) {
-  const hasHeading = vehicle.heading !== null && vehicle.heading !== undefined
-  el.setAttribute('aria-label', vehicle.stale ? 'Véhicule (dernière position connue)' : 'Véhicule')
+/** Marqueur du passager : pastille accent plus petite, point central. */
+function passengerMarkerElement(): HTMLSpanElement {
+  const el = document.createElement('span')
+  el.setAttribute('role', 'img')
+  el.style.cssText =
+    'display:flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--accent);border:2px solid var(--surface);box-shadow:0 1px 4px rgba(0,0,0,.4);transition:opacity .3s'
+  const dot = document.createElement('span')
+  dot.style.cssText = 'width:6px;height:6px;border-radius:50%;background:var(--surface)'
+  el.appendChild(dot)
+  return el
+}
+
+function applyVehicleStyle(el: HTMLElement, vehicle: RouteMapVehicle, displayed: AnimatedPoint, label: string) {
+  const hasHeading = displayed.heading !== null && displayed.heading !== undefined
+  el.setAttribute('aria-label', vehicle.stale ? `${label} (dernière position connue)` : label)
   el.style.opacity = vehicle.stale ? '0.45' : '1'
   const arrow = el.firstElementChild as HTMLElement | null
-  if (arrow) {
-    arrow.style.transform = hasHeading ? `rotate(${vehicle.heading}deg)` : 'none'
+  if (arrow && arrow.tagName.toLowerCase() === 'svg') {
+    arrow.style.transform = hasHeading ? `rotate(${displayed.heading}deg)` : 'none'
     arrow.style.visibility = hasHeading ? 'visible' : 'hidden'
   }
+}
+
+function toPoint(v: RouteMapVehicle | null | undefined): AnimatedPoint | null {
+  return v ? { lat: v.lat, lng: v.lng, heading: v.heading ?? null } : null
 }
 
 function LiveMap({
@@ -113,46 +157,117 @@ function LiveMap({
   className,
   interactive,
   vehicle,
-}: {
+  passenger,
+  intervalSeconds,
+  defaultFollow,
+  showFollowControls,
+}: LiveProps & {
   points: RouteMapPoint[]
   className?: string
   interactive: boolean
-  vehicle?: RouteMapVehicle | null
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [failed, setFailed] = useState(false)
-  // La carte et la classe Marker (import dynamique) sont gardees en ref : le vehicule se
-  // deplace sans recreer la carte ni relancer fitBounds (un fitBounds a chaque position
+  const reduce = useReducedMotion()
+  // La carte et la classe Marker (import dynamique) sont gardees en ref : les marqueurs se
+  // deplacent sans recreer la carte ni relancer fitBounds (un fitBounds a chaque position
   // rendrait la carte inutilisable au doigt).
   const mapRef = useRef<MapLibreMap | null>(null)
   const markerClassRef = useRef<typeof MapLibreMarker | null>(null)
   const vehicleMarkerRef = useRef<MapLibreMarker | null>(null)
-  const vehicleRef = useRef<RouteMapVehicle | null | undefined>(null)
+  const passengerMarkerRef = useRef<MapLibreMarker | null>(null)
+  const duration = animationDurationMs(intervalSeconds)
+  const displayedVehicle = useAnimatedPosition(toPoint(vehicle), duration)
+  const displayedPassenger = useAnimatedPosition(toPoint(passenger), duration)
+  const [follow, setFollow] = useState<FollowMode>(defaultFollow ?? (vehicle ? 'driver' : 'free'))
+  const followRef = useRef(follow)
+  useEffect(() => {
+    followRef.current = follow
+  }, [follow])
+  const zoomedRef = useRef(false)
 
-  const syncVehicle = () => {
+  const syncMarker = useCallback(
+    (
+      ref: { current: MapLibreMarker | null },
+      make: () => HTMLSpanElement,
+      source: RouteMapVehicle | null | undefined,
+      displayed: AnimatedPoint | null,
+      label: string,
+    ) => {
+      const map = mapRef.current
+      const MarkerClass = markerClassRef.current
+      if (!map || !MarkerClass) return
+      if (!source || !displayed) {
+        ref.current?.remove()
+        ref.current = null
+        return
+      }
+      if (!ref.current) {
+        ref.current = new MarkerClass({ element: make() }).setLngLat([displayed.lng, displayed.lat]).addTo(map)
+      } else {
+        ref.current.setLngLat([displayed.lng, displayed.lat])
+      }
+      applyVehicleStyle(ref.current.getElement(), source, displayed, label)
+    },
+    [],
+  )
+
+  // Marqueurs : suivent la position animee, image par image.
+  useEffect(() => {
+    syncMarker(vehicleMarkerRef, vehicleMarkerElement, vehicle, displayedVehicle, 'Véhicule')
+  }, [vehicle, displayedVehicle, syncMarker])
+  useEffect(() => {
+    syncMarker(passengerMarkerRef, passengerMarkerElement, passenger, displayedPassenger, 'Ma position')
+  }, [passenger, displayedPassenger, syncMarker])
+
+  // Suivi d un seul marqueur : la carte reste centree dessus, sans animation propre (le marqueur glisse deja).
+  useEffect(() => {
     const map = mapRef.current
-    const MarkerClass = markerClassRef.current
-    if (!map || !MarkerClass) return
-    const current = vehicleRef.current
-    if (!current) {
-      vehicleMarkerRef.current?.remove()
-      vehicleMarkerRef.current = null
-      return
-    }
-    if (!vehicleMarkerRef.current) {
-      vehicleMarkerRef.current = new MarkerClass({ element: vehicleMarkerElement() })
-        .setLngLat([current.lng, current.lat])
-        .addTo(map)
+    if (!map) return
+    const target = follow === 'driver' ? displayedVehicle : follow === 'me' ? displayedPassenger : null
+    if (!target) return
+    if (!zoomedRef.current) {
+      zoomedRef.current = true
+      map.jumpTo({ center: [target.lng, target.lat], zoom: Math.max(map.getZoom(), 13) })
     } else {
-      vehicleMarkerRef.current.setLngLat([current.lng, current.lat])
+      map.setCenter([target.lng, target.lat])
     }
-    applyVehicleStyle(vehicleMarkerRef.current.getElement(), current)
-  }
+  }, [follow, displayedVehicle, displayedPassenger])
+
+  // « Les deux » : cadrage sur le conducteur et moi a chaque nouvelle position recue (pas a chaque image).
+  const vLat = vehicle?.lat
+  const vLng = vehicle?.lng
+  const pLat = passenger?.lat
+  const pLng = passenger?.lng
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || follow !== 'both' || vLat === undefined || vLng === undefined || pLat === undefined || pLng === undefined) return
+    void import('maplibre-gl').then(({ LngLatBounds }) => {
+      if (mapRef.current !== map || followRef.current !== 'both') return
+      const bounds = new LngLatBounds([vLng, vLat], [vLng, vLat]).extend([pLng, pLat])
+      map.fitBounds(bounds, { padding: 64, maxZoom: 15, duration: reduce ? 0 : 400 })
+    })
+  }, [follow, vLat, vLng, pLat, pLng, reduce])
 
   useEffect(() => {
-    vehicleRef.current = vehicle
-    syncVehicle()
-  }, [vehicle])
+    if (follow !== 'driver' && follow !== 'me') zoomedRef.current = false
+  }, [follow])
+
+  const recenter = () => {
+    const map = mapRef.current
+    if (!map) return
+    void import('maplibre-gl').then(({ LngLatBounds }) => {
+      if (mapRef.current !== map) return
+      const all = [
+        ...points.map((p) => [p.lng, p.lat] as [number, number]),
+        ...(vehicle ? [[vehicle.lng, vehicle.lat] as [number, number]] : []),
+        ...(passenger ? [[passenger.lng, passenger.lat] as [number, number]] : []),
+      ]
+      const bounds = all.reduce((acc, c) => acc.extend(c), new LngLatBounds(all[0], all[0]))
+      map.fitBounds(bounds, { padding: 48, duration: reduce ? 0 : 400 })
+    })
+    setFollow('free')
+  }
 
   useEffect(() => {
     let disposed = false
@@ -178,6 +293,12 @@ function LiveMap({
         map = instance
         mapRef.current = instance
         markerClassRef.current = Marker
+
+        // Un geste de l utilisateur libere la carte du suivi ; un mouvement programme (setCenter) n a pas d evenement d origine.
+        instance.on('dragstart', () => setFollow('free'))
+        instance.on('zoomstart', (e) => {
+          if ((e as { originalEvent?: unknown }).originalEvent) setFollow('free')
+        })
 
         // Couleur du trace lue dans le theme (audit F319), reappliquee au changement clair / sombre.
         const applyLineColor = () => {
@@ -218,8 +339,11 @@ function LiveMap({
           new LngLatBounds([points[0].lng, points[0].lat], [points[0].lng, points[0].lat]),
         )
         instance.fitBounds(bounds, { padding: 48, duration: 0 })
-        // Vehicule deja connu au moment ou la carte devient prete (lu via la ref).
-        syncVehicle()
+        zoomedRef.current = false
+        // Marqueurs deja connus au moment ou la carte devient prete (lus via les refs des effets suivants).
+        vehicleMarkerRef.current = null
+        passengerMarkerRef.current = null
+        setFailed(false)
       } catch {
         if (!disposed) setFailed(true)
       }
@@ -230,21 +354,70 @@ function LiveMap({
       observer?.disconnect()
       vehicleMarkerRef.current?.remove()
       vehicleMarkerRef.current = null
+      passengerMarkerRef.current?.remove()
+      passengerMarkerRef.current = null
       mapRef.current = null
       markerClassRef.current = null
       map?.remove()
     }
   }, [points, interactive])
 
-  if (failed) return <StylisedRoute points={points} className={className} vehicle={vehicle} />
+  // La carte prete apres coup : on (re)pose les marqueurs connus.
+  useEffect(() => {
+    if (!mapRef.current) return
+    syncMarker(vehicleMarkerRef, vehicleMarkerElement, vehicle, displayedVehicle, 'Véhicule')
+    syncMarker(passengerMarkerRef, passengerMarkerElement, passenger, displayedPassenger, 'Ma position')
+  })
 
+  if (failed) return <StylisedRoute points={points} className={className} vehicle={vehicle} passenger={passenger} intervalSeconds={intervalSeconds} />
+
+  const controls = showFollowControls && (vehicle || passenger)
   return (
-    <div
-      ref={containerRef}
-      role="img"
-      aria-label={`Carte du trajet de ${points[0]?.label} à ${points[points.length - 1]?.label}`}
-      className={cn('overflow-hidden rounded-[var(--radius-card)] border border-rule bg-surface-2', className)}
-    />
+    <div className={cn('relative', className)}>
+      <div
+        ref={containerRef}
+        role="img"
+        aria-label={`Carte du trajet de ${points[0]?.label} à ${points[points.length - 1]?.label}`}
+        className="size-full overflow-hidden rounded-[var(--radius-card)] border border-rule bg-surface-2"
+      />
+      {controls ? (
+        <div className="pointer-events-none absolute inset-x-2 top-2 flex items-start justify-between gap-2">
+          <div role="group" aria-label="Suivre sur la carte" className="pointer-events-auto flex flex-wrap gap-1">
+            {vehicle ? (
+              <FollowButton active={follow === 'driver'} onClick={() => setFollow('driver')} icon={Car} label="Conducteur" />
+            ) : null}
+            {passenger ? (
+              <FollowButton active={follow === 'me'} onClick={() => setFollow('me')} icon={User} label="Ma position" />
+            ) : null}
+            {vehicle && passenger ? (
+              <FollowButton active={follow === 'both'} onClick={() => setFollow('both')} icon={Users} label="Les deux" />
+            ) : null}
+          </div>
+          <Button variant="secondary" size="icon" className="pointer-events-auto shrink-0" aria-label="Recentrer la carte" onClick={recenter}>
+            <LocateFixed aria-hidden />
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function FollowButton({
+  active,
+  onClick,
+  icon: Icon,
+  label,
+}: {
+  active: boolean
+  onClick: () => void
+  icon: typeof Car
+  label: string
+}) {
+  return (
+    <Button variant={active ? 'primary' : 'secondary'} size="sm" className="h-11" aria-pressed={active} onClick={onClick}>
+      <Icon aria-hidden />
+      {label}
+    </Button>
   )
 }
 
@@ -287,22 +460,29 @@ function StylisedRoute({
   points,
   className,
   vehicle,
+  passenger,
+  intervalSeconds,
 }: {
   points: RouteMapPoint[]
   className?: string
   vehicle?: RouteMapVehicle | null
+  passenger?: RouteMapVehicle | null
+  intervalSeconds?: number | null
 }) {
   const W = 360
   const H = 220
+  const duration = animationDurationMs(intervalSeconds)
+  const displayedVehicle = useAnimatedPosition(toPoint(vehicle), duration)
+  const displayedPassenger = useAnimatedPosition(toPoint(passenger), duration)
   const placed = points.length >= 2 ? project(points, W, H, 26, 52) : []
   // Sans fond de carte, une position brute n aurait aucun sens : on la ramene sur le trace
   // (projection geographique, lib/liveTracking), puis dans le meme cadre que les points.
-  const placedVehicle =
-    vehicle && points.length >= 2
-      ? project([...points, { label: 'Véhicule', ...projectOntoRoute(vehicle, points), kind: 'stop' }], W, H, 26, 52)[
-          points.length
-        ]
+  const place = (p: AnimatedPoint | null) =>
+    p && points.length >= 2
+      ? project([...points, { label: 'Véhicule', ...projectOntoRoute(p, points), kind: 'stop' }], W, H, 26, 52)[points.length]
       : null
+  const placedVehicle = place(displayedVehicle)
+  const placedPassenger = place(displayedPassenger)
   const km =
     points.length >= 2
       ? haversineKm(points[0].lat, points[0].lng, points[points.length - 1].lat, points[points.length - 1].lng)
@@ -389,6 +569,16 @@ function StylisedRoute({
                 )}
               </g>
             ))}
+            {placedPassenger ? (
+              <g
+                transform={`translate(${placedPassenger.x} ${placedPassenger.y})`}
+                opacity={passenger?.stale ? 0.45 : 1}
+                role="img"
+                aria-label={passenger?.stale ? 'Ma position (dernière connue)' : 'Ma position'}
+              >
+                <circle r="5.5" fill="var(--accent)" stroke="var(--surface)" strokeWidth="2" />
+              </g>
+            ) : null}
             {placedVehicle ? (
               <g
                 transform={`translate(${placedVehicle.x} ${placedVehicle.y})`}
@@ -400,8 +590,8 @@ function StylisedRoute({
                   {!vehicle?.stale ? <animate attributeName="r" values="8;14;8" dur="2s" repeatCount="indefinite" /> : null}
                 </circle>
                 <circle r="7" fill="var(--primary)" stroke="var(--surface)" strokeWidth="2" />
-                {vehicle?.heading !== null && vehicle?.heading !== undefined ? (
-                  <path d="M0 -4.5l3.5 8-3.5-2-3.5 2z" fill="var(--surface)" transform={`rotate(${vehicle.heading})`} />
+                {displayedVehicle?.heading !== null && displayedVehicle?.heading !== undefined ? (
+                  <path d="M0 -4.5l3.5 8-3.5-2-3.5 2z" fill="var(--surface)" transform={`rotate(${displayedVehicle.heading})`} />
                 ) : null}
               </g>
             ) : null}

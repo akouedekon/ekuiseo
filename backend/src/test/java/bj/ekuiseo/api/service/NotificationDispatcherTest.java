@@ -191,4 +191,27 @@ class NotificationDispatcherTest {
         verify(pushSubscriptionRepository, never()).findByUserIdOrderByCreatedAtAsc(any());
         verify(webPushSender, never()).send(any(), any(), any(), any());
     }
+
+    /** V28 : les notifications d approche du suivi en direct ne partent que par push, jamais par e-mail ni SMS. */
+    @Test
+    void approachNotifications_arePushOnly() {
+        when(preferencesRepository.findByUserId(user.getId())).thenReturn(Optional.empty());
+        when(webPushSender.isEnabled()).thenReturn(true);
+        PushSubscription phone = subscription("https://push.example/phone");
+        when(pushSubscriptionRepository.findByUserIdOrderByCreatedAtAsc(user.getId())).thenReturn(List.of(phone));
+        when(webPushSender.send(any(), any(), any(), any())).thenReturn(WebPushSender.Outcome.SENT);
+
+        for (NotificationType type : NotificationDispatcher.PUSH_ONLY_TYPES) {
+            // Meme demandee comme critique, elle reste sans e-mail ni SMS.
+            dispatcher.deliver(user.getId(), type, Map.of("driverFirstName", "Rodrigue", "tripId", "t-1"), true, null);
+        }
+
+        verify(mailGateway, never()).send(any(), any(), any());
+        verify(smsService, never()).sendCritical(any(), any());
+        ArgumentCaptor<NotificationTemplates.Push> content = ArgumentCaptor.forClass(NotificationTemplates.Push.class);
+        verify(webPushSender, org.mockito.Mockito.times(2)).send(eq("https://push.example/phone"), any(), any(), content.capture());
+        assertThat(content.getAllValues()).extracting(NotificationTemplates.Push::title)
+                .containsExactlyInAnyOrder("Rodrigue arrive", "Rodrigue est arrive");
+        assertThat(content.getAllValues()).extracting(NotificationTemplates.Push::url).containsOnly("/trips/t-1");
+    }
 }

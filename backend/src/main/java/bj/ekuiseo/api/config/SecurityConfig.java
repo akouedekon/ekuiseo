@@ -72,6 +72,13 @@ public class SecurityConfig {
                         // anonyme sur la page d'erreur. Les reponses 401/403 sont de toute facon
                         // ecrites directement ci-dessous, sans passer par /error.
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+                        // Flux SSE du suivi en direct (TripLiveController#stream, V28) : la fin d un
+                        // SseEmitter provoque un dispatch ASYNC interne, sans contexte de securite
+                        // (le filtre JWT est OncePerRequest). Sans cette regle, l AuthorizationFilter
+                        // ecrirait un 401 RFC 7807 dans un flux deja engage. Un dispatch ASYNC ne
+                        // peut venir que du conteneur, jamais d un client : la requete initiale,
+                        // elle, reste authentifiee.
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(eh -> eh

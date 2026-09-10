@@ -136,6 +136,12 @@ ekuiseo:
     # L'acompte reellement preleve est max(cette valeur, frais de service de la
     # reservation) - voir FeePolicy#computeDepositAmount pour la justification.
     deposit-base-fcfa: ${BOOKING_DEPOSIT_BASE_FCFA:1000}
+  live:
+    # Suivi en direct (V28). Duree maximale d un flux SSE avant que le serveur ne le ferme
+    # (le client se reabonne) ; battement « ping » envoye a chaque abonne pour garder les
+    # proxys eveilles et detecter les connexions mortes.
+    stream-timeout-minutes: ${LIVE_STREAM_TIMEOUT_MINUTES:30}
+    ping-seconds: ${LIVE_PING_SECONDS:20}
   fee:
     # Parametre commercial, injecte dans FeePolicy (jamais code en dur, voir MoneyUtils/FeePolicy).
     service-fee-rate: ${SERVICE_FEE_RATE:0.08}
@@ -319,10 +325,11 @@ ekuiseo:
     client-errors:
       max-requests: ${RATE_LIMIT_CLIENT_ERRORS_MAX:30}
       window-seconds: ${RATE_LIMIT_CLIENT_ERRORS_WINDOW_SECONDS:600}
-    # Suivi en direct (V23) : positions envoyees par le conducteur (POST /trips/{id}/live/positions),
-    # par utilisateur authentifie - le navigateur en envoie au plus une toutes les 10 s.
+    # Suivi en direct (V23/V28) : positions envoyees par le conducteur ou un passager confirme
+    # (POST /trips/{id}/live/positions), par utilisateur authentifie - une toutes les 2 s au plus
+    # (l appareil suit la cadence intervalSeconds renvoyee par le serveur : 5 a 30 s).
     live:
-      max-requests: ${RATE_LIMIT_LIVE_MAX:120}
+      max-requests: ${RATE_LIMIT_LIVE_MAX:30}
       window-seconds: ${RATE_LIMIT_LIVE_WINDOW_SECONDS:60}
     # Lien public de suivi (GET /live/{token}), par IP : chaque proche interroge toutes les 10 s.
     live-public:

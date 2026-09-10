@@ -76,6 +76,92 @@ export const TRIPS = [
   trip(4, { tripType: 'QUOTIDIEN', recurrenceRule: 'FREQ=WEEKLY;COUNT=20;BYDAY=MO,TU,WE,TH,FR' }),
 ]
 
+/*
+ * Suivi en direct (V28). LIVE_TRIP : trajet en cours (parti il y a 3 h) que l utilisateur a
+ * reserve (b-3) : il voit le conducteur et lui-meme. DRIVER_TRIP : trajet en cours conduit par
+ * l utilisateur lui-meme : interrupteur de partage et passagers qui partagent leur position.
+ */
+export const LIVE_TRIP = trip(7, { departureAt: iso(-180), status: 'ONGOING', seatsAvailable: 1 })
+export const DRIVER_TRIP = trip(11, {
+  id: 't-live-driver',
+  driver: { id: USER.id, firstName: USER.firstName, lastName: USER.lastName, photoUrl: null, ratingAvg: USER.ratingAvg, ratingCount: USER.ratingCount, identityVerified: false },
+  vehicle: VEHICLES[0],
+  departureAt: iso(-45),
+  status: 'ONGOING',
+  seatsAvailable: 2,
+})
+const ALL_TRIPS = [...TRIPS, LIVE_TRIP, DRIVER_TRIP]
+
+/** Participant du suivi (LiveParticipant) ; `agoSeconds` = age de la mesure a l heure serveur simulee. */
+function participant(role: 'DRIVER' | 'PASSENGER', firstName: string, lat: number, lng: number, agoSeconds: number, extra: Record<string, unknown> = {}) {
+  return {
+    role,
+    bookingId: role === 'DRIVER' ? null : 'b-3',
+    firstName,
+    lat,
+    lng,
+    heading: role === 'DRIVER' ? 322 : null,
+    speedKmh: role === 'DRIVER' ? 58 : null,
+    accuracyM: role === 'DRIVER' ? 9 : 25,
+    recordedAt: new Date(NOW - agoSeconds * 1000).toISOString(),
+    flags: [],
+    ...extra,
+  }
+}
+
+/** Instantane GET /trips/{id}/live selon le trajet ; serverTime = NOW pour des ages reproductibles. */
+function liveSnapshot(tripId: string) {
+  const base = { staleSeconds: null, shareToken: null, intervalSeconds: 30, participants: [] as unknown[], serverTime: new Date(NOW).toISOString() }
+  if (tripId === LIVE_TRIP.id) {
+    // Le conducteur Gildas est entre Allada et Bohicon, a 12 s ; le passager (moi) partage aussi.
+    const driver = participant('DRIVER', LIVE_TRIP.driver.firstName, 6.9012, 2.1103, 12)
+    const me = participant('PASSENGER', USER.firstName, 6.8987, 2.1131, 4)
+    return {
+      ...base,
+      enabled: true,
+      position: { lat: driver.lat, lng: driver.lng, heading: driver.heading, speedKmh: driver.speedKmh, accuracyM: driver.accuracyM, recordedAt: driver.recordedAt },
+      staleSeconds: 12,
+      tripStatus: 'ONGOING',
+      departureAt: LIVE_TRIP.departureAt,
+      shareToken: 'jeton-de-suivi',
+      intervalSeconds: 15,
+      participants: [driver, me],
+    }
+  }
+  if (tripId === DRIVER_TRIP.id) {
+    // Je conduis : ma position (a 6 s) et un passager qui m attend a 800 m (a 20 s).
+    const me = participant('DRIVER', USER.firstName, 6.4520, 2.3410, 6)
+    const koffi = participant('PASSENGER', 'Koffi', 6.4590, 2.3380, 20, { bookingId: 'b-koffi' })
+    return {
+      ...base,
+      enabled: true,
+      position: { lat: me.lat, lng: me.lng, heading: me.heading, speedKmh: me.speedKmh, accuracyM: me.accuracyM, recordedAt: me.recordedAt },
+      staleSeconds: 6,
+      tripStatus: 'ONGOING',
+      departureAt: DRIVER_TRIP.departureAt,
+      shareToken: 'jeton-conducteur',
+      intervalSeconds: 5,
+      participants: [me, koffi],
+    }
+  }
+  return { ...base, enabled: false, position: null, tripStatus: 'PUBLISHED', departureAt: TRIPS[0].departureAt }
+}
+
+/**
+ * Flux SSE simule (GET /trips/{id}/live/stream) : l instantane puis deux positions, dans un
+ * corps statique. Playwright ne sait pas maintenir la connexion : le client la voit se
+ * fermer et se reabonne au bout d une seconde (sans bandeau : des evenements sont arrives).
+ */
+function liveStreamBody(tripId: string): string {
+  const snap = liveSnapshot(tripId)
+  const events = [{ type: 'snapshot', tripStatus: snap.tripStatus, sharingEnabled: snap.enabled, intervalSeconds: snap.intervalSeconds, participants: snap.participants, serverTime: snap.serverTime }]
+  const driver = snap.participants.find((p) => (p as { role: string }).role === 'DRIVER') as ReturnType<typeof participant> | undefined
+  if (driver) {
+    events.push({ type: 'position', participant: { ...driver, lat: driver.lat + 0.0004, lng: driver.lng - 0.0003 } } as never)
+  }
+  return events.map((event) => `event:${event.type}\ndata:${JSON.stringify(event)}\n\n`).join('')
+}
+
 const PLACES = [
   { id: 'p-cotonou', name: 'Cotonou', region: 'Littoral', countryCode: 'BJ', kind: 'CITY', lat: 6.3703, lng: 2.3912, parentId: null, parentName: null },
   { id: 'p-bohicon', name: 'Bohicon', region: 'Zou', countryCode: 'BJ', kind: 'CITY', lat: 7.1786, lng: 2.0667, parentId: null, parentName: null },
@@ -141,7 +227,7 @@ function booking(id: string, t: ReturnType<typeof trip>, status: string, extra: 
 export const BOOKINGS = [
   booking('b-1', TRIPS[0], 'CONFIRMED'),
   booking('b-2', TRIPS[2], 'PENDING_PAYMENT', { paymentPlan: { ...paymentPlan(TRIPS[2].pricePerSeat), paymentStatus: 'PENDING', depositDueAt: iso(15) } }),
-  booking('b-3', trip(7, { departureAt: iso(-180), status: 'ONGOING' }), 'CONFIRMED'),
+  booking('b-3', LIVE_TRIP, 'CONFIRMED'),
   booking('b-4', trip(8, { departureAt: iso(-60 * 24 * 3), status: 'COMPLETED' }), 'COMPLETED', { passengerConfirmation: 'TRIP_DONE', passengerConfirmedAt: iso(-60 * 24 * 2) }),
   // Conducteur declare absent (V25) : remboursement automatique a l echeance si le conducteur ne conteste pas.
   booking('b-5', trip(9, { departureAt: iso(-60 * 20), status: 'COMPLETED' }), 'DRIVER_NO_SHOW', {
@@ -238,12 +324,22 @@ export async function mockApi(pageObj: Page, options: MockOptions = {}): Promise
       return json(TRIPS.slice(0, 4).map((t, i) => ({ trip: t, distanceKm: 0.4 + i * 0.9, boardingLabel: t.originLabel, boardingLat: t.originLat, boardingLng: t.originLng })))
     }
     if (/^\/trips\/[^/]+\/stops$/.test(path)) return json([])
-    if (/^\/trips\/[^/]+\/live$/.test(path)) return json({ enabled: false, position: null, staleSeconds: null, tripStatus: 'PUBLISHED', departureAt: TRIPS[0].departureAt, shareToken: null })
+    if (/^\/trips\/[^/]+\/live\/stream$/.test(path)) {
+      const tripId = path.split('/')[2]
+      return route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no' },
+        body: liveStreamBody(tripId),
+      })
+    }
+    if (/^\/trips\/[^/]+\/live\/positions$/.test(path)) return json({ accepted: true, flags: [], intervalSeconds: 15 })
+    if (/^\/trips\/[^/]+\/live$/.test(path)) return json(liveSnapshot(path.split('/')[2]))
+    if (/^\/trips\/[^/]+\/bookings$/.test(path)) return json([])
     if (/^\/trips\/[^/]+\/booking-quote$/.test(path)) {
       const body = request.postDataJSON() as { seats?: number; paymentMode?: string } | null
       return json(paymentPlan(4000 * (body?.seats ?? 1), body?.paymentMode ?? 'MOMO_DEPOSIT'))
     }
-    if (/^\/trips\/[^/]+$/.test(path)) return json(TRIPS.find((t) => path.endsWith(t.id)) ?? TRIPS[0])
+    if (/^\/trips\/[^/]+$/.test(path)) return json(ALL_TRIPS.find((t) => path.endsWith('/' + t.id)) ?? TRIPS[0])
     if (/^\/users\/[^/]+\/reviews$/.test(path)) {
       return json([
         { id: 'r-1', authorFirstName: 'Awa', rating: 5, comment: 'Conducteur ponctuel et prudent.', createdAt: iso(-60 * 24 * 10), role: 'PASSENGER' },

@@ -53,6 +53,9 @@ const SCREENS: Screen[] = [
   { name: '11-profil-conducteur', path: '/drivers/d-1', heading: /Marcellin/ },
   { name: '12-connexion', path: '/login', heading: /Bienvenue/, authed: false },
   { name: '13-autour', path: '/autour', heading: /Autour|autour/ },
+  // Suivi en direct (V28) : trajet en cours vu par un passager confirme, puis par le conducteur.
+  { name: '14-suivi-passager', path: '/trips/t-7', heading: /Cotonou/, settle: 1500 },
+  { name: '15-suivi-conducteur', path: '/trips/t-live-driver', heading: /Cotonou/, settle: 1500 },
 ]
 
 for (const screen of SCREENS) {

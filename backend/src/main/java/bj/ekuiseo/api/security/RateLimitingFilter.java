@@ -51,8 +51,9 @@ import java.util.regex.Pattern;
  *       60 / 60 s / IP (endpoints publics, une requete PostGIS chacun - constats F025/F416).</li>
  *   <li>{@code msg:} POST /api/v1/bookings/{id}/messages : 30 / 10 min / utilisateur (constat F547).</li>
  *   <li>{@code alert:} POST /api/v1/trip-alerts : 10 / 10 min / utilisateur (constat F524).</li>
- *   <li>{@code live:} POST /api/v1/trips/{id}/live/positions : 120 / 60 s / utilisateur (suivi en
- *       direct, V23 : le navigateur envoie au plus une position toutes les 10 s).</li>
+ *   <li>{@code live:} POST /api/v1/trips/{id}/live/positions : 30 / 60 s / utilisateur (suivi en
+ *       direct, V28 : une position toutes les 2 s au plus, conducteur ou passager ; la cadence
+ *       fine par participant est verifiee ensuite par LocationUpdateService).</li>
  *   <li>{@code live-public:} GET /api/v1/live/{token} : 120 / 60 s / IP (lien public de suivi,
  *       interroge toutes les 10 s par chaque proche derriere un meme NAT).</li>
  * </ul>
@@ -73,7 +74,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     private static final String ALERTS_PATH = "/api/v1/trip-alerts";
     /** Rapports d erreur du navigateur (ClientErrorController) : public, donc borne par IP. */
     private static final String CLIENT_ERRORS_PATH = "/api/v1/client-errors";
-    /** Positions du conducteur (TripLiveController, V23) : par utilisateur. */
+    /** Positions du conducteur ou d un passager confirme (TripLiveController, V23/V28) : par utilisateur. */
     private static final Pattern LIVE_POSITIONS_PATH = Pattern.compile("^/api/v1/trips/[^/]+/live/positions$");
     /** Suivi public par jeton (TripLiveController, V23) : public, donc borne par IP. */
     private static final Pattern PUBLIC_LIVE_PATH = Pattern.compile("^/api/v1/live/[^/]+$");
@@ -112,7 +113,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     public RateLimitingFilter(int authMaxRequests, long authWindowSeconds, int webhookMaxRequests, long webhookWindowSeconds,
                               int otpMaxRequests, long otpWindowSeconds) {
         this(null, authMaxRequests, authWindowSeconds, webhookMaxRequests, webhookWindowSeconds, otpMaxRequests, otpWindowSeconds,
-                60, 60, 30, 600, 10, 600, 30, 600, 120, 60, 120, 60);
+                60, 60, 30, 600, 10, 600, 30, 600, 30, 60, 120, 60);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -131,7 +132,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
                               @Value("${ekuiseo.rate-limit.alert.window-seconds:600}") long alertWindowSeconds,
                               @Value("${ekuiseo.rate-limit.client-errors.max-requests:30}") int clientErrorsMaxRequests,
                               @Value("${ekuiseo.rate-limit.client-errors.window-seconds:600}") long clientErrorsWindowSeconds,
-                              @Value("${ekuiseo.rate-limit.live.max-requests:120}") int liveMaxRequests,
+                              @Value("${ekuiseo.rate-limit.live.max-requests:30}") int liveMaxRequests,
                               @Value("${ekuiseo.rate-limit.live.window-seconds:60}") long liveWindowSeconds,
                               @Value("${ekuiseo.rate-limit.live-public.max-requests:120}") int livePublicMaxRequests,
                               @Value("${ekuiseo.rate-limit.live-public.window-seconds:60}") long livePublicWindowSeconds) {

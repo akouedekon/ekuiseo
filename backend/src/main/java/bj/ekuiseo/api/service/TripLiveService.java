@@ -6,17 +6,21 @@ import bj.ekuiseo.api.common.exception.NotFoundException;
 import bj.ekuiseo.api.domain.Trip;
 import bj.ekuiseo.api.domain.TripPosition;
 import bj.ekuiseo.api.domain.Vehicle;
-import bj.ekuiseo.api.domain.enums.BookingStatus;
+import bj.ekuiseo.api.domain.enums.LiveRole;
 import bj.ekuiseo.api.domain.enums.TripStatus;
-import bj.ekuiseo.api.dto.trip.LivePositionRequest;
+import bj.ekuiseo.api.dto.trip.LiveParticipant;
 import bj.ekuiseo.api.dto.trip.LivePositionResponse;
 import bj.ekuiseo.api.dto.trip.LiveSharingResponse;
+import bj.ekuiseo.api.dto.trip.LiveStreamEvent;
 import bj.ekuiseo.api.dto.trip.PublicLiveResponse;
-import bj.ekuiseo.api.repository.BookingRepository;
 import bj.ekuiseo.api.repository.TripPositionRepository;
 import bj.ekuiseo.api.repository.TripRepository;
+import bj.ekuiseo.api.service.live.LiveSessionRegistry;
+import bj.ekuiseo.api.service.live.LiveSessionRegistry.Viewer;
+import bj.ekuiseo.api.service.live.TripTrackingService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.security.SecureRandom;
 import java.time.Duration;
@@ -28,20 +32,21 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Suivi en direct d un trajet (V23). Le conducteur active le partage puis envoie sa
- * position depuis son navigateur ; ses passagers confirmes la lisent sur la fiche du
- * trajet, et un lien public a jeton ({@code /live/{token}}) permet a un proche de suivre le
- * vehicule sans compte.
+ * Suivi en direct d un trajet (V23, etendu en V28). Le conducteur active le partage ; lui
+ * et ses passagers confirmes envoient leur position ({@code LocationUpdateService}) ; la
+ * fiche du trajet la lit par instantane ou par flux SSE ({@code TripTrackingService}), et un
+ * lien public a jeton ({@code /live/{token}}) permet a un proche de suivre le vehicule sans
+ * compte.
  * <ul>
  *   <li>Activation : conducteur du trajet, trajet PUBLISHED / FULL / ONGOING. Le jeton est
  *       genere a la premiere activation (32 octets aleatoires, base64url) et conserve tant
- *       que le trajet vit : couper puis reprendre le partage garde le meme lien.</li>
- *   <li>Positions : uniquement partage actif et trajet dans sa fenetre, d une heure avant
- *       le depart jusqu au statut COMPLETED / CANCELLED exclu. La position est horodatee
- *       cote appareil, bornee a l instant de reception (horloge en avance).</li>
+ *       que le trajet vit : couper puis reprendre le partage garde le meme lien. Couper le
+ *       partage ferme les flux ouverts ({@code end SHARING_DISABLED}) et oublie la derniere
+ *       position du conducteur.</li>
  *   <li>Lecture : conducteur ou passager avec une reservation CONFIRMED, COMPLETED ou
- *       PENDING_DRIVER_APPROVAL (403 sinon) ; lecture publique par jeton, 404 des que le
- *       partage est coupe ou que le trajet est termine / annule depuis plus de 6 h.</li>
+ *       PENDING_DRIVER_APPROVAL (403 sinon) ; lecture publique par jeton, limitee au
+ *       conducteur, 404 des que le partage est coupe ou que le trajet est termine / annule
+ *       depuis plus de 6 h.</li>
  * </ul>
  * L historique des positions est purge apres 24 h (RetentionScheduler), le jeton efface une
  * fois le trajet termine : le lien public est revocable par le conducteur (desactivation)
@@ -50,34 +55,34 @@ import java.util.UUID;
 @Service
 public class TripLiveService {
 
-    /** Une position est acceptee au plus tot ce delai avant le depart. */
-    static final Duration WINDOW_BEFORE_DEPARTURE = Duration.ofHours(1);
     /** Le lien public repond encore ce delai apres la fin ou l annulation du trajet. */
     static final Duration PUBLIC_GRACE_AFTER_END = Duration.ofHours(6);
-    /** Une position datee de plus loin que cela dans le futur est ramenee a l instant de reception. */
-    static final Duration MAX_CLOCK_AHEAD = Duration.ofMinutes(1);
 
     static final List<TripStatus> SHAREABLE_STATUSES = List.of(TripStatus.PUBLISHED, TripStatus.FULL, TripStatus.ONGOING);
-    static final List<BookingStatus> VIEWER_BOOKING_STATUSES =
-            List.of(BookingStatus.CONFIRMED, BookingStatus.COMPLETED, BookingStatus.PENDING_DRIVER_APPROVAL);
 
     private final TripRepository tripRepository;
     private final TripPositionRepository tripPositionRepository;
-    private final BookingRepository bookingRepository;
     private final AuditService auditService;
+    private final LiveSessionRegistry registry;
+    private final TripTrackingService tracking;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public TripLiveService(TripRepository tripRepository, TripPositionRepository tripPositionRepository,
-                           BookingRepository bookingRepository, AuditService auditService) {
+                           AuditService auditService, LiveSessionRegistry registry, TripTrackingService tracking) {
         this.tripRepository = tripRepository;
         this.tripPositionRepository = tripPositionRepository;
-        this.bookingRepository = bookingRepository;
         this.auditService = auditService;
+        this.registry = registry;
+        this.tracking = tracking;
     }
 
     /** PUT /api/v1/trips/{id}/live : active ou coupe le partage (conducteur seulement). */
     @Transactional
     public LiveSharingResponse setSharing(UUID tripId, UUID driverId, boolean enabled) {
+        return setSharing(tripId, driverId, enabled, Instant.now());
+    }
+
+    LiveSharingResponse setSharing(UUID tripId, UUID driverId, boolean enabled, Instant now) {
         Trip trip = findTrip(tripId);
         requireDriver(trip, driverId);
         if (enabled && !SHAREABLE_STATUSES.contains(trip.getStatus())) {
@@ -92,42 +97,15 @@ public class TripLiveService {
         if (changed) {
             auditService.log(driverId, enabled ? "TRIP_LIVE_SHARING_ENABLED" : "TRIP_LIVE_SHARING_DISABLED",
                     "trip", trip.getId(), Map.of());
+            if (enabled) {
+                tracking.broadcastStatus(trip, now);
+            } else {
+                // Les lecteurs ne doivent plus voir une position que le conducteur ne partage plus.
+                registry.clearPosition(tripId, driverId);
+                tracking.end(tripId, LiveStreamEvent.EndReason.SHARING_DISABLED);
+            }
         }
-        return toSharingResponse(trip);
-    }
-
-    /** POST /api/v1/trips/{id}/live/positions : enregistre une position du conducteur (202). */
-    @Transactional
-    public void recordPosition(UUID tripId, UUID driverId, LivePositionRequest req) {
-        recordPosition(tripId, driverId, req, Instant.now());
-    }
-
-    void recordPosition(UUID tripId, UUID driverId, LivePositionRequest req, Instant now) {
-        Trip trip = findTrip(tripId);
-        requireDriver(trip, driverId);
-        if (!trip.isLiveSharingEnabled()) {
-            throw new BadRequestException("Le partage de position n est pas active sur ce trajet");
-        }
-        if (!isWithinWindow(trip, now)) {
-            throw new BadRequestException("La position ne peut etre partagee que d une heure avant le depart jusqu a la fin du trajet");
-        }
-        Instant recordedAt = req.recordedAt();
-        if (recordedAt == null || recordedAt.isAfter(now.plus(MAX_CLOCK_AHEAD))) {
-            recordedAt = now;
-        }
-        tripPositionRepository.save(TripPosition.builder()
-                .trip(trip)
-                .lat(req.lat())
-                .lng(req.lng())
-                .heading(req.heading())
-                .speedKmh(req.speedKmh())
-                .accuracyM(req.accuracyM())
-                .recordedAt(recordedAt)
-                .build());
-        if (trip.getLastPositionAt() == null || recordedAt.isAfter(trip.getLastPositionAt())) {
-            trip.setLastPositionAt(recordedAt);
-            tripRepository.save(trip);
-        }
+        return toSharingResponse(trip, tracking.currentInterval(trip, now));
     }
 
     /** GET /api/v1/trips/{id}/live : conducteur ou passager de ce trajet. */
@@ -138,20 +116,33 @@ public class TripLiveService {
 
     LivePositionResponse getLive(UUID tripId, UUID requesterId, Instant now) {
         Trip trip = findTrip(tripId);
-        boolean driver = trip.getDriver().getId().equals(requesterId);
-        if (!driver && !bookingRepository.existsByTripIdAndPassengerIdAndStatusIn(tripId, requesterId, VIEWER_BOOKING_STATUSES)) {
-            throw new ForbiddenException("Le suivi en direct est reserve au conducteur et aux passagers de ce trajet");
-        }
-        Optional<TripPosition> last = trip.isLiveSharingEnabled()
-                ? tripPositionRepository.findFirstByTripIdOrderByRecordedAtDesc(tripId)
-                : Optional.empty();
+        Viewer viewer = tracking.resolveViewer(trip, requesterId);
+        Optional<LivePositionResponse.Position> last = trip.isLiveSharingEnabled() ? driverPosition(trip) : Optional.empty();
         return new LivePositionResponse(
                 trip.isLiveSharingEnabled(),
-                last.map(TripLiveService::toPosition).orElse(null),
-                last.map(p -> staleSeconds(p, now)).orElse(null),
+                last.orElse(null),
+                last.map(p -> staleSeconds(p.recordedAt(), now)).orElse(null),
                 trip.getStatus(),
                 trip.getDepartureAt(),
-                trip.isLiveSharingEnabled() ? trip.getLiveShareToken() : null);
+                trip.isLiveSharingEnabled() ? trip.getLiveShareToken() : null,
+                tracking.currentInterval(trip, now),
+                tracking.visibleParticipants(tripId, viewer),
+                now);
+    }
+
+    /**
+     * GET /api/v1/trips/{id}/live/stream : flux SSE pour un lecteur autorise. La transaction
+     * de lecture se termine avec cette methode ; l emetteur vit ensuite sans connexion base.
+     */
+    @Transactional(readOnly = true)
+    public SseEmitter stream(UUID tripId, UUID requesterId) {
+        return stream(tripId, requesterId, Instant.now());
+    }
+
+    SseEmitter stream(UUID tripId, UUID requesterId, Instant now) {
+        Trip trip = findTrip(tripId);
+        Viewer viewer = tracking.resolveViewer(trip, requesterId);
+        return tracking.openStream(trip, viewer, now);
     }
 
     /** GET /api/v1/live/{token} : suivi public, sans compte. 404 pour tout jeton qui ne doit plus repondre. */
@@ -169,7 +160,8 @@ public class TripLiveService {
         if (!trip.isLiveSharingEnabled() || isPublicExpired(trip, now)) {
             throw new NotFoundException("Suivi introuvable");
         }
-        Optional<TripPosition> last = tripPositionRepository.findFirstByTripIdOrderByRecordedAtDesc(trip.getId());
+        // Le lien public ne montre jamais un passager : conducteur seulement.
+        Optional<LivePositionResponse.Position> last = driverPosition(trip);
         Vehicle vehicle = trip.getVehicle();
         return new PublicLiveResponse(
                 trip.getOriginLabel(), trip.getOriginLat(), trip.getOriginLng(),
@@ -178,16 +170,21 @@ public class TripLiveService {
                 trip.getStatus(),
                 trip.getDriver().getFirstName(),
                 vehicle == null ? null : new PublicLiveResponse.Vehicle(vehicle.getBrand(), vehicle.getModel(), vehicle.getColor()),
-                last.map(TripLiveService::toPosition).orElse(null),
-                last.map(p -> staleSeconds(p, now)).orElse(null));
+                last.orElse(null),
+                last.map(p -> staleSeconds(p.recordedAt(), now)).orElse(null));
     }
 
-    /** Fenetre d envoi : d une heure avant le depart jusqu au statut terminal exclu. */
-    static boolean isWithinWindow(Trip trip, Instant now) {
-        if (!SHAREABLE_STATUSES.contains(trip.getStatus())) {
-            return false;
+    /**
+     * Derniere position acceptee du conducteur : le registre en memoire d abord (toujours
+     * plus recent), la base en repli apres un redemarrage (au plus 30 s de retard).
+     */
+    private Optional<LivePositionResponse.Position> driverPosition(Trip trip) {
+        Optional<LiveParticipant> live = registry.driverPosition(trip.getId());
+        if (live.isPresent()) {
+            return live.map(TripLiveService::toPosition);
         }
-        return !now.isBefore(trip.getDepartureAt().minus(WINDOW_BEFORE_DEPARTURE));
+        return tripPositionRepository.findFirstByTripIdAndRoleOrderByRecordedAtDesc(trip.getId(), LiveRole.DRIVER)
+                .map(TripLiveService::toPosition);
     }
 
     /**
@@ -202,8 +199,8 @@ public class TripLiveService {
         return now.isAfter(endedAt.plus(PUBLIC_GRACE_AFTER_END));
     }
 
-    static long staleSeconds(TripPosition position, Instant now) {
-        return Math.max(0, Duration.between(position.getRecordedAt(), now).getSeconds());
+    static long staleSeconds(Instant recordedAt, Instant now) {
+        return Math.max(0, Duration.between(recordedAt, now).getSeconds());
     }
 
     static LivePositionResponse.Position toPosition(TripPosition p) {
@@ -211,10 +208,14 @@ public class TripLiveService {
                 p.getAccuracyM(), p.getRecordedAt());
     }
 
-    static LiveSharingResponse toSharingResponse(Trip trip) {
+    static LivePositionResponse.Position toPosition(LiveParticipant p) {
+        return new LivePositionResponse.Position(p.lat(), p.lng(), p.heading(), p.speedKmh(), p.accuracyM(), p.recordedAt());
+    }
+
+    static LiveSharingResponse toSharingResponse(Trip trip, int intervalSeconds) {
         String token = trip.getLiveShareToken();
         return new LiveSharingResponse(trip.isLiveSharingEnabled(), token,
-                token == null ? null : "/live/" + token, trip.getLastPositionAt());
+                token == null ? null : "/live/" + token, trip.getLastPositionAt(), intervalSeconds);
     }
 
     /** 32 octets aleatoires en base64url sans remplissage (43 caracteres), imprevisible et sur dans une URL. */

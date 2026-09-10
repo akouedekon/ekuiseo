@@ -20,8 +20,10 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -41,6 +43,12 @@ import java.util.UUID;
 public class NotificationDispatcher {
 
     private static final Logger log = LoggerFactory.getLogger(NotificationDispatcher.class);
+
+    /**
+     * Notifications d approche du suivi en direct (V28) : utiles a la minute, sans valeur
+     * dix minutes plus tard. Push et in-app seulement, jamais d e-mail ni de SMS.
+     */
+    static final Set<NotificationType> PUSH_ONLY_TYPES = EnumSet.of(NotificationType.DRIVER_NEARBY, NotificationType.DRIVER_ARRIVED);
 
     private final UserRepository userRepository;
     private final UserPreferencesRepository userPreferencesRepository;
@@ -88,13 +96,14 @@ public class NotificationDispatcher {
         UserPreferences prefs = userPreferencesRepository.findByUserId(userId)
                 .orElseGet(() -> UserPreferences.builder().build());
         NotificationTemplates.Rendered rendered = NotificationTemplates.render(type, payload);
+        boolean pushOnly = PUSH_ONLY_TYPES.contains(type);
 
         // L e-mail est le seul canal sortant obligatoire du produit (decision du 2026-09-07 : pas
         // de fournisseur SMS). Une notification critique (confirmation, annulation, changement
         // d horaire, rappel) part toujours a l adresse verifiee : elle releve de l execution du
         // contrat ; les autres respectent la preference notify_by_email (vraie par defaut).
         boolean hasEmail = user.getEmail() != null && !user.getEmail().isBlank();
-        if ((critical || prefs.isNotifyByEmail()) && user.isEmailVerified() && hasEmail) {
+        if (!pushOnly && (critical || prefs.isNotifyByEmail()) && user.isEmailVerified() && hasEmail) {
             try {
                 mailGateway.send(user.getEmail(), rendered.subject(), rendered.body());
             } catch (RuntimeException ex) {
@@ -103,7 +112,7 @@ public class NotificationDispatcher {
         }
 
         boolean hasPhone = user.getPhone() != null && !user.getPhone().isBlank();
-        if (critical && prefs.isNotifyBySms() && hasPhone) {
+        if (!pushOnly && critical && prefs.isNotifyBySms() && hasPhone) {
             String text = smsMessage != null && !smsMessage.isBlank() ? smsMessage : rendered.sms();
             try {
                 smsService.sendCritical(user.getPhone(), text);

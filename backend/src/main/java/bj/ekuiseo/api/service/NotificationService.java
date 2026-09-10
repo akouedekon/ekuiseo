@@ -72,6 +72,16 @@ public class NotificationService {
         notifyCritical(user, type, payload, null);
     }
 
+    /**
+     * Notification ephemere (suivi en direct, V28) : in-app et push seulement, jamais d e-mail
+     * ni de SMS, quelles que soient les preferences - le type est reconnu par
+     * {@link NotificationDispatcher#PUSH_ONLY_TYPES}. Le routage est celui de {@link #notify}.
+     */
+    @Transactional
+    public void notifyPushOnly(User user, NotificationType type, Map<String, Object> payload) {
+        notify(user, type, payload);
+    }
+
     private void saveInApp(User user, NotificationType type, Map<String, Object> payload) {
         Notification notification = Notification.builder()
                 .user(user)

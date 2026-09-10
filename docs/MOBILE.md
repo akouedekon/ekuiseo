@@ -296,6 +296,7 @@ et adapte son comportement, sans seconde base de code :
 | Barre d'état | couleurs du thème clair/sombre (`@capacitor/status-bar`) | — |
 | Bouton Retour (Android) | recule dans l'historique ; quitte l'application depuis un écran racine (`@capacitor/app`) | — |
 | Position | greffon `@capacitor/geolocation` et API du WebView ; permission demandée au premier usage | API Geolocation |
+| Suivi en direct (V28) | `watchPosition` du WebView pendant le partage (conducteur ou passager confirmé), mis en pause quand l'application passe en arrière-plan et repris au retour (`App.addListener('appStateChange')`, `features/trips/usePositionSharing.ts`) ; flux SSE lu par `fetch` (pas d'EventSource) ; refus de permission et GPS coupé signalés en clair dans la fiche du trajet | même code, pause/reprise sur `visibilitychange` |
 | Pièces d'identité | « Prendre la photo » et « Galerie » via `@capacitor/camera` (permissions CAMERA et lecture des images) | sélecteur de fichiers |
 | Partage d'un trajet ou du suivi | feuille de partage native (`@capacitor/share`) | `navigator.share` ou copie du lien |
 | Vibrations | confirmation de réservation, constat de trajet (`@capacitor/haptics`) | — |
@@ -318,6 +319,19 @@ par `npx cap sync android`). Ajouter un greffon = les deux fichiers, puis `cap s
 - **Position** : demandée par Android au premier usage de la géolocalisation dans la page ;
   l'utilisateur doit accepter deux fois (invite Android, puis — selon la version du WebView —
   invite du site). Aucun accès en arrière-plan.
+- **Suivi en direct en arrière-plan (V28)** : le WebView ne reçoit plus de position dès que
+  l'application n'est plus au premier plan (écran verrouillé, autre application, appel
+  téléphonique). Le partage se met alors en pause (« Partage en pause : revenez sur
+  l'application pour continuer ») et reprend seul au retour ; côté passagers, la position du
+  conducteur devient « indisponible momentanément » après 90 s sans mise à jour, jamais
+  présentée comme actuelle. Un vrai suivi en arrière-plan exigerait un service natif de
+  premier plan (permission `ACCESS_BACKGROUND_LOCATION`, notification permanente, justification
+  auprès du Play Store) : non retenu à ce stade — le conducteur garde l'écran allumé (Wake Lock
+  demandé quand le WebView le permet) ou pose le téléphone sur un support. Le flux SSE, lui,
+  se reconnecte seul (1 s → 30 s) au retour du réseau ou au premier plan. Non vérifié sur un
+  appareil réel depuis ce poste (SDK Android absent) : le comportement exact de la pause/reprise
+  et le délai de la première position après reprise sont à mesurer sur un téléphone d'entrée de
+  gamme.
 - **Photos de pièces d'identité** : prise de vue et galerie natives (voir § 9) ; la permission
   `CAMERA` est déclarée, à justifier dans le questionnaire de la fiche Play (vérification d'identité).
 - **Bouton Retour** : navigue dans l'historique du WebView, puis quitte l'application à la
