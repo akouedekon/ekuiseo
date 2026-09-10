@@ -45,12 +45,12 @@ jobs:
       APP_VERSION_NAME: 1.0.${{ github.run_number }}
     steps:
       - name: Recuperer le code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Capacitor 6 / Android Gradle Plugin 8 exigent un JDK 17. Le cache Gradle evite de
       # retelecharger la distribution et les dependances AndroidX a chaque run.
       - name: Installer le JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -62,7 +62,7 @@ jobs:
             mobile/android/variables.gradle
 
       - name: Installer Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -149,7 +149,7 @@ jobs:
         run: rm -f app/release.keystore keystore.properties
 
       - name: Publier l APK de debogage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ekuiseo-android-debug
           path: mobile/android/app/build/outputs/apk/debug/*.apk
@@ -157,7 +157,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publier la release (APK, et AAB si signee)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ekuiseo-android-release
           path: |
