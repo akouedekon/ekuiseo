@@ -283,10 +283,11 @@ export function SearchResultsPage() {
       {/* --- En-tete de recherche : rappel du critere, toujours visible --- */}
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-x-3">
         <div className="min-w-0 sm:flex-1">
-          <h1 tabIndex={-1} className="flex min-w-0 items-center gap-2 font-display text-heading font-extrabold tracking-[-0.03em] outline-none sm:text-display">
-            <span className="truncate">{fromLabel}</span>
+          {/* Les deux lieux se lisent en entier : l axe passe a la ligne plutot que d etre coupe (« Cotonou, … »). */}
+          <h1 tabIndex={-1} className="flex min-w-0 flex-wrap items-center gap-x-2 font-display text-heading font-extrabold leading-tight tracking-[-0.03em] outline-none sm:text-display">
+            <span className="break-words">{fromLabel}</span>
             <ArrowUpDown className="size-4 shrink-0 rotate-90 text-muted" aria-hidden />
-            <span className="truncate">{toLabel}</span>
+            <span className="break-words">{toLabel}</span>
           </h1>
           <p className="mt-0.5 text-label text-muted">
             {dateParam ? formatDayShort(dateParam) : 'Toutes dates'} · {seats} place{seats > 1 ? 's' : ''}
