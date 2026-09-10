@@ -55,5 +55,9 @@ public enum NotificationType {
     /** Aux deux parties : issue d une declaration « conducteur absent » (remboursement du passager ou trajet maintenu), V25. */
     NO_SHOW_DISPUTE_RESOLVED,
     /** Au conducteur : un reversement vient d etre constitue (lot hebdomadaire automatique, V25) ; le virement suit. */
-    PAYOUT_PREPARED
+    PAYOUT_PREPARED,
+    /** Au passager (push et in-app seulement, V28) : le conducteur est a moins de 1 km de son point de prise en charge. */
+    DRIVER_NEARBY,
+    /** Au passager (push et in-app seulement, V28) : le conducteur est arrive (moins de 150 m). */
+    DRIVER_ARRIVED
 }

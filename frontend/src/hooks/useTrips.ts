@@ -5,6 +5,7 @@ import type {
   BookingResponse,
   CreateTripRequest,
   DeclineBookingRequest,
+  LivePositionAck,
   LivePositionRequest,
   LivePositionResponse,
   LiveSharingResponse,
@@ -286,9 +287,11 @@ export function useRespondToBooking() {
 /* ------------------------------------------------------------ Suivi en direct (V23) */
 
 /**
- * GET /api/v1/trips/{id}/live : derniere position du vehicule, pour le conducteur et ses
- * passagers. Interroge toutes les 10 s tant que `live` est vrai (fenetre du trajet ouverte
- * et partage actif), jamais en arriere-plan. Un 403 (visiteur sans reservation) est
+ * GET /api/v1/trips/{id}/live : instantane du suivi (derniere position du conducteur,
+ * participants visibles, cadence), pour le conducteur et ses passagers. Tant que `live` est
+ * vrai (fenetre du trajet ouverte, et pas de flux SSE ouvert - useLiveStream), interroge
+ * toutes les 10 s quand le partage est actif, toutes les 30 s sinon (pour voir l activation
+ * sans recharger), jamais en arriere-plan. Un 403 (visiteur sans reservation) est
  * definitif : pas de reessai.
  */
 export function useTripLive(tripId: string | undefined, options: { enabled?: boolean; live?: boolean } = {}) {
@@ -298,7 +301,10 @@ export function useTripLive(tripId: string | undefined, options: { enabled?: boo
     queryFn: ({ signal }) => apiClient.get<LivePositionResponse>(`/api/v1/trips/${tripId}/live`, { signal }),
     enabled,
     staleTime: 5_000,
-    refetchInterval: (query) => (options.live && query.state.data?.enabled ? LIVE_REFRESH_INTERVAL_MS : false),
+    refetchInterval: (query) => {
+      if (!options.live) return false
+      return query.state.data?.enabled ? LIVE_REFRESH_INTERVAL_MS : LIVE_REFRESH_INTERVAL_MS * 3
+    },
     refetchIntervalInBackground: false,
   })
 }
@@ -315,11 +321,15 @@ export function useSetLiveSharing() {
   })
 }
 
-/** POST /api/v1/trips/{id}/live/positions : une position du conducteur (202, sans corps). Jamais de reessai : la suivante arrive dans 10 s. */
+/**
+ * POST /api/v1/trips/{id}/live/positions : une position du conducteur ou d un passager
+ * confirme (V28). La reponse dit si elle a ete diffusee, les anomalies relevees et la
+ * cadence a suivre. Jamais de reessai : la suivante arrive dans quelques secondes.
+ */
 export function usePostLivePosition() {
   return useMutation({
     mutationFn: ({ tripId, position }: { tripId: string; position: LivePositionRequest }) =>
-      apiClient.post<void>(`/api/v1/trips/${tripId}/live/positions`, position),
+      apiClient.post<LivePositionAck>(`/api/v1/trips/${tripId}/live/positions`, position),
     retry: false,
   })
 }

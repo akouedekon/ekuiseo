@@ -142,9 +142,38 @@ localisation : elle est traitée avec les garde-fous suivants.
   par la purge nocturne. Les lectures publiques sont limitées par IP.
 - **Durée de conservation : 24 h** après la mesure (`TRIP_POSITIONS_RETENTION_HOURS`,
   `RetentionScheduler`), suppression en cascade avec le trajet. Seule la dernière position
-  est affichée ; l'historique n'est jamais exporté ni exposé.
+  est affichée ; l'historique n'est jamais exporté ni exposé. En base, une position n'est
+  écrite qu'au plus toutes les 30 s ou tous les 200 m par participant (la dernière position
+  vit en mémoire du serveur, `LiveSessionRegistry`, et disparaît à la fin du trajet) ; les
+  positions signalées par un flag (ci-dessous) sont toutes écrites, dans la même limite de 24 h.
+- **Position des passagers (V28)** : un passager dont la réservation est confirmée peut, à
+  son tour, partager sa position avec le conducteur (bouton « Partager ma position avec … »
+  sur la fiche du trajet, jamais activé par défaut). Même finalité (se retrouver au point de
+  rendez-vous), même fenêtre, même durée de conservation. Destinataire unique : le conducteur
+  de ce trajet ; les autres passagers ne la voient pas et **le lien public ne montre jamais
+  un passager**. La permission de localisation est demandée au moment du clic, et le partage
+  s'arrête seul à la fin du trajet ou quand l'application passe en arrière-plan.
+- **Flags anti-usurpation (V28)** : à la réception, le serveur annote chaque position
+  (`trip_positions.flags`) — `OUT_OF_AREA` (hors du Bénin et de ses marges : latitude
+  5,0–13,0, longitude 0,0–4,5), `CLOCK_SKEW` (horodatage de l'appareil à plus de 2 min de
+  l'heure serveur, remplacé par celle-ci), `TELEPORT` (vitesse impliquée depuis la dernière
+  position acceptée supérieure à 200 km/h), `LOW_ACCURACY` (précision annoncée supérieure à
+  500 m). Une position `OUT_OF_AREA` ou `TELEPORT` n'est pas diffusée aux lecteurs ; les
+  autres le sont avec leur flag. Ces flags servent uniquement à l'analyse a posteriori d'un
+  litige (« le conducteur était-il là ? ») : **aucune décision automatique** (suspension,
+  refus, notation) n'en découle, et ils sont purgés avec la position (24 h).
+- **Notifications d'approche (V28)** : `DRIVER_NEARBY` (conducteur à moins de 1 km du point
+  de prise en charge) et `DRIVER_ARRIVED` (moins de 150 m), une seule fois chacune par
+  réservation (horodatées sur `bookings`), par notification in-app et push seulement — jamais
+  par e-mail ni SMS. La distance calculée n'est pas conservée.
+- **Flux temps réel** : les positions sont poussées aux lecteurs autorisés par Server-Sent
+  Events (`GET /api/v1/trips/{id}/live/stream`), authentifié par l'en-tête `Authorization`
+  (jamais de jeton dans l'URL, qui finirait dans les journaux des proxys). Un passager voit le
+  conducteur et lui-même ; le conducteur voit chaque passager confirmé qui partage ; toute
+  autre personne reçoit 403. Aucune coordonnée n'est écrite dans les journaux du serveur.
 - **À faire valider par le juriste** : la base légale retenue (consentement) et la mention à
-  ajouter dans la politique de confidentialité et l'écran d'activation.
+  ajouter dans la politique de confidentialité et l'écran d'activation, pour le conducteur
+  comme pour le passager.
 
 ## 4. Droits des personnes — état d'implémentation
 

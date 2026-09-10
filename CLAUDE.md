@@ -381,12 +381,23 @@ s'interprète pas.
   casque obligatoire rappelé dans les CGU et sur la fiche trajet) ou `TRICYCLE` (6 places au plus) ;
   bornes communes `VehicleType.java` / `VEHICLE_TYPE_MAX_SEATS` (`lib/labels.ts`), filtre de recherche
   `vehicleType`, icône et badge `components/trip/VehicleTypeIcon.tsx`.
-- **Suivi en direct (V23)** : le conducteur partage sa position (`PUT /trips/{id}/live`, `POST
-  /trips/{id}/live/positions`, `navigator.geolocation.watchPosition` côté front) de 1 h avant le départ à la
-  fin du trajet ; ses passagers confirmés la voient sur la fiche trajet (`GET /trips/{id}/live`, carte avec
-  véhicule, distance restante, arrivée estimée) et peuvent partager un lien public à jeton `/live/{token}`
-  (`GET /api/v1/live/{token}`, sans compte, prénom du conducteur seulement). Positions purgées après 24 h,
-  quotas `live:` / `live-public:` dans `RateLimitingFilter`. Détails : `docs/CONFORMITE.md`.
+- **Suivi en direct (V23, temps réel V28)** : le conducteur (`PUT /trips/{id}/live`) **et ses passagers
+  confirmés** envoient leur position (`POST /trips/{id}/live/positions` → `{ accepted, flags, intervalSeconds }`,
+  `features/trips/usePositionSharing.ts`, cadence serveur 30/15/5 s, pause en arrière-plan) de 1 h avant le
+  départ à la fin du trajet. Validation serveur (`service/live/LocationUpdateService`) : participant autorisé,
+  fenêtre, ≥ 2 s (429), zone Bénin (`OUT_OF_AREA`), dérive d'horloge (`CLOCK_SKEW`), > 200 km/h (`TELEPORT`),
+  précision > 500 m (`LOW_ACCURACY`) ; flags conservés en base (`trip_positions.flags`, V28), jamais de blocage
+  automatique ; dernière position en mémoire (`LiveSessionRegistry`), écriture ≤ 1 / 30 s ou 200 m. Lecture par
+  instantané (`GET /trips/{id}/live`, participants selon le rôle) ou par **flux SSE** (`GET
+  /trips/{id}/live/stream`, `fetch` + `Authorization`, `lib/liveStream.ts`, reconnexion 1 → 30 s,
+  `hooks/useLiveStream.ts`) : un passager voit le conducteur et lui-même, le conducteur voit ses passagers, le
+  lien public `/live/{token}` ne montre que le conducteur. Carte (`RouteMap`) : marqueurs animés (`rAF`,
+  interpolation sur `intervalSeconds`, `prefers-reduced-motion` respecté), modes Conducteur / Ma position /
+  Les deux, « Recentrer » ; position > 90 s = « indisponible momentanément ». Pendant un trajet ONGOING la carte
+  devient l'écran principal de la fiche. Notifications `DRIVER_NEARBY` (< 1 km) / `DRIVER_ARRIVED` (< 150 m),
+  une fois chacune (`bookings.driver_*_notified_at`), push et in-app seulement. Positions purgées après 24 h,
+  quotas `live:` (30 / min) / `live-public:` dans `RateLimitingFilter`. Détails : `docs/CONFORMITE.md` §3.3,
+  `backend/README.md`, `docs/MOBILE.md`.
 - Aucun fournisseur de tuiles cartographiques n'est câblé : `RouteMap` dessine un tracé
   schématique tant que `VITE_MAP_STYLE_URL` n'est pas renseignée.
 - Notifications natives (V24) : l application Android/iOS enregistre un jeton Firebase Cloud

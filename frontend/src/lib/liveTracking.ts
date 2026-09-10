@@ -20,6 +20,14 @@ export const POSITION_MIN_INTERVAL_MS = 10_000
 export const POSITION_MIN_DISTANCE_M = 50
 /** Rafraichissement des lecteurs (passagers, lien public). */
 export const LIVE_REFRESH_INTERVAL_MS = 10_000
+/** Cadence minimale d envoi imposee par le serveur (429 en deca), V28. */
+export const POSITION_SERVER_MIN_INTERVAL_MS = 2_000
+/** Cadence par defaut avant la premiere reponse du serveur (30 s avant le depart, contrat C). */
+export const DEFAULT_INTERVAL_SECONDS = 30
+/** Le conducteur est « proche » du point de rendez-vous en deca de cette distance (aligne sur DRIVER_NEARBY). */
+export const NEARBY_KM = 1
+/** Le conducteur est « arrive » en deca de cette distance (aligne sur DRIVER_ARRIVED). */
+export const ARRIVED_KM = 0.15
 
 export interface LatLng {
   lat: number
@@ -89,17 +97,129 @@ export function isSharingWindowOpen(
 }
 
 /**
- * Faut-il envoyer cette position ? Oui a la premiere, puis des que 10 s se sont ecoulees
- * ou que le vehicule a parcouru 50 m depuis le dernier envoi.
+ * Faut-il envoyer cette position ? Oui a la premiere, puis des que la cadence recommandee
+ * par le serveur (`intervalMs`, 10 s par defaut) s est ecoulee ou que l appareil a parcouru
+ * 50 m depuis le dernier envoi - sans jamais descendre sous les 2 s que le serveur impose.
  */
 export function shouldSendPosition(
   previous: (LatLng & { sentAt: number }) | null,
   next: LatLng,
   now: number,
+  intervalMs: number = POSITION_MIN_INTERVAL_MS,
 ): boolean {
   if (!previous) return true
-  if (now - previous.sentAt >= POSITION_MIN_INTERVAL_MS) return true
+  const elapsed = now - previous.sentAt
+  if (elapsed < POSITION_SERVER_MIN_INTERVAL_MS) return false
+  if (elapsed >= Math.max(POSITION_SERVER_MIN_INTERVAL_MS, intervalMs)) return true
   return haversineKm(previous.lat, previous.lng, next.lat, next.lng) * 1000 >= POSITION_MIN_DISTANCE_M
+}
+
+/* ------------------------------------------------------------- V28 : flux */
+
+/** Cap ramene dans [0, 360[ ; null si absent ou non fini. */
+export function normalizeHeading(heading: number | null | undefined): number | null {
+  if (heading === null || heading === undefined || !Number.isFinite(heading)) return null
+  const h = heading % 360
+  return h < 0 ? h + 360 : h
+}
+
+/** Interpolation d un cap par le plus court arc (350° -> 10° passe par 0°, pas par 180°). */
+export function interpolateHeading(from: number | null, to: number | null, t: number): number | null {
+  if (to === null) return from
+  if (from === null) return to
+  let delta = ((to - from + 540) % 360) - 180
+  if (delta < -180) delta += 360
+  return normalizeHeading(from + delta * clamp01(t))
+}
+
+function clamp01(t: number): number {
+  return t <= 0 ? 0 : t >= 1 ? 1 : t
+}
+
+export interface AnimatedPoint extends LatLng {
+  heading: number | null
+}
+
+/**
+ * Interpolation lineaire entre deux positions (fraction `t` de 0 a 1) : c est ce que la
+ * carte dessine entre deux evenements, sur la duree de `intervalSeconds`, pour que le
+ * marqueur glisse au lieu de sauter. Une fraction hors [0, 1] est bornee.
+ */
+export function interpolatePosition(from: AnimatedPoint, to: AnimatedPoint, t: number): AnimatedPoint {
+  const k = clamp01(t)
+  return {
+    lat: from.lat + (to.lat - from.lat) * k,
+    lng: from.lng + (to.lng - from.lng) * k,
+    heading: interpolateHeading(from.heading, to.heading, k),
+  }
+}
+
+/**
+ * Duree de l animation entre deux positions : la cadence annoncee par le serveur, bornee
+ * entre 1 s (reactif) et 15 s (une position toutes les 30 s ne doit pas mettre 30 s a
+ * arriver a l ecran). Sous prefers-reduced-motion, l appelant n anime pas du tout.
+ */
+export function animationDurationMs(intervalSeconds: number | null | undefined): number {
+  const seconds = intervalSeconds && Number.isFinite(intervalSeconds) ? intervalSeconds : DEFAULT_INTERVAL_SECONDS
+  return Math.min(15_000, Math.max(1_000, seconds * 1_000))
+}
+
+/** Age d une position au-dela duquel elle est perimee (90 s) : plus jamais presentee comme actuelle. */
+export function isPositionStale(ageSeconds: number | null | undefined): boolean {
+  return ageSeconds !== null && ageSeconds !== undefined && ageSeconds > STALE_AFTER_SECONDS
+}
+
+/**
+ * Decalage (ms) entre l horloge locale et celle du serveur, estime a la reception d une
+ * reponse horodatee (`serverTime`) : local = serveur + offset. Il sert a dater les positions
+ * du flux sans comparer l horloge du conducteur a celle du lecteur.
+ */
+export function clockOffsetMs(serverTimeIso: string | null | undefined, receivedAt: number): number {
+  if (!serverTimeIso) return 0
+  const server = new Date(serverTimeIso).getTime()
+  return Number.isFinite(server) ? receivedAt - server : 0
+}
+
+/**
+ * Age (s) d une position recue par le flux : l horodatage serveur de la mesure, ramene a
+ * l horloge locale par le decalage estime, sans jamais etre negatif. En repli (decalage
+ * inconnu et horodatage douteux), l age est compte depuis la reception locale.
+ */
+export function participantAgeSeconds(
+  participant: { recordedAt: string; receivedAt: number; ageAtReceipt: number },
+  now: number,
+  offsetMs: number | null,
+): number {
+  if (offsetMs !== null) {
+    const recorded = new Date(participant.recordedAt).getTime()
+    if (Number.isFinite(recorded)) return Math.max(0, Math.floor((now - offsetMs - recorded) / 1000))
+  }
+  return participant.ageAtReceipt + Math.max(0, Math.floor((now - participant.receivedAt) / 1000))
+}
+
+/** « 2,4 km », « 850 m ». */
+export function formatDistanceShort(km: number): string {
+  if (km < 1) return `${Math.round(km * 1000)} m`
+  const value = km < 10 ? Math.round(km * 10) / 10 : Math.round(km)
+  return `${value.toLocaleString('fr-FR')} km`
+}
+
+/**
+ * Phrase d approche pour le passager : « Conducteur à 2,4 km · ~7 min », « Conducteur à
+ * moins de 1 km », « Conducteur arrivé ». Distance et duree sont des estimations.
+ */
+export function describeApproach(
+  driver: LatLng & { speedKmh?: number | null },
+  pickup: LatLng,
+  label = 'Conducteur',
+): { text: string; distanceKm: number; minutes: number; state: 'far' | 'nearby' | 'arrived' } {
+  const distanceKm = remainingDistanceKm(driver, pickup)
+  const minutes = estimateRemainingMinutes(distanceKm, driver.speedKmh)
+  if (distanceKm <= ARRIVED_KM) return { text: `${label} arrivé`, distanceKm, minutes: 0, state: 'arrived' }
+  if (distanceKm <= NEARBY_KM) {
+    return { text: `${label} à ${formatDistanceShort(distanceKm)} · ~${minutes} min`, distanceKm, minutes, state: 'nearby' }
+  }
+  return { text: `${label} à ${formatDistanceShort(distanceKm)} · ~${minutes} min`, distanceKm, minutes, state: 'far' }
 }
 
 /**

@@ -87,6 +87,12 @@ public final class NotificationTemplates {
                 String tripId = str(p, "tripId");
                 return tripId.isEmpty() ? "/" : "/trips/" + tripId;
             }
+            case DRIVER_NEARBY:
+            case DRIVER_ARRIVED: {
+                // La fiche du trajet, ou la carte du suivi en direct est l ecran principal (V28).
+                String tripId = str(p, "tripId");
+                return tripId.isEmpty() ? "/bookings" : "/trips/" + tripId;
+            }
             case NEW_REVIEW:
             case SUBSCRIPTION_EXPIRING:
             case SUBSCRIPTION_EXPIRED:
@@ -479,6 +485,23 @@ public final class NotificationTemplates {
                         outcome + (note.isEmpty() ? "" : "\nNote de la moderation : " + note)
                                 + "\n\nMerci de contribuer a la securite de la communaute.",
                         "Ekuiseo : votre signalement a ete traite, consultez l'application.");
+            }
+            case DRIVER_NEARBY: {
+                // Push et in-app seulement (NotificationDispatcher) : le sujet sert de titre, le SMS de corps.
+                String driver = str(p, "driverFirstName");
+                String who = driver.isEmpty() ? "Votre conducteur" : driver;
+                return finish(who + " arrive",
+                        who + " est a moins d'un kilometre de votre point de rendez-vous"
+                                + (route.isEmpty() ? "" : " (" + route + ")") + ". Tenez-vous pret.",
+                        "Ekuiseo : " + who + " est a moins d'un kilometre de votre point de rendez-vous. Tenez-vous pret.");
+            }
+            case DRIVER_ARRIVED: {
+                String driver = str(p, "driverFirstName");
+                String who = driver.isEmpty() ? "Votre conducteur" : driver;
+                return finish(who + " est arrive",
+                        who + " est arrive a votre point de rendez-vous"
+                                + (route.isEmpty() ? "" : " (" + route + ")") + ". Rejoignez le vehicule.",
+                        "Ekuiseo : " + who + " est arrive a votre point de rendez-vous. Rejoignez le vehicule.");
             }
             default:
                 return finish("Notification Ekuiseo", "Vous avez une nouvelle notification dans l'application Ekuiseo.",

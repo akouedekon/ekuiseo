@@ -7,20 +7,25 @@ import bj.ekuiseo.api.domain.Trip;
 import bj.ekuiseo.api.domain.TripPosition;
 import bj.ekuiseo.api.domain.User;
 import bj.ekuiseo.api.domain.Vehicle;
+import bj.ekuiseo.api.domain.enums.LiveRole;
 import bj.ekuiseo.api.domain.enums.TripStatus;
-import bj.ekuiseo.api.dto.trip.LivePositionRequest;
+import bj.ekuiseo.api.dto.trip.LiveParticipant;
 import bj.ekuiseo.api.dto.trip.LivePositionResponse;
 import bj.ekuiseo.api.dto.trip.LiveSharingResponse;
+import bj.ekuiseo.api.dto.trip.LiveStreamEvent;
 import bj.ekuiseo.api.dto.trip.PublicLiveResponse;
-import bj.ekuiseo.api.repository.BookingRepository;
 import bj.ekuiseo.api.repository.TripPositionRepository;
 import bj.ekuiseo.api.repository.TripRepository;
+import bj.ekuiseo.api.service.live.LiveSessionRegistry;
+import bj.ekuiseo.api.service.live.LiveSessionRegistry.Viewer;
+import bj.ekuiseo.api.service.live.TripTrackingService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,19 +33,21 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** Suivi en direct (V23) : droits, fenetre d envoi, jeton public, fraicheur et expiration du lien. */
+/** Suivi en direct (V23/V28) : droits, jeton public, fraicheur, expiration du lien, et effets du partage sur les flux. */
 class TripLiveServiceTest {
 
     private final TripRepository tripRepository = mock(TripRepository.class);
     private final TripPositionRepository positionRepository = mock(TripPositionRepository.class);
-    private final BookingRepository bookingRepository = mock(BookingRepository.class);
     private final AuditService auditService = mock(AuditService.class);
-    private final TripLiveService service = new TripLiveService(tripRepository, positionRepository, bookingRepository, auditService);
+    private final LiveSessionRegistry registry = new LiveSessionRegistry();
+    private final TripTrackingService tracking = mock(TripTrackingService.class);
+    private final TripLiveService service = new TripLiveService(tripRepository, positionRepository, auditService, registry, tracking);
 
     private final Instant now = Instant.parse("2026-09-10T08:00:00Z");
     private final UUID driverId = UUID.randomUUID();
@@ -58,32 +65,51 @@ class TripLiveServiceTest {
                 .seatsTotal(3).seatsAvailable(2).pricePerSeat(3000).build();
         when(tripRepository.findById(trip.getId())).thenReturn(Optional.of(trip));
         when(tripRepository.save(any(Trip.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(tracking.currentInterval(any(), any())).thenReturn(30);
+        when(tracking.visibleParticipants(any(), any())).thenReturn(List.of());
     }
 
     /* ----------------------------------------------------------- activation */
 
     @Test
-    void enable_generatesAnUrlSafeToken_once_andAudits() {
-        LiveSharingResponse first = service.setSharing(trip.getId(), driverId, true);
+    void enable_generatesAnUrlSafeToken_once_andAudits_andBroadcastsStatus() {
+        LiveSharingResponse first = service.setSharing(trip.getId(), driverId, true, now);
 
         assertThat(first.enabled()).isTrue();
         assertThat(first.shareToken()).hasSize(43).matches("[A-Za-z0-9_-]+");
         assertThat(first.sharePath()).isEqualTo("/live/" + first.shareToken());
+        assertThat(first.intervalSeconds()).isEqualTo(30);
         verify(auditService).log(driverId, "TRIP_LIVE_SHARING_ENABLED", "trip", trip.getId(), Map.of());
+        verify(tracking).broadcastStatus(trip, now);
 
         // Couper puis reprendre garde le meme lien : un proche qui l a deja recu n est pas perdu.
-        LiveSharingResponse off = service.setSharing(trip.getId(), driverId, false);
+        LiveSharingResponse off = service.setSharing(trip.getId(), driverId, false, now);
         assertThat(off.enabled()).isFalse();
         assertThat(off.shareToken()).isEqualTo(first.shareToken());
         verify(auditService).log(driverId, "TRIP_LIVE_SHARING_DISABLED", "trip", trip.getId(), Map.of());
 
-        LiveSharingResponse again = service.setSharing(trip.getId(), driverId, true);
+        LiveSharingResponse again = service.setSharing(trip.getId(), driverId, true, now);
         assertThat(again.shareToken()).isEqualTo(first.shareToken());
     }
 
     @Test
+    void disable_closesTheStreams_andForgetsTheDriverPosition() {
+        trip.setLiveSharingEnabled(true);
+        trip.setLiveShareToken("tok");
+        registry.participant(trip.getId(), driverId, now.toEpochMilli()).setLast(participant(LiveRole.DRIVER, null));
+
+        service.setSharing(trip.getId(), driverId, false, now);
+
+        verify(tracking).end(trip.getId(), LiveStreamEvent.EndReason.SHARING_DISABLED);
+        assertThat(registry.driverPosition(trip.getId())).isEmpty();
+        // Deja coupe : rien ne se passe une seconde fois.
+        service.setSharing(trip.getId(), driverId, false, now);
+        verify(tracking, org.mockito.Mockito.times(1)).end(any(), any());
+    }
+
+    @Test
     void enable_isRefused_toAnyoneButTheDriver() {
-        assertThatThrownBy(() -> service.setSharing(trip.getId(), passengerId, true))
+        assertThatThrownBy(() -> service.setSharing(trip.getId(), passengerId, true, now))
                 .isInstanceOf(ForbiddenException.class);
         verify(tripRepository, never()).save(any());
         verify(auditService, never()).log(any(), any(), any(), any(), any());
@@ -93,121 +119,56 @@ class TripLiveServiceTest {
     void enable_isRefused_onACompletedCancelledOrTemplateTrip() {
         for (TripStatus status : new TripStatus[] {TripStatus.COMPLETED, TripStatus.CANCELLED, TripStatus.TEMPLATE, TripStatus.DRAFT}) {
             trip.setStatus(status);
-            assertThatThrownBy(() -> service.setSharing(trip.getId(), driverId, true))
+            assertThatThrownBy(() -> service.setSharing(trip.getId(), driverId, true, now))
                     .as("statut " + status)
                     .isInstanceOf(BadRequestException.class);
         }
         // Couper reste toujours possible.
         trip.setStatus(TripStatus.COMPLETED);
         trip.setLiveSharingEnabled(true);
-        assertThat(service.setSharing(trip.getId(), driverId, false).enabled()).isFalse();
+        assertThat(service.setSharing(trip.getId(), driverId, false, now).enabled()).isFalse();
     }
 
     @Test
     void unknownTrip_is404() {
         UUID unknown = UUID.randomUUID();
         when(tripRepository.findById(unknown)).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> service.setSharing(unknown, driverId, true)).isInstanceOf(NotFoundException.class);
-    }
-
-    /* ------------------------------------------------------------ positions */
-
-    @Test
-    void recordPosition_savesIt_andUpdatesLastPositionAt() {
-        trip.setLiveSharingEnabled(true);
-        Instant recorded = now.minusSeconds(5);
-
-        service.recordPosition(trip.getId(), driverId, new LivePositionRequest(6.40, 2.35, 310f, 62f, 12f, recorded), now);
-
-        ArgumentCaptor<TripPosition> saved = ArgumentCaptor.forClass(TripPosition.class);
-        verify(positionRepository).save(saved.capture());
-        assertThat(saved.getValue().getTrip()).isSameAs(trip);
-        assertThat(saved.getValue().getLat()).isEqualTo(6.40);
-        assertThat(saved.getValue().getLng()).isEqualTo(2.35);
-        assertThat(saved.getValue().getHeading()).isEqualTo(310f);
-        assertThat(saved.getValue().getSpeedKmh()).isEqualTo(62f);
-        assertThat(saved.getValue().getRecordedAt()).isEqualTo(recorded);
-        assertThat(trip.getLastPositionAt()).isEqualTo(recorded);
-    }
-
-    @Test
-    void recordPosition_clampsAClockAhead_andDefaultsToNow() {
-        trip.setLiveSharingEnabled(true);
-
-        service.recordPosition(trip.getId(), driverId, new LivePositionRequest(6.40, 2.35, null, null, null, now.plus(10, ChronoUnit.MINUTES)), now);
-        service.recordPosition(trip.getId(), driverId, new LivePositionRequest(6.41, 2.36, null, null, null, null), now);
-
-        ArgumentCaptor<TripPosition> saved = ArgumentCaptor.forClass(TripPosition.class);
-        verify(positionRepository, org.mockito.Mockito.times(2)).save(saved.capture());
-        assertThat(saved.getAllValues()).extracting(TripPosition::getRecordedAt).containsExactly(now, now);
-    }
-
-    @Test
-    void recordPosition_isRefused_whenSharingIsOff() {
-        assertThatThrownBy(() -> service.recordPosition(trip.getId(), driverId, position(), now))
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("pas active");
-        verify(positionRepository, never()).save(any());
-    }
-
-    @Test
-    void recordPosition_isRefused_outsideTheWindow() {
-        trip.setLiveSharingEnabled(true);
-
-        // Plus d une heure avant le depart.
-        trip.setDepartureAt(now.plus(61, ChronoUnit.MINUTES));
-        assertThatThrownBy(() -> service.recordPosition(trip.getId(), driverId, position(), now))
-                .isInstanceOf(BadRequestException.class);
-
-        // Exactement une heure avant : accepte.
-        trip.setDepartureAt(now.plus(60, ChronoUnit.MINUTES));
-        service.recordPosition(trip.getId(), driverId, position(), now);
-
-        // Trajet en cours : accepte. Termine ou annule : refuse.
-        trip.setStatus(TripStatus.ONGOING);
-        trip.setDepartureAt(now.minus(2, ChronoUnit.HOURS));
-        service.recordPosition(trip.getId(), driverId, position(), now);
-        trip.setStatus(TripStatus.COMPLETED);
-        assertThatThrownBy(() -> service.recordPosition(trip.getId(), driverId, position(), now))
-                .isInstanceOf(BadRequestException.class);
-        trip.setStatus(TripStatus.CANCELLED);
-        assertThatThrownBy(() -> service.recordPosition(trip.getId(), driverId, position(), now))
-                .isInstanceOf(BadRequestException.class);
-        verify(positionRepository, org.mockito.Mockito.times(2)).save(any());
-    }
-
-    @Test
-    void recordPosition_isRefused_toAPassenger() {
-        trip.setLiveSharingEnabled(true);
-        assertThatThrownBy(() -> service.recordPosition(trip.getId(), passengerId, position(), now))
-                .isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> service.setSharing(unknown, driverId, true, now)).isInstanceOf(NotFoundException.class);
     }
 
     /* -------------------------------------------------------------- lecture */
 
     @Test
-    void getLive_forTheDriver_returnsLastPositionAndStaleness() {
+    void getLive_prefersTheRegistry_andFallsBackToTheDatabase() {
         trip.setLiveSharingEnabled(true);
         trip.setLiveShareToken("tok");
-        when(positionRepository.findFirstByTripIdOrderByRecordedAtDesc(trip.getId()))
-                .thenReturn(Optional.of(position(now.minusSeconds(42))));
+        Viewer viewer = new Viewer(driverId, LiveRole.DRIVER, null);
+        when(tracking.resolveViewer(trip, driverId)).thenReturn(viewer);
+        when(positionRepository.findFirstByTripIdAndRoleOrderByRecordedAtDesc(trip.getId(), LiveRole.DRIVER))
+                .thenReturn(Optional.of(dbPosition(now.minusSeconds(42))));
 
-        LivePositionResponse res = service.getLive(trip.getId(), driverId, now);
+        // Registre vide (apres un redemarrage) : la base fait foi.
+        LivePositionResponse fromDb = service.getLive(trip.getId(), driverId, now);
+        assertThat(fromDb.enabled()).isTrue();
+        assertThat(fromDb.position().lat()).isEqualTo(6.40);
+        assertThat(fromDb.staleSeconds()).isEqualTo(42L);
+        assertThat(fromDb.shareToken()).isEqualTo("tok");
+        assertThat(fromDb.intervalSeconds()).isEqualTo(30);
+        assertThat(fromDb.serverTime()).isEqualTo(now);
 
-        assertThat(res.enabled()).isTrue();
-        assertThat(res.position()).isNotNull();
-        assertThat(res.position().lat()).isEqualTo(6.40);
-        assertThat(res.staleSeconds()).isEqualTo(42L);
-        assertThat(res.tripStatus()).isEqualTo(TripStatus.PUBLISHED);
-        assertThat(res.departureAt()).isEqualTo(trip.getDepartureAt());
-        assertThat(res.shareToken()).isEqualTo("tok");
-        verify(bookingRepository, never()).existsByTripIdAndPassengerIdAndStatusIn(any(), any(), any());
+        // Une position en memoire prime, meme sans lecture de la base.
+        LiveParticipant live = participant(LiveRole.DRIVER, null);
+        registry.participant(trip.getId(), driverId, now.toEpochMilli()).setLast(live);
+        when(tracking.visibleParticipants(trip.getId(), viewer)).thenReturn(List.of(live));
+        LivePositionResponse fromRegistry = service.getLive(trip.getId(), driverId, now);
+        assertThat(fromRegistry.position().lat()).isEqualTo(live.lat());
+        assertThat(fromRegistry.staleSeconds()).isEqualTo(5L);
+        assertThat(fromRegistry.participants()).containsExactly(live);
     }
 
     @Test
-    void getLive_forAConfirmedPassenger_isAllowed_andHidesTokenWhenOff() {
-        when(bookingRepository.existsByTripIdAndPassengerIdAndStatusIn(trip.getId(), passengerId, TripLiveService.VIEWER_BOOKING_STATUSES))
-                .thenReturn(true);
+    void getLive_hidesPositionAndToken_whenSharingIsOff() {
+        when(tracking.resolveViewer(trip, passengerId)).thenReturn(new Viewer(passengerId, LiveRole.PASSENGER, UUID.randomUUID()));
         trip.setLiveShareToken("tok");
 
         LivePositionResponse res = service.getLive(trip.getId(), passengerId, now);
@@ -216,24 +177,38 @@ class TripLiveServiceTest {
         assertThat(res.position()).isNull();
         assertThat(res.staleSeconds()).isNull();
         assertThat(res.shareToken()).isNull();
-        verify(positionRepository, never()).findFirstByTripIdOrderByRecordedAtDesc(any());
+        verify(positionRepository, never()).findFirstByTripIdAndRoleOrderByRecordedAtDesc(any(), any());
     }
 
     @Test
-    void getLive_forAStranger_is403() {
-        when(bookingRepository.existsByTripIdAndPassengerIdAndStatusIn(any(), any(), any())).thenReturn(false);
+    void getLive_andStream_are403_forAStranger() {
+        when(tracking.resolveViewer(trip, passengerId)).thenThrow(new ForbiddenException("reserve"));
         assertThatThrownBy(() -> service.getLive(trip.getId(), passengerId, now)).isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> service.stream(trip.getId(), passengerId, now)).isInstanceOf(ForbiddenException.class);
+        verify(tracking, never()).openStream(any(), any(), any());
+    }
+
+    @Test
+    void stream_opensAnEmitter_forAnAuthorisedViewer() {
+        Viewer viewer = new Viewer(driverId, LiveRole.DRIVER, null);
+        when(tracking.resolveViewer(trip, driverId)).thenReturn(viewer);
+        SseEmitter emitter = new SseEmitter();
+        when(tracking.openStream(trip, viewer, now)).thenReturn(emitter);
+
+        assertThat(service.stream(trip.getId(), driverId, now)).isSameAs(emitter);
     }
 
     /* ------------------------------------------------------- lien public */
 
     @Test
-    void getPublic_exposesOnlyWhatARelativeNeeds() {
+    void getPublic_exposesOnlyWhatARelativeNeeds_andOnlyTheDriver() {
         trip.setLiveSharingEnabled(true);
         trip.setLiveShareToken("tok");
         when(tripRepository.findByLiveShareToken("tok")).thenReturn(Optional.of(trip));
-        when(positionRepository.findFirstByTripIdOrderByRecordedAtDesc(trip.getId()))
-                .thenReturn(Optional.of(position(now.minusSeconds(100))));
+        when(positionRepository.findFirstByTripIdAndRoleOrderByRecordedAtDesc(trip.getId(), LiveRole.DRIVER))
+                .thenReturn(Optional.of(dbPosition(now.minusSeconds(100))));
+        // Un passager qui partage n apparait jamais sur le lien public.
+        registry.participant(trip.getId(), passengerId, now.toEpochMilli()).setLast(participant(LiveRole.PASSENGER, UUID.randomUUID()));
 
         PublicLiveResponse res = service.getPublic("tok", now);
 
@@ -262,7 +237,7 @@ class TripLiveServiceTest {
         trip.setLiveSharingEnabled(true);
         trip.setStatus(TripStatus.COMPLETED);
         trip.setUpdatedAt(now.minus(5, ChronoUnit.HOURS));
-        when(positionRepository.findFirstByTripIdOrderByRecordedAtDesc(any())).thenReturn(Optional.empty());
+        when(positionRepository.findFirstByTripIdAndRoleOrderByRecordedAtDesc(any(), eq(LiveRole.DRIVER))).thenReturn(Optional.empty());
         assertThat(service.getPublic("tok", now).tripStatus()).isEqualTo(TripStatus.COMPLETED);
         trip.setUpdatedAt(now.minus(7, ChronoUnit.HOURS));
         assertThatThrownBy(() -> service.getPublic("tok", now)).isInstanceOf(NotFoundException.class);
@@ -277,12 +252,13 @@ class TripLiveServiceTest {
         assertThat(a).isNotEqualTo(b).hasSize(43).doesNotContain("=", "+", "/");
     }
 
-    private static LivePositionRequest position() {
-        return new LivePositionRequest(6.40, 2.35, null, null, null, null);
+    private LiveParticipant participant(LiveRole role, UUID bookingId) {
+        return new LiveParticipant(role, bookingId, role == LiveRole.DRIVER ? "Rodrigue" : "Awa", 6.45, 2.30, 300f, 50f, 8f,
+                now.minusSeconds(5), List.of());
     }
 
-    private TripPosition position(Instant recordedAt) {
-        return TripPosition.builder().id(UUID.randomUUID()).trip(trip).lat(6.40).lng(2.35).heading(300f)
-                .speedKmh(50f).accuracyM(8f).recordedAt(recordedAt).build();
+    private TripPosition dbPosition(Instant recordedAt) {
+        return TripPosition.builder().id(UUID.randomUUID()).trip(trip).userId(driverId).role(LiveRole.DRIVER)
+                .lat(6.40).lng(2.35).heading(300f).speedKmh(50f).accuracyM(8f).recordedAt(recordedAt).build();
     }
 }

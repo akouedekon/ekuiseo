@@ -99,4 +99,21 @@ class NotificationTemplatesTest {
                 NotificationTemplates.payload("currentPeriodEnd", "2026-09-15T10:00:00Z"));
         assertThat(expiring.body()).contains("2026").contains("Renouvelez");
     }
+
+    /** V28 : notifications d approche, prenom du conducteur et point de rendez-vous, chemin de la fiche du trajet. */
+    @Test
+    void approachTemplates_nameTheDriver_andRouteToTheTrip() {
+        Map<String, Object> payload = NotificationTemplates.payload("driverFirstName", "Rodrigue",
+                "route", "Cotonou -> Bohicon", "tripId", "t-1", "distanceM", 800L);
+        NotificationTemplates.Rendered nearby = NotificationTemplates.render(NotificationType.DRIVER_NEARBY, payload);
+        assertThat(nearby.subject()).isEqualTo("Rodrigue arrive");
+        assertThat(nearby.body()).contains("moins d'un kilometre").contains("Cotonou -> Bohicon");
+        NotificationTemplates.Rendered arrived = NotificationTemplates.render(NotificationType.DRIVER_ARRIVED, payload);
+        assertThat(arrived.subject()).isEqualTo("Rodrigue est arrive");
+        assertThat(arrived.body()).contains("point de rendez-vous");
+        // Sans prenom : formulation neutre.
+        assertThat(NotificationTemplates.render(NotificationType.DRIVER_NEARBY, Map.of()).subject()).isEqualTo("Votre conducteur arrive");
+        assertThat(NotificationTemplates.push(NotificationType.DRIVER_ARRIVED, payload).url()).isEqualTo("/trips/t-1");
+        assertThat(NotificationTemplates.push(NotificationType.DRIVER_ARRIVED, Map.of()).url()).isEqualTo("/bookings");
+    }
 }

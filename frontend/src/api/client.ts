@@ -132,11 +132,12 @@ export class NetworkError extends Error {
   }
 }
 
-interface RequestOptions {
+export interface RequestOptions {
   method?: string
   body?: unknown
   auth?: boolean
   signal?: AbortSignal
+  /** Delai d abandon ; 0 = aucun (flux longs, a annuler par `signal`). */
   timeoutMs?: number
   /** Type attendu en reponse (application/json par defaut ; text/csv pour les exports). */
   accept?: string
@@ -228,6 +229,8 @@ export async function restoreSession(): Promise<AuthResponse | null> {
  * requete (audit F244 : le delai seul laissait courir les requetes abandonnees).
  */
 function withTimeout(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
+  // Sans delai (flux SSE du suivi en direct, lib/liveStream.ts) : seul le signal amont annule.
+  if (timeoutMs <= 0) return signal ?? new AbortController().signal
   const timeout = AbortSignal.timeout(timeoutMs)
   if (!signal) return timeout
   if (typeof AbortSignal.any === 'function') return AbortSignal.any([signal, timeout])
@@ -292,7 +295,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
  * /refresh et /logout) et l'en-tete anti-CSRF ; les autres restent en `same-origin`,
  * sans cookie utile (Path=/api/v1/auth) : elles n'ont que l'en-tete Authorization.
  */
-async function authorizedFetch(path: string, options: RequestOptions = {}): Promise<Response> {
+export async function authorizedFetch(path: string, options: RequestOptions = {}): Promise<Response> {
   const { method = 'GET', body, auth = true, signal, timeoutMs = REQUEST_TIMEOUT_MS, accept = 'application/json' } = options
   const authRoute = path.startsWith(AUTH_PATH_PREFIX)
 
@@ -326,7 +329,7 @@ async function authorizedFetch(path: string, options: RequestOptions = {}): Prom
   return res
 }
 
-async function toApiError(res: Response): Promise<ApiError> {
+export async function toApiError(res: Response): Promise<ApiError> {
   let problem: ProblemDetail | null = null
   try {
     problem = (await res.json()) as ProblemDetail

@@ -29,6 +29,29 @@ public class AsyncConfig {
     public static final String REFUND_EXECUTOR = "refundExecutor";
     public static final String NOTIFICATION_EXECUTOR = "notificationExecutor";
     public static final String ALERT_EXECUTOR = "alertExecutor";
+    public static final String LIVE_EXECUTOR = "liveExecutor";
+
+    /**
+     * Diffusion des positions du suivi en direct aux flux SSE (TripTrackingService, V28),
+     * apres validation de la transaction qui a accepte la position : l ecriture sur un
+     * socket lent ne doit jamais retenir la reponse HTTP du conducteur. Une file pleine
+     * abandonne l evenement : la position suivante arrive dans quelques secondes et
+     * l instantane REST reste disponible.
+     */
+    @Bean(name = LIVE_EXECUTOR)
+    public Executor liveExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setThreadNamePrefix("live-stream-");
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(2);
+        executor.setQueueCapacity(2_000);
+        executor.setRejectedExecutionHandler((runnable, pool) ->
+                log.warn("Diffusion de position abandonnee : file pleine ({} en attente)", pool.getQueue().size()));
+        executor.setWaitForTasksToCompleteOnShutdown(false);
+        executor.setAwaitTerminationSeconds(2);
+        executor.initialize();
+        return executor;
+    }
 
     /**
      * Matching des alertes de recherche apres publication d un trajet (SearchAlertMatchService,

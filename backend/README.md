@@ -127,27 +127,62 @@ Points structurants :
   (`BookingExpiryScheduler`) → `CANCELLED_BY_DRIVER`, places libérées, **acompte remboursé intégralement**,
   passager notifié `BOOKING_DECLINED` ; le passager peut se retirer sans frais tant que le conducteur n'a pas répondu.
   `paymentPlan.paymentStatus` vaut alors `AWAITING_DRIVER` et `paymentPlan.approvalDeadlineAt` porte l'échéance.
-- **Suivi en direct (V23, `TripLiveController` / `TripLiveService`)** — le conducteur partage sa position pendant le
-  trajet, ses passagers la voient sur la carte, un proche la suit par un lien public à jeton.
+- **Suivi en direct (V23/V28, `TripLiveController`, `TripLiveService`, `service/live/*`)** — le conducteur et ses
+  passagers confirmés partagent leur position pendant le trajet ; la fiche du trajet la lit par instantané ou par flux
+  SSE ; un proche suit le véhicule par un lien public à jeton.
   - `PUT /api/v1/trips/{id}/live` `{ enabled }` — réservé au conducteur, trajet `PUBLISHED` / `FULL` / `ONGOING` :
     active ou coupe le partage. Le jeton public (32 octets aléatoires en base64url) est généré à la première
     activation et conservé tant que le trajet vit (couper puis reprendre garde le même lien). Réponse
-    `{ enabled, shareToken, sharePath: "/live/{token}", lastPositionAt }`. Journal `TRIP_LIVE_SHARING_ENABLED` /
-    `TRIP_LIVE_SHARING_DISABLED`.
-  - `POST /api/v1/trips/{id}/live/positions` `{ lat, lng, heading?, speedKmh?, accuracyM?, recordedAt? }` — 202 sans
-    corps ; réservé au conducteur ; 400 si le partage n'est pas activé ou si le trajet est hors fenêtre (d'une heure
-    avant le départ jusqu'au statut `COMPLETED` / `CANCELLED` exclu). Un `recordedAt` en avance de plus d'une minute
-    est ramené à l'instant de réception. Quota `live:` : 120 / min / conducteur.
+    `{ enabled, shareToken, sharePath: "/live/{token}", lastPositionAt, intervalSeconds }`. Journal
+    `TRIP_LIVE_SHARING_ENABLED` / `TRIP_LIVE_SHARING_DISABLED`. Couper le partage ferme les flux ouverts
+    (`event: end`, `SHARING_DISABLED`) et oublie la dernière position du conducteur.
+  - `POST /api/v1/trips/{id}/live/positions` `{ lat, lng, heading?, speedKmh?, accuracyM?, recordedAt }` — conducteur
+    (partage activé) **ou passager avec une réservation `CONFIRMED`** (403 sinon) ; 400 hors fenêtre (d'une heure
+    avant le départ jusqu'au statut `COMPLETED` / `CANCELLED` exclu). Réponse 200
+    `{ accepted, flags, intervalSeconds }` (`LocationUpdateService`) :
+    - **cadence** : moins de 2 s depuis la dernière position du même participant → 429 `Retry-After: 1` ; quota
+      `live:` en amont : 30 / min / utilisateur ;
+    - **zone** : latitude 5,0–13,0 et longitude 0,0–4,5 (Bénin et marges), sinon flag `OUT_OF_AREA`, position non
+      diffusée ;
+    - **horloge** : `recordedAt` à plus de 2 min de l'heure serveur → flag `CLOCK_SKEW`, heure serveur retenue
+      (absent : heure serveur, sans flag) ;
+    - **téléportation** : vitesse impliquée depuis la dernière position acceptée > 200 km/h → flag `TELEPORT`, non
+      diffusée (l'écart se résorbe de lui-même dès qu'une position redevient plausible) ;
+    - **précision** : `accuracyM` > 500 → flag `LOW_ACCURACY`, diffusée avec le flag ;
+    - les flags sont conservés en base (`trip_positions.flags`) pour analyse, **jamais de blocage automatique** ;
+    - **persistance** : la dernière position de chaque participant vit en mémoire (`LiveSessionRegistry`, par
+      trajet) ; la base n'est écrite qu'au plus toutes les 30 s ou tous les 200 m par participant (toujours pour une
+      position signalée) ; purge après 24 h ; sessions oubliées à la fin du trajet et après 1 h sans abonné ni
+      position. Mono-instance, comme `RateLimitingFilter` ;
+    - `intervalSeconds` (cadence recommandée) : 30 avant le départ, 15 pendant, 5 quand le conducteur est à moins de
+      3 km d'un point de prise en charge d'un passager confirmé (origine du trajet ou arrêt `pickupStopId`).
   - `GET /api/v1/trips/{id}/live` — conducteur, ou passager avec une réservation `CONFIRMED` / `COMPLETED` /
     `PENDING_DRIVER_APPROVAL` (403 sinon) : `{ enabled, position | null, staleSeconds, tripStatus, departureAt,
-    shareToken }` ; `staleSeconds` est l'âge de la position mesuré côté serveur (le front n'a pas à comparer
-    l'horloge du conducteur à la sienne).
+    shareToken, intervalSeconds, participants, serverTime }` ; `position` est celle du conducteur (mémoire, sinon
+    dernière écriture en base), `participants` ce que l'appelant a le droit de voir (un passager : le conducteur
+    et lui-même ; le conducteur : chaque passager qui partage), `serverTime` sert au front à estimer le décalage
+    de son horloge.
+  - `GET /api/v1/trips/{id}/live/stream` — **Server-Sent Events** (`text/event-stream`, `Cache-Control: no-cache`,
+    `X-Accel-Buffering: no`), mêmes droits que l'instantané, à ouvrir avec `fetch` + `Authorization` (jamais de jeton
+    dans l'URL). Événements (JSON, `type` = nom SSE) : `snapshot` à l'ouverture, `position` à chaque position
+    acceptée visible par l'abonné, `status` (partage activé, cadence), `ping` toutes les 20 s
+    (`ekuiseo.live.ping-seconds`), `end` `{ reason: TRIP_COMPLETED | TRIP_CANCELLED | SHARING_DISABLED }` puis
+    fermeture. Délai serveur 30 min (`ekuiseo.live.stream-timeout-minutes`), le client se réabonne. La diffusion se
+    fait après validation de la transaction, sur l'exécuteur `liveExecutor` (`TripTrackingService`) ; le battement
+    vérifie l'état des trajets suivis et ferme les flux des trajets terminés ou annulés par le scheduler ; aucun
+    émetteur ne survit à son client (retiré à la fermeture, au délai, à l'erreur). `SecurityConfig` autorise le
+    dispatch `ASYNC` interne de Spring MVC (fin d'un `SseEmitter`), qu'aucun client ne peut déclencher.
+  - Notifications d'approche (`DRIVER_NEARBY` < 1 km, `DRIVER_ARRIVED` < 150 m du point de prise en charge), une
+    seule fois chacune par réservation (`bookings.driver_nearby_notified_at` / `driver_arrived_notified_at`), push et
+    in-app seulement (`NotificationDispatcher.PUSH_ONLY_TYPES`).
   - `GET /api/v1/live/{token}` — **public** (`permitAll`, quota `live-public:` 120 / min / IP) : origine et
     destination (libellés et coordonnées), départ, statut, **prénom** du conducteur, véhicule (marque, modèle,
-    couleur), dernière position et son âge. Rien d'autre : ni nom, ni téléphone, ni plaque, ni identifiants. 404
-    si le jeton est inconnu, si le partage est coupé, ou si le trajet est terminé / annulé depuis plus de 6 h.
+    couleur), dernière position **du conducteur seulement** et son âge. Rien d'autre : ni nom, ni téléphone, ni
+    plaque, ni identifiants, ni passager. 404 si le jeton est inconnu, si le partage est coupé, ou si le trajet est
+    terminé / annulé depuis plus de 6 h.
   - Rétention : positions supprimées après 24 h, partage coupé et jeton effacé sur les trajets terminés ou
-    annulés depuis 24 h (`RetentionScheduler`, `TRIP_POSITIONS_RETENTION_HOURS`, `docs/CONFORMITE.md` 3.2).
+    annulés depuis 24 h (`RetentionScheduler`, `TRIP_POSITIONS_RETENTION_HOURS`, `docs/CONFORMITE.md` 3.2 et 3.3).
+    Aucune coordonnée dans les journaux.
 
 ### Admin (`/api/v1/admin/**`, `ROLE_ADMIN`)
 Depuis F237, `GET /admin/users`, `GET /admin/reports` et `GET /admin/payouts` renvoient une `Page` Spring

@@ -118,6 +118,14 @@ public class Booking {
     @Column(name = "driver_no_show_resolved_by")
     private UUID driverNoShowResolvedBy;
 
+    /** Suivi en direct (V28) : notification « conducteur a moins de 1 km » envoyee au passager, une seule fois. */
+    @Column(name = "driver_nearby_notified_at")
+    private Instant driverNearbyNotifiedAt;
+
+    /** Suivi en direct (V28) : notification « conducteur arrive » (moins de 150 m) envoyee au passager, une seule fois. */
+    @Column(name = "driver_arrived_notified_at")
+    private Instant driverArrivedNotifiedAt;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;

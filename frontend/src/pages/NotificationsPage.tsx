@@ -9,7 +9,9 @@ import {
   CheckCircle2,
   CreditCard,
   Flag,
+  MapPinCheck,
   MessageSquare,
+  Navigation,
   ScrollText,
   SearchCheck,
   ShieldCheck,
@@ -89,6 +91,9 @@ const PRESENTATION: Partial<Record<NotificationType, { icon: LucideIcon; tone: k
   IDENTITY_REVOKED: { icon: ShieldOff, tone: 'danger', title: 'Badge d’identité retiré' },
   ACCOUNT_SUSPENDED: { icon: Ban, tone: 'danger', title: 'Compte suspendu' },
   TERMS_UPDATED: { icon: ScrollText, tone: 'info', title: 'Conditions mises à jour' },
+  /* Suivi en direct (V28). */
+  DRIVER_NEARBY: { icon: Navigation, tone: 'info', title: 'Votre conducteur arrive' },
+  DRIVER_ARRIVED: { icon: MapPinCheck, tone: 'success', title: 'Votre conducteur est arrivé' },
 }
 
 const DEFAULT_PRESENTATION = { icon: Bell, tone: 'neutral' as const, title: 'Notification' }
@@ -298,6 +303,14 @@ function describe(notification: NotificationResponse): string {
     }
     case 'TERMS_UPDATED':
       return 'Nos conditions générales d’utilisation ont changé. Elles vous seront proposées à votre prochaine ouverture.'
+    case 'DRIVER_NEARBY': {
+      const driver = str('driverFirstName') ?? 'Votre conducteur'
+      return `${driver} est à moins d’un kilomètre de votre point de rendez-vous${route ? ` (${route})` : ''}. Tenez-vous prêt.`
+    }
+    case 'DRIVER_ARRIVED': {
+      const driver = str('driverFirstName') ?? 'Votre conducteur'
+      return `${driver} est arrivé à votre point de rendez-vous${route ? ` (${route})` : ''}. Rejoignez le véhicule.`
+    }
     default:
       return ''
   }
@@ -361,6 +374,10 @@ function targetOf(notification: NotificationResponse): string | null {
     case 'REPORT_RESOLVED':
       // Rien a faire dans l'application : la contestation passe par le support.
       return null
+    case 'DRIVER_NEARBY':
+    case 'DRIVER_ARRIVED':
+      // La fiche du trajet, ou la carte du suivi est l ecran principal pendant le trajet (V28).
+      return tripId ? `/trips/${tripId}` : '/bookings'
     default:
       if (bookingId) return '/bookings'
       if (tripId) return `/trips/${tripId}`
