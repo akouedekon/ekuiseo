@@ -416,3 +416,12 @@ et frontend, et publie le rapport HTML, les traces et les journaux de la pile en
 (`e2e-playwright`). Il est **non bloquant** au premier passage (`continue-on-error: true`
 dans `.github/workflows/ci.yml`) : le retirer après deux runs verts consécutifs, pour qu'un
 parcours cassé bloque le déploiement.
+
+## 16. Application mobile Android
+
+L'application Android est un habillage Capacitor du site en mode serveur : elle charge
+`https://ekuiseo.com`, donc **déployer le site met à jour l'application**. Sa construction
+(APK de test, release signée, AAB pour le Play Store), le keystore, les App Links
+(`/.well-known/assetlinks.json`, servi par le front sans route supplémentaire) et la
+préparation iOS sont décrits dans `docs/MOBILE.md` ; le workflow est
+`.github/workflows/mobile-android.yml`, indépendant de `ci.yml` et `deploy-prod.yml`.

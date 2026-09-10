@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Couleurs natives aux valeurs de la charte (frontend/src/index.css, docs/CHARTE-GRAPHIQUE.md).
+    Elles remplacent les couleurs par defaut de la bibliotheque capacitor-android (indigo/rose)
+    referencees par styles.xml : colorPrimaryDark colore la barre d etat avant que le plugin
+    StatusBar (capacitor.config.ts) ne prenne le relais, colorAccent les controles natifs
+    (selecteur de fichiers, boites de dialogue).
+-->
+<resources>
+    <color name="colorPrimary">#0E7C4A</color>
+    <color name="colorPrimaryDark">#0E7C4A</color>
+    <color name="colorAccent">#E5B100</color>
+</resources>

@@ -1,0 +1,4 @@
+# Le depot est en LF partout ; seule exception : gradlew.bat est un script cmd.exe et
+# Windows attend des fins de ligne CRLF (Gradle livre ce fichier ainsi). Il est stocke
+# normalise (LF) et extrait en CRLF sur tous les postes.
+*.bat text eol=crlf

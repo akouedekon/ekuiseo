@@ -382,6 +382,14 @@ s'interprète pas.
 - La vitrine GitHub Pages (origine tierce) ne peut plus ouvrir ni rafraîchir une session : le
   cookie de rafraîchissement est `SameSite=Strict` et CORS reste sans credentials (front et API
   sur le même domaine via Caddy). Elle se limite aux routes publiques (recherche, fiches).
+- Application mobile (`mobile/`, `docs/MOBILE.md`) : habillage Capacitor 6 de la PWA en **mode
+  serveur** (le WebView charge `https://ekuiseo.com`, la mise à jour de l app est celle du site),
+  projet Android versionné, APK construits par `.github/workflows/mobile-android.yml`. Rien n a
+  été construit ni installé sur un appareil depuis ce poste (SDK Android absent). Attendu du
+  fondateur : keystore de signature et les quatre secrets `ANDROID_*`, empreinte SHA-256 dans
+  `frontend/public/.well-known/assetlinks.json` (`A REMPLACER`), compte Google Play. Web Push
+  ne fonctionne pas dans le WebView Android (FCM via `@capacitor/push-notifications` à prévoir ;
+  l e-mail reste le canal principal). iOS non généré (macOS requis).
 
 ## Marque
 

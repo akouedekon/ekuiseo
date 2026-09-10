@@ -1,0 +1,54 @@
+# ============================================================
+# Ekuiseo — .gitignore du projet mobile (Capacitor)
+# ============================================================
+# Le projet natif Android (android/) EST versionne : c'est ce que la CI construit.
+# Ne sont ignores que les dossiers de build, les caches et tout secret de signature.
+# android/.gitignore (genere par Capacitor) couvre deja les fichiers copies par
+# `cap sync` (app/src/main/assets/public, capacitor.config.json...).
+
+node_modules/
+
+# --- Android : builds, caches, reglages locaux ---------------------------
+android/app/build/
+android/build/
+android/.gradle/
+android/.idea/
+android/local.properties
+android/app/release/
+android/app/debug/
+android/capacitor-cordova-android-plugins/
+android/.cxx/
+android/*.iml
+android/app/*.iml
+
+# Le .gitignore racine ignore *.jar : le wrapper Gradle doit rester versionne pour
+# que `./gradlew` fonctionne en CI sans Gradle preinstalle.
+!android/gradle/wrapper/gradle-wrapper.jar
+
+# --- Signature : jamais dans le depot (cle du magasin = identite de l'app) ---
+*.keystore
+*.jks
+android/keystore.properties
+android/app/*.keystore
+
+# --- iOS (plateforme non generee : macOS requis, voir docs/MOBILE.md) ---------
+ios/App/Pods/
+ios/App/build/
+ios/App/public/
+ios/App/App/capacitor.config.json
+ios/App/App/config.xml
+ios/App/App.xcworkspace/xcuserdata/
+ios/App/App.xcodeproj/xcuserdata/
+ios/App/App.xcodeproj/project.xcworkspace/xcuserdata/
+ios/DerivedData/
+*.ipa
+*.mobileprovision
+*.p12
+
+# --- Paquet embarque (alternative documentee, non utilisee par defaut) ---------
+# `www/` ne contient que la page de secours ; si frontend/dist y est copie pour
+# un paquet embarque, ces fichiers ne doivent pas etre versionnes.
+www/assets/
+www/*.js
+www/*.webmanifest
+www/icons/
