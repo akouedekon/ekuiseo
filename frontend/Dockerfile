@@ -25,7 +25,7 @@ RUN npm run build
 # elles restitueraient tout le TypeScript d origine (audit F440, audit securite 2026-09-10).
 RUN find dist -name '*.map' -type f -delete
 
-FROM nginx:1.27-alpine
+FROM nginx:1.31-alpine
 COPY --from=build /build/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
