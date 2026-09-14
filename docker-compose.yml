@@ -17,7 +17,7 @@
 
 services:
   postgis:
-    image: postgis/postgis:16-3.4
+    image: postgis/postgis:16-3.5
     container_name: ekuiseo-postgis
     restart: unless-stopped
     environment:
@@ -138,7 +138,7 @@ services:
       - ekuiseo
 
   adminer:
-    image: adminer:4.8.1
+    image: adminer:6.0.1
     container_name: ekuiseo-adminer
     restart: unless-stopped
     depends_on:
